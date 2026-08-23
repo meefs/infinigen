@@ -25,7 +25,7 @@ while read -r sha reason; do
 done <<< "$BANNED"
 
 if [ "$failed" -ne 0 ]; then
-  echo "This branch contains a banned commit. Rebase it onto the current develop2 and drop the stale lineage."
+  echo "This branch contains a banned commit. Rebase it onto the current develop and drop the stale lineage."
   exit 1
 fi
 echo "No banned commits found in history."
