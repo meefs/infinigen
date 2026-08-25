@@ -12,14 +12,12 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 from infinigen2.objects import (
-    bookcase,
     chair,
     lamp,
     rug,
     sofa,
     storage,
     table,
-    triangle_shelf,
     vase,
 )
 from infinigen2.scenes.placement import collision as ccol
@@ -152,17 +150,10 @@ def table_decoration_object_rand(
 
 @pf.tracer.grammar
 def side_table_object_rand(rng: pf.RNG) -> MeshResult:
-    def triangle_shelf_sidetable_rand(
-        rng: pf.RNG,
-    ) -> triangle_shelf.TriangleShelfResult:
-        dimensions = table.side_table_dimensions_rand(rng)
-        return triangle_shelf.triangle_shelf_rand(rng, dimensions=dimensions)
-
     func = pf.control.choice(
         rng,
         [
             (table.side_table_rand, 1.0),
-            (triangle_shelf_sidetable_rand, 100.0),
         ],
     )
     result = func(rng)
@@ -175,7 +166,6 @@ def storage_object_rand(rng: pf.RNG) -> MeshResult:
     func = pf.control.choice(
         rng,
         [
-            (bookcase.bookcase_rand, 1.0),
             (storage.shelves_rand, 1.0),
         ],
     )
