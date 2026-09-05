@@ -541,6 +541,66 @@
     "name": "infinigen2.scenes.room.room_shape.room_shape_rand"
   },
   {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_plain_rand",
+    "integration_test_string": "wall_plain_rand object_demo render_cycles",
+    "num_seeds": 1
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_windows_rand",
+    "integration_test_string": "wall_windows_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_painting_grid_rand",
+    "integration_test_string": "wall_painting_grid_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_board_shelf_rand",
+    "integration_test_string": "wall_board_shelf_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_storage_shelf_rand",
+    "integration_test_string": "wall_storage_shelf_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_cubby_rand",
+    "integration_test_string": "wall_cubby_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_storage_flush_rand",
+    "integration_test_string": "wall_storage_flush_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_doors_rand",
+    "integration_test_string": "wall_doors_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_full_window_rand",
+    "integration_test_string": "wall_full_window_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room_surface_features.wall_arrangement_rand",
+    "integration_test_string": "wall_arrangement_rand object_demo render_cycles",
+    "num_seeds": 3
+  },
+  {
     "category": "Object",
     "name": "infinigen2.objects.random_primitives.primitive_with_effect_rand"
   },

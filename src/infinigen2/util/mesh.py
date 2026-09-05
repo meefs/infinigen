@@ -16,6 +16,7 @@ __all__ = [
     "LoftingResult",
     "WallCutoutResult",
     "corner_box",
+    "crease_all_edges",
     "crease_by_angle",
     "crease_sharp",
     "extrude_mesh_seamless_uvs",
@@ -770,6 +771,10 @@ def grid_from_corners(
 
     set_position = pf.nodes.geo.set_position(geometry=grid.mesh, position=position)
     return set_position
+
+
+def crease_all_edges(obj: pf.MeshObject) -> None:
+    pf.ops.attr.write_attribute(obj, 1.0, "crease_edge", domain="EDGE", overwrite=True)
 
 
 @pf.nodes.node_function

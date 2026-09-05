@@ -37,8 +37,7 @@ from infinigen2.uv_surface import grid_placement
 __all__ = [
     "CeilingFeaturesResult",
     "CutoutResult",
-    "WallFeatureResult",
-    "WallFeaturesResult",
+    "WallResult",
     "ceiling_feature_rand",
     "ceiling_light_bars_rand",
     "ceiling_light_placement_rand",
@@ -48,28 +47,28 @@ __all__ = [
     "skirting_on_walls_rand",
     "skirting_rand",
     "upright_cabinet_footprint",
+    "room_walls_rand",
     "wall_board_shelf_rand",
     "wall_cubby_rand",
-    "wall_decoration_rand",
     "wall_doors_rand",
-    "wall_feature_rand",
     "wall_full_window_rand",
-    "wall_horizontal_split_rand",
+    "wall_arrangement_rand",
     "wall_painting_grid_rand",
     "wall_plain_rand",
     "wall_storage_flush_rand",
     "wall_storage_shelf_rand",
-    "wall_vertical_split_rand",
-    "wall_window_extrusion_rand",
     "wall_windows_rand",
     "window_spaced_rand",
 ]
 
 logger = logging.getLogger(__name__)
 
+ROOM_SUBSURF_LEVELS = 6
 
-class WallFeatureResult(NamedTuple):
-    wall_geom: list[pf.MeshObject]  # wall surfaces (≥1; split options return multiple)
+
+class WallResult(NamedTuple):
+    all_objects: list[pf.MeshObject]  # every scene object, each exactly once
+    wall_planes: list[pf.MeshObject]
     backs: list[pf.MeshObject]  # structural lightblocker meshes (wall backs)
     sills: list[pf.MeshObject]  # cutout reveal/sill meshes
     storage: list[pf.MeshObject]  # shelf/storage surfaces for downstream filling
@@ -77,6 +76,53 @@ class WallFeatureResult(NamedTuple):
     decorations: dict[
         str, list[pf.MeshObject]
     ]  # window/painting/shelf/door instances by type
+    corner_walls: list[pf.MeshObject] = []
+
+
+def _standalone_wall_rand(
+    rng: pf.RNG,
+    width: float | None = None,
+    height: float | None = None,
+) -> pf.MeshObject:
+    if width is None:
+        width = pf.random.clip_gaussian(rng, 4.5, 1.0, 2.5, 8.0)
+    if height is None:
+        height = pf.random.clip_gaussian(rng, 2.5, 0.5, 2.2, 4.5)
+
+    grid = pf.nodes.geo.mesh_grid(vertices_x=2, vertices_y=2, size_x=1.0, size_y=1.0)
+    position = pf.nodes.geo.input_position()
+    along = (position.x + 0.5) * width
+    up = (position.y + 0.5) * height
+    # mirrored U matches a room's perimeter unwrap, so cutouts recess into the wall
+    uv = pf.nodes.math.combine_xyz(x=width - along, y=up)
+    geometry = pf.nodes.geo.store_named_attribute(
+        geometry=grid.mesh,
+        name="UVMap",
+        value=uv,
+        domain="CORNER",
+        data_type=pf.NodeDataType.FLOAT_VECTOR_2D,
+    )
+    wall_position = pf.nodes.math.combine_xyz(y=along, z=up)
+    geometry = pf.nodes.geo.set_position(geometry=geometry, position=wall_position)
+    wall = pf.nodes.to_mesh_object(geometry)
+    wall.item().name = "standalone_wall"
+    return wall
+
+
+def _resolve_wall_inputs(
+    rng: pf.RNG,
+    wall: pf.MeshObject | None,
+    wall_material: pf.Material | None,
+) -> tuple[pf.RNG, pf.MeshObject, pf.Material]:
+    if wall is not None and wall_material is not None:
+        return rng, wall, wall_material
+
+    rng_wall, rng_material, rng_feature = rng.spawn(3)
+    if wall is None:
+        wall = _standalone_wall_rand(rng_wall)
+    if wall_material is None:
+        wall_material = wall_material_rand(rng_material, pf.nodes.shader.coord().uv)
+    return rng_feature, wall, wall_material
 
 
 def _extrude_for_thickness(obj: pf.MeshObject, thickness: float) -> pf.MeshObject:
@@ -120,6 +166,11 @@ def _plane_to_posed_canonical_mesh(
     return obj
 
 
+def _subdivide_wall_plane(obj: pf.MeshObject) -> None:
+    mesh_util.crease_all_edges(obj)
+    pf.ops.modifier.subdivide_surface(obj, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True)
+
+
 def _finish_cutout_mesh(
     obj: pf.MeshObject,
     surface: pf.MeshObject,
@@ -132,14 +183,15 @@ def _finish_cutout_mesh(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
-    pf.ops.attr.write_attribute(obj, 1.0, "crease_edge", domain="EDGE")
-    pf.ops.modifier.subdivide_surface(obj, levels=8, _skip_apply=True)
+    _subdivide_wall_plane(obj)
     return obj
 
 
-def _wall_uv_width(wall: pf.MeshObject) -> float:
+def _wall_uv_dimensions(wall: pf.MeshObject) -> tuple[float, float]:
     uvs = pf.ops.attr.uv_coords(wall)
-    return uvs[:, 0].max() - uvs[:, 0].min()
+    width = uvs[:, 0].max() - uvs[:, 0].min()
+    height = uvs[:, 1].max() - uvs[:, 1].min()
+    return width, height
 
 
 def _arrange_window_portals(
@@ -163,6 +215,50 @@ def _arrange_window_portals(
     return duplicates(window_portal, light_locations, light_rotations)
 
 
+def _resolve_window_inputs(
+    rng: pf.RNG,
+    wall: pf.MeshObject,
+    window_obj: pf.MeshObject | None,
+    window_portal: pf.LightObject | None,
+    window_spacing: float | None,
+    window_bottom: float | None,
+) -> tuple[
+    pf.RNG,
+    pf.MeshObject,
+    pf.LightObject | None,
+    float,
+    float,
+]:
+    if (
+        window_obj is not None
+        and window_spacing is not None
+        and window_bottom is not None
+    ):
+        return rng, window_obj, window_portal, window_spacing, window_bottom
+
+    rng_defaults, rng_feature = rng.spawn(2)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
+    if window_obj is None:
+        width = max(1.0, min(2.0, 0.5 * wall_width))
+        height = max(1.0, min(2.0, 0.7 * wall_height))
+        dimensions = window.window_dimensions_rand(
+            rng_defaults, width=width, height=height
+        )
+        window_result = window.window_rand(rng_defaults, dimensions=dimensions)
+        window_obj = window_result.mesh
+        window_portal = window_result.light
+
+    _depth, width, height = window_obj.item().dimensions
+    if window_spacing is None:
+        window_spacing = pf.random.uniform(rng_defaults, 0.1, 0.25) * width
+    if window_bottom is None:
+        wmin, _ = pf.ops.attr.bbox_min_max(window_obj)
+        free_height = max(0.0, wall_height - height)
+        bottom_fraction = pf.random.uniform(rng_defaults, 0.35, 0.65)
+        window_bottom = free_height * bottom_fraction - wmin[2]
+    return rng_feature, window_obj, window_portal, window_spacing, window_bottom
+
+
 @pf.tracer.grammar
 def window_spaced_rand(
     rng: pf.RNG,
@@ -176,9 +272,8 @@ def window_spaced_rand(
     width = window_obj.item().dimensions.y
     wmin, _ = pf.ops.attr.bbox_min_max(window_obj)
 
-    wall_uv_width = _wall_uv_width(wall)
+    wall_uv_width, _ = _wall_uv_dimensions(wall)
 
-    # the window is sized to fit the narrowest wall, so slack is always positive
     slack = max(0.0, wall_uv_width - width - 0.01)
     max_margin = min(0.3 * wall_uv_width, 2.0 * width, slack)
     edge_margin = pf.random.uniform(rng, min(0.1, max_margin), max_margin)
@@ -235,7 +330,7 @@ def _plain_wall(
         surface=wall_material.surface,
         displacement=wall_material.displacement,
     )
-    pf.ops.modifier.subdivide_surface(wall, levels=8, _skip_apply=True)
+    _subdivide_wall_plane(wall)
     wall = _plane_to_posed_canonical_mesh(wall)
     return wall, wall_thick
 
@@ -243,13 +338,15 @@ def _plain_wall(
 @pf.tracer.grammar
 def wall_plain_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
     wall, wall_thick = _plain_wall(wall, wall_material, wall_thickness)
-    return WallFeatureResult(
-        wall_geom=[wall],
+    return WallResult(
+        all_objects=[wall, wall_thick],
+        wall_planes=[wall],
         backs=[wall_thick],
         sills=[],
         storage=[],
@@ -261,14 +358,25 @@ def wall_plain_rand(
 @pf.tracer.grammar
 def wall_windows_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
-    window_obj: pf.MeshObject,
-    window_portal: pf.LightObject | None,
-    window_spacing: float,
-    window_bottom: float,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
+    window_obj: pf.MeshObject | None = None,
+    window_portal: pf.LightObject | None = None,
+    window_spacing: float | None = None,
+    window_bottom: float | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    rng, window_obj, window_portal, window_spacing, window_bottom = (
+        _resolve_window_inputs(
+            rng,
+            wall,
+            window_obj,
+            window_portal,
+            window_spacing,
+            window_bottom,
+        )
+    )
     res = window_spaced_rand(
         rng,
         wall,
@@ -299,10 +407,13 @@ def wall_windows_rand(
         )
         trims = trim_option()
 
-    return WallFeatureResult(
-        wall_geom=[res.geom],
-        backs=[res.lightblocker] if res.lightblocker is not None else [],
-        sills=[res.sill] if res.sill is not None else [],
+    backs = [res.lightblocker] if res.lightblocker is not None else []
+    sills = [res.sill] if res.sill is not None else []
+    return WallResult(
+        all_objects=[res.geom, *backs, *sills, *res.aliases, *trims],
+        wall_planes=[res.geom],
+        backs=backs,
+        sills=sills,
         storage=[],
         lights=portals,
         decorations={"window": res.aliases, "window_trim": trims},
@@ -310,51 +421,14 @@ def wall_windows_rand(
 
 
 @pf.tracer.grammar
-def wall_window_extrusion_rand(
-    rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
-    window_obj: pf.MeshObject,
-    window_portal: pf.LightObject | None,
-    window_spacing: float,
-    window_bottom: float,
-    wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    raise NotImplementedError
-
-
-@pf.tracer.grammar
-def wall_vertical_split_rand(
-    rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
-    wall_material_alt: pf.Material,
-    wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    raise NotImplementedError
-
-
-@pf.tracer.grammar
-def wall_horizontal_split_rand(
-    rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
-    wall_material_alt: pf.Material,
-    wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    raise NotImplementedError
-
-
-@pf.tracer.grammar
 def wall_painting_grid_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    wall_uvs = pf.ops.attr.uv_coords(wall)
-    wall_width = wall_uvs[:, 0].max() - wall_uvs[:, 0].min()
-    wall_height = wall_uvs[:, 1].max() - wall_uvs[:, 1].min()
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
 
     # margins first, then size each painting dimension from 0.5m up to 80% of the
     # wall extent minus its margins
@@ -364,10 +438,13 @@ def wall_painting_grid_rand(
     # keep paintings out of the bottom 30% of the wall: they live in the top region
     bottom_min = 0.30 * wall_height
     avail_v = wall_height - bottom_min - top_gap
-    art_height = pf.random.uniform(rng, 0.5, 0.8 * avail_v)
+
+    art_height = pf.random.uniform(rng, 0.5, max(0.5, 0.8 * avail_v))
     # width caps at 2x height so paintings never become thin horizontal bars;
     # portrait (taller than wide) is unconstrained
-    art_width = pf.random.uniform(rng, 0.5, min(0.8 * avail_w, 2.0 * art_height))
+    art_width = pf.random.uniform(
+        rng, 0.5, max(0.5, min(0.8 * avail_w, 2.0 * art_height))
+    )
     art_depth = pf.random.uniform(rng, 0.03, 0.06)
     art = wall_art.wall_art_rand(
         rng, dimensions=pf.Vector((art_depth, art_width, art_height))
@@ -414,8 +491,9 @@ def wall_painting_grid_rand(
             n_rows,
         )
 
-    return WallFeatureResult(
-        wall_geom=[geom],
+    return WallResult(
+        all_objects=[geom, wall_thick, *painting_aliases],
+        wall_planes=[geom],
         backs=[wall_thick],
         sills=[],
         storage=[],
@@ -427,13 +505,12 @@ def wall_painting_grid_rand(
 @pf.tracer.grammar
 def wall_board_shelf_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    wall_uvs = pf.ops.attr.uv_coords(wall)
-    wall_width = wall_uvs[:, 0].max() - wall_uvs[:, 0].min()
-    wall_height = wall_uvs[:, 1].max() - wall_uvs[:, 1].min()
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
 
     shelf_depth = pf.random.uniform(rng, 0.27, 0.675)
     shelf_thickness = pf.random.uniform(rng, 0.02, 0.05)
@@ -515,11 +592,12 @@ def wall_board_shelf_rand(
         surface=wall_material.surface,
         displacement=wall_material.displacement,
     )
-    pf.ops.modifier.subdivide_surface(wall, levels=8, _skip_apply=True)
+    _subdivide_wall_plane(wall)
     wall = _plane_to_posed_canonical_mesh(wall)
 
-    return WallFeatureResult(
-        wall_geom=[wall],
+    return WallResult(
+        all_objects=[wall, wall_thick, *shelf_aliases],
+        wall_planes=[wall],
         backs=[wall_thick],
         sills=[],
         storage=shelf_aliases,
@@ -740,13 +818,12 @@ def _fit_grid_margins(
 @pf.tracer.grammar
 def wall_storage_shelf_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    wall_uvs = pf.ops.attr.uv_coords(wall)
-    wall_width = wall_uvs[:, 0].max() - wall_uvs[:, 0].min()
-    wall_height = wall_uvs[:, 1].max() - wall_uvs[:, 1].min()
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
 
@@ -807,10 +884,13 @@ def wall_storage_shelf_rand(
             margin_high_x,
         )
 
-    return WallFeatureResult(
-        wall_geom=[geom],
-        backs=[lightblocker] if lightblocker is not None else [],
-        sills=[sill] if sill is not None else [],
+    backs = [lightblocker] if lightblocker is not None else []
+    sills = [sill] if sill is not None else []
+    return WallResult(
+        all_objects=[geom, *backs, *sills, *cabinet_aliases],
+        wall_planes=[geom],
+        backs=backs,
+        sills=sills,
         storage=cabinet_aliases,
         lights=[],
         decorations={"wall_storage": cabinet_aliases},
@@ -820,13 +900,12 @@ def wall_storage_shelf_rand(
 @pf.tracer.grammar
 def wall_cubby_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    wall_uvs = pf.ops.attr.uv_coords(wall)
-    wall_width = wall_uvs[:, 0].max() - wall_uvs[:, 0].min()
-    wall_height = wall_uvs[:, 1].max() - wall_uvs[:, 1].min()
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
     min_margin = depth * 0.5
@@ -886,21 +965,26 @@ def wall_cubby_rand(
             spacing_y,
         )
 
-    def _keep_cabinets() -> WallFeatureResult:
-        return WallFeatureResult(
-            wall_geom=[geom],
-            backs=[lightblocker] if lightblocker is not None else [],
+    backs = [lightblocker] if lightblocker is not None else []
+
+    def _keep_cabinets() -> WallResult:
+        return WallResult(
+            all_objects=[geom, *backs, *cabinet_aliases],
+            wall_planes=[geom],
+            backs=backs,
             sills=[],
             storage=cabinet_aliases,
             lights=[],
             decorations={"wall_cubby": cabinet_aliases},
         )
 
-    def _drop_cabinets() -> WallFeatureResult:
-        return WallFeatureResult(
-            wall_geom=[geom],
-            backs=[lightblocker] if lightblocker is not None else [],
-            sills=[sill] if sill is not None else [],
+    def _drop_cabinets() -> WallResult:
+        sills = [sill] if sill is not None else []
+        return WallResult(
+            all_objects=[geom, *backs, *sills],
+            wall_planes=[geom],
+            backs=backs,
+            sills=sills,
             storage=[],
             lights=[],
             decorations={},
@@ -912,13 +996,12 @@ def wall_cubby_rand(
 @pf.tracer.grammar
 def wall_storage_flush_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    wall_uvs = pf.ops.attr.uv_coords(wall)
-    wall_width = wall_uvs[:, 0].max() - wall_uvs[:, 0].min()
-    wall_height = wall_uvs[:, 1].max() - wall_uvs[:, 1].min()
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
     min_margin = depth * 0.5
@@ -981,8 +1064,9 @@ def wall_storage_flush_rand(
         )
 
     wall, wall_thick = _plain_wall(wall, wall_material, wall_thickness)
-    return WallFeatureResult(
-        wall_geom=[wall],
+    return WallResult(
+        all_objects=[wall, wall_thick, *aliases],
+        wall_planes=[wall],
         backs=[wall_thick],
         sills=[],
         storage=aliases,
@@ -994,20 +1078,26 @@ def wall_storage_flush_rand(
 @pf.tracer.grammar
 def wall_doors_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    wall_uvs = pf.ops.attr.uv_coords(wall)
-    wall_width = wall_uvs[:, 0].max() - wall_uvs[:, 0].min()
-    wall_height = wall_uvs[:, 1].max() - wall_uvs[:, 1].min()
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
 
     door_width = pf.random.uniform(rng, 0.85, 1.2)
     door_height = min(pf.random.uniform(rng, 2.0, 2.2), wall_height * 0.9)
     door_thickness = pf.random.clip_gaussian(rng, 0.0318, 0.0127, 0.0254, 0.0762)
 
     spacing_x = pf.random.uniform(rng, 2.0, 6.0)
-    max_margin = max(0.01, wall_width - door_width - 0.2)
+    max_margin = wall_width - door_width - 0.2
+    if max_margin < 0.1:
+        logger.warning(
+            "door: %.2fm wall too narrow for a %.2fm door; falling back to plain wall",
+            wall_width,
+            door_width,
+        )
+        return wall_plain_rand(rng, wall, wall_material, wall_thickness)
     edge_margin = pf.random.uniform(rng, 0.1, max_margin)
     margin_split = pf.random.uniform(rng, 0.0, 1.0)
     margin_low_x = edge_margin * margin_split
@@ -1051,9 +1141,11 @@ def wall_doors_rand(
 
     # a door reveal reaches the floor and is never a placeable sill, so group it with backs
     reveal = [sill] if sill is not None else []
-    return WallFeatureResult(
-        wall_geom=[geom],
-        backs=([lightblocker] if lightblocker is not None else []) + reveal,
+    backs = ([lightblocker] if lightblocker is not None else []) + reveal
+    return WallResult(
+        all_objects=[geom, *backs, *door_aliases],
+        wall_planes=[geom],
+        backs=backs,
         sills=[],
         storage=[],
         lights=[],
@@ -1064,13 +1156,12 @@ def wall_doors_rand(
 @pf.tracer.grammar
 def wall_full_window_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    wall_material: pf.Material,
+    wall: pf.MeshObject | None = None,
+    wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
-    wall_uvs = pf.ops.attr.uv_coords(wall)
-    wall_width = wall_uvs[:, 0].max() - wall_uvs[:, 0].min()
-    wall_height = wall_uvs[:, 1].max() - wall_uvs[:, 1].min()
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = _wall_uv_dimensions(wall)
 
     eps = 0.02
     gap_x = 0.10 * wall_width
@@ -1085,6 +1176,14 @@ def wall_full_window_rand(
     )
     target_w = wall_width - slack_x - eps
     target_h = wall_height - slack_y - eps
+    if target_w <= 0.0 or target_h <= 0.0:
+        logger.warning(
+            "full_window: %.2fx%.2fm wall too small for a window; "
+            "falling back to plain wall",
+            wall_width,
+            wall_height,
+        )
+        return wall_plain_rand(rng, wall, wall_material, wall_thickness)
 
     win_dims = window.window_dimensions_rand(rng, width=target_w, height=target_h)
     win_result = window.window_rand(rng, dimensions=win_dims)
@@ -1135,8 +1234,9 @@ def wall_full_window_rand(
     portals = []
     if win_result.light is not None and win_aliases:
         portals = _arrange_window_portals(win_aliases, win_obj, win_result.light)
-    return WallFeatureResult(
-        wall_geom=[geom],
+    return WallResult(
+        all_objects=[geom, wall_back, *win_aliases],
+        wall_planes=[geom],
         backs=[wall_back],
         sills=[],
         storage=[],
@@ -1146,17 +1246,18 @@ def wall_full_window_rand(
 
 
 @pf.tracer.grammar
-def wall_decoration_rand(
+def wall_arrangement_rand(
     rng: pf.RNG,
-    wall: pf.MeshObject,
-    window_obj: pf.MeshObject,
-    window_portal: pf.LightObject | None,
-    wall_material: pf.Material,
-    wall_material_alt: pf.Material,
+    wall: pf.MeshObject | None = None,
+    window_obj: pf.MeshObject | None = None,
+    window_portal: pf.LightObject | None = None,
+    wall_material: pf.Material | None = None,
     window_spacing: float | None = None,
     window_bottom: float | None = None,
     wall_thickness: float = 0.05,
-) -> WallFeatureResult:
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+
     def plain(rng, wall, wall_material):
         return wall_plain_rand(rng, wall, wall_material, wall_thickness=wall_thickness)
 
@@ -1172,36 +1273,6 @@ def wall_decoration_rand(
             wall_thickness=wall_thickness,
         )
 
-    def window_extrusion(rng, wall, wall_material):
-        return wall_window_extrusion_rand(
-            rng,
-            wall,
-            wall_material,
-            window_obj=window_obj,
-            window_portal=window_portal,
-            window_spacing=window_spacing,
-            window_bottom=window_bottom,
-            wall_thickness=wall_thickness,
-        )
-
-    def vertical_split(rng, wall, wall_material):
-        return wall_vertical_split_rand(
-            rng,
-            wall,
-            wall_material,
-            wall_material_alt=wall_material_alt,
-            wall_thickness=wall_thickness,
-        )
-
-    def horizontal_split(rng, wall, wall_material):
-        return wall_horizontal_split_rand(
-            rng,
-            wall,
-            wall_material,
-            wall_material_alt=wall_material_alt,
-            wall_thickness=wall_thickness,
-        )
-
     def painting_grid(rng, wall, wall_material):
         return wall_painting_grid_rand(
             rng, wall, wall_material, wall_thickness=wall_thickness
@@ -1209,11 +1280,6 @@ def wall_decoration_rand(
 
     def board_shelf(rng, wall, wall_material):
         return wall_board_shelf_rand(
-            rng, wall, wall_material, wall_thickness=wall_thickness
-        )
-
-    def storage_shelf(rng, wall, wall_material):
-        return wall_storage_shelf_rand(
             rng, wall, wall_material, wall_thickness=wall_thickness
         )
 
@@ -1239,12 +1305,8 @@ def wall_decoration_rand(
         [
             (plain, 0.5),
             (windows, 3.0),
-            # (window_extrusion, 0.0),
-            # (vertical_split, 0.0),
-            # (horizontal_split, 0.0),
             (painting_grid, 1.0),
             (board_shelf, 1.5),
-            # (storage_shelf, 0.0),
             (storage_flush, 1.0),
             (cubby, 0.5),
             (doors, 0.2),
@@ -1252,17 +1314,6 @@ def wall_decoration_rand(
         ],
     )
     return option(rng=rng_feature, wall=wall, wall_material=wall_material)
-
-
-class WallFeaturesResult(NamedTuple):
-    wall_planes: list[pf.MeshObject]
-    backs: list[pf.MeshObject]  # structural wall-back lightblocker meshes
-    sills: list[pf.MeshObject]  # cutout reveal/sill meshes
-    storage: list[pf.MeshObject]
-    lights: list[pf.LightObject]  # window portals
-    decorations: dict[
-        str, list[pf.MeshObject]
-    ]  # window/painting/shelf/door instances by type
 
 
 class CeilingFeaturesResult(NamedTuple):
@@ -1494,11 +1545,11 @@ def ceiling_light_placement_rand(
 
 
 @pf.tracer.grammar
-def wall_feature_rand(
+def room_walls_rand(
     rng: pf.RNG,
     shape: RoomShapeResult,
     wall_thickness: float = 0.1,
-) -> WallFeaturesResult:
+) -> WallResult:
     vec_wall = pf.nodes.shader.coord().uv
 
     rng_materials, rng_window, rng_walls = rng.spawn(3)
@@ -1514,7 +1565,9 @@ def wall_feature_rand(
         surface=wall_material_1.surface,
         displacement=wall_material_1.displacement,
     )
-    pf.ops.modifier.subdivide_surface(shape.walls, levels=8, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(
+        shape.walls, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True
+    )
 
     edge_gap_pct = 0.10
     edge_gap = edge_gap_pct * shape.dimensions.z
@@ -1523,11 +1576,10 @@ def wall_feature_rand(
         rng_window, 0.75, 0.2, 0.6, 1.0 - 2.0 * edge_gap_pct
     )
     window_height = shape.dimensions.z * window_height_pct
-    # one window object is reused on every wall, so it must fit the narrowest one
-    narrowest_wall = min(_wall_uv_width(w) for w in shape.flat_walls)
-    max_window_width = 0.7 * narrowest_wall
-    window_width = max_window_width * (
-        0.4 + 0.6 * pf.random.uniform(rng_window, 0.0, 1.0) ** 2
+    # window size is independent of walls; too-wide windows fall back to plain wall
+    max_window_width = max(2.0, max(shape.dimensions.x, shape.dimensions.y) - 0.5)
+    window_width = (
+        1.0 + (max_window_width - 1.0) * pf.random.uniform(rng_window, 0.0, 1.0) ** 2
     )
     window_dimensions = window.window_dimensions_rand(
         rng_window, width=window_width, height=window_height
@@ -1565,13 +1617,12 @@ def wall_feature_rand(
             rng_wall_mat,
             [(wall_material_1, 3), (wall_material_2, 1)],
         )
-        result = wall_decoration_rand(
+        result = wall_arrangement_rand(
             rng_wall_dec,
             wall,
             window_obj,
             window_portal,
             wall_material=mat,
-            wall_material_alt=wall_material_2,
             window_spacing=window_spacing,
             window_bottom=window_bottom,
             wall_thickness=wall_thickness,
@@ -1581,7 +1632,7 @@ def wall_feature_rand(
             flat_decorations, colliders, key=lambda o: o
         )
         dropped = set(id(o) for o in flat_decorations) - set(id(o) for o in kept)
-        wall_planes.extend(result.wall_geom)
+        wall_planes.extend(result.wall_planes)
         backs.extend(result.backs)
         sills.extend(result.sills)
         storage.extend(o for o in result.storage if id(o) not in dropped)
@@ -1595,8 +1646,13 @@ def wall_feature_rand(
         logger.info(f"Created {len(objs)} wall {kind} objects")
     logger.info(f"Created {len(storage)} wall storage surfaces")
 
-    return WallFeaturesResult(
+    # storage aliases also appear under decorations, so dedup by identity
+    objects = wall_planes + [shape.walls] + backs + sills + storage
+    objects += [o for objs in decorations.values() for o in objs]
+    return WallResult(
+        all_objects=list({id(o): o for o in objects}.values()),
         wall_planes=wall_planes,
+        corner_walls=[shape.walls],
         backs=backs,
         sills=sills,
         storage=storage,
@@ -1823,7 +1879,9 @@ def ceiling_feature_rand(
         surface=floor_mat.surface,
         displacement=floor_mat.displacement,
     )
-    pf.ops.modifier.subdivide_surface(shape.floor, levels=8, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(
+        shape.floor, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True
+    )
 
     ceiling_mat = ceiling_material_rand(rng_ceiling_mat, vec_pos)
     pf.ops.object.set_material(
@@ -1831,7 +1889,9 @@ def ceiling_feature_rand(
         surface=ceiling_mat.surface,
         displacement=ceiling_mat.displacement,
     )
-    pf.ops.modifier.subdivide_surface(shape.ceiling, levels=8, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(
+        shape.ceiling, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True
+    )
 
     def ceiling_plain_with_lights(rng: pf.RNG):
         ceiling_back = _extrude_for_thickness(shape.ceiling, wall_thickness)

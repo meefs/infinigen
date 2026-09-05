@@ -34,8 +34,8 @@ from infinigen2.scenes.room.room_small_objects import (
 )
 from infinigen2.scenes.room.room_surface_features import (
     ceiling_feature_rand,
+    room_walls_rand,
     skirting_rand,
-    wall_feature_rand,
 )
 
 __all__ = [
@@ -140,7 +140,7 @@ def _furnished_room_rand(
     rng_shape, rng_walls, rng_ceiling, rng_skirting = rng_room.spawn(4)
     shape = room_shape_rand(rng_shape, dimensions=dimensions)
     logger.info(f"Created room shape with {len(shape.flat_walls)} flat walls")
-    wall_result = wall_feature_rand(rng_walls, shape)
+    wall_result = room_walls_rand(rng_walls, shape)
     logger.info(
         f"Created wall features with {len(wall_result.wall_planes)} wall planes"
     )
