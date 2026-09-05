@@ -207,3 +207,29 @@ def test_generators_naming_validate(name: str) -> None:
         f"Manifest entry {name!r} ends in '_distribution'; "
         f"use the '_rand' suffix instead (e.g. rename to '{suggested}')."
     )
+
+
+@pytest.mark.parametrize(
+    ("shortname", "demo"),
+    [
+        ("brick_concrete_rand", "material_plane_uv"),
+        ("bricks_masonry_rand", "material_plane_uv"),
+        ("bricks_rand", "material_plane_uv"),
+        ("bricks_paint_rand", "material_plane_uv"),
+        ("bricks_pristine_rand", "material_plane_uv"),
+        ("paint_rand", "material_cube"),
+        ("paint_flaked_rand", "material_plane_uv"),
+        ("paint_patterned_rand", "material_plane_uv"),
+        ("paint_wall_rand", "material_plane_uv"),
+        ("skirt_material_rand", "material_torus_uv"),
+        ("tile_rand", "material_plane_uv"),
+        ("tile_indoor_wall_rand", "material_plane_uv"),
+        ("tile_outdoor_wall_rand", "material_plane_uv"),
+        ("wall_material_rand", "material_plane_uv"),
+    ],
+)
+def test_material_integration_uses_readable_demo(shortname: str, demo: str) -> None:
+    names = GENERATORS_MANIFEST["name"].str.rsplit(".", n=1).str[-1]
+    row = GENERATORS_MANIFEST[names == shortname].iloc[0]
+    expected = f"{shortname} {demo} render_cycles"
+    assert row["integration_test_string"] == expected

@@ -268,6 +268,7 @@
   {
     "category": "Material",
     "name": "infinigen2.shaders.base_materials.paint.paint_rand",
+    "integration_test_string": "paint_rand material_cube render_cycles",
     "presets": [
       "paint_small_bumps_preset",
       "paint_splats_preset",
@@ -408,23 +409,28 @@
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.functionality_lists.paint_wall_rand"
+    "name": "infinigen2.shaders.functionality_lists.paint_wall_rand",
+    "integration_test_string": "paint_wall_rand material_plane_uv render_cycles"
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.functionality_lists.paint_flaked_rand"
+    "name": "infinigen2.shaders.functionality_lists.paint_flaked_rand",
+    "integration_test_string": "paint_flaked_rand material_plane_uv render_cycles"
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.functionality_lists.paint_patterned_rand"
+    "name": "infinigen2.shaders.functionality_lists.paint_patterned_rand",
+    "integration_test_string": "paint_patterned_rand material_plane_uv render_cycles"
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.functionality_lists.wall_material_rand"
+    "name": "infinigen2.shaders.functionality_lists.wall_material_rand",
+    "integration_test_string": "wall_material_rand material_plane_uv render_cycles"
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.functionality_lists.skirt_material_rand"
+    "name": "infinigen2.shaders.functionality_lists.skirt_material_rand",
+    "integration_test_string": "skirt_material_rand material_torus_uv render_cycles"
   },
   {
     "category": "Material",
