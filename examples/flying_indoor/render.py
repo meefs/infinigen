@@ -32,11 +32,13 @@ from infinigen2.exporters.util.format import ExportType, RenderPass
 from infinigen2.animations.random_walk import random_walk
 from infinigen2.cameras import (
     attach_stereo_right,
+    camera_cube_free_space_check,
     sample_baseline,
     stereo_accept_pred,
 )
 from infinigen2.cameras.util import pose_and_filter
 from infinigen2.scenes import floating_objects
+import infinigen2.scenes.placement.collision as ccol
 from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.scenes.room import room, room_shape
 from infinigen2.util.errors import RejectedScene
@@ -45,6 +47,20 @@ from infinigen2.util.render_metadata import time_step, write_render_metadata
 from infinigen2.util.scene_cleanup import cleanup_except
 
 logger = logging.getLogger(__name__)
+
+
+def _camera_accept_pred(
+    camera: pf.CameraObject,
+    colliders: ccol.CollisionSet,
+    floor_colliders: ccol.CollisionSet,
+) -> bool:
+    if not camera_cube_free_space_check(camera, colliders, forward_clearance=0.75):
+        return False
+    origin = np.array([camera.item().matrix_world.translation])
+    _hits, ray_indices, _tri_indices = ccol.raycast(
+        floor_colliders, origin, np.array([[0.0, 0.0, -1.0]])
+    )
+    return len(ray_indices) > 0
 
 
 def _parse_seed(value: str) -> int:
@@ -174,7 +190,11 @@ def build_scene(
     with time_step(times, "stereo_camera"):
         # the rig is a property of the scene; trajectory_seed varies only the path
         baseline = sample_baseline(cam_rngs[1])
-        accept_pred = stereo_accept_pred(baseline)
+        floor_colliders = ccol.collision_set([living.floor])
+        floor_accept_pred = partial(
+            _camera_accept_pred, floor_colliders=floor_colliders
+        )
+        accept_pred = stereo_accept_pred(baseline, accept_pred=floor_accept_pred)
         camera_left = pf.ops.primitives.perspective_camera(focal_length_mm=15)
         place = partial(
             _place_and_walk_camera,

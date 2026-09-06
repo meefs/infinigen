@@ -11,8 +11,8 @@ import infinigen2.scenes.placement.collision as ccol
 from .util import (
     AcceptPred,
     attach_stereo_right,
-    camera_collision_check,
-    camera_transform_collision_check,
+    camera_cube_free_space_check,
+    camera_transform_cube_free_space_check,
 )
 
 __all__ = [
@@ -39,7 +39,7 @@ def stereo_accept_pred(
     is collision-validated too. Pass to any monocular camera placement (e.g.
     ``random_walk_camera``) so both eyes are checked at every pose, then realize
     the right camera with :func:`attach_stereo_right`."""
-    left_pred = accept_pred or camera_collision_check
+    left_pred = accept_pred or camera_cube_free_space_check
 
     def pred(camera_left: pf.CameraObject, colliders: ccol.CollisionSet) -> bool:
         if not left_pred(camera_left, colliders):
@@ -48,6 +48,6 @@ def stereo_accept_pred(
         right_transform = left_transform.copy()
         right_origin = camera_left.item().matrix_world @ pf.Vector((baseline, 0, 0))
         right_transform[:3, 3] = np.array(right_origin, dtype=np.float64)
-        return camera_transform_collision_check(right_transform, colliders)
+        return camera_transform_cube_free_space_check(right_transform, colliders)
 
     return pred

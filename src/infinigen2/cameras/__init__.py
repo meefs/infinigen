@@ -13,8 +13,8 @@ from .stereo import (
 )
 from .util import (
     attach_stereo_right,
-    camera_collision_check,
-    camera_transform_collision_check,
+    camera_cube_free_space_check,
+    camera_transform_cube_free_space_check,
     total_bbox,
 )
 
@@ -30,7 +30,7 @@ __all__ = [
     "stereo_accept_pred",
     "rrt_camera",
     "rrt_camera_fast",
-    "camera_collision_check",
-    "camera_transform_collision_check",
+    "camera_cube_free_space_check",
+    "camera_transform_cube_free_space_check",
     "total_bbox",
 ]

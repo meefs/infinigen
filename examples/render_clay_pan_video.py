@@ -6,6 +6,7 @@ depth/normal/object/flow."""
 # ruff: noqa: I001, E402
 
 import argparse
+import functools
 import logging
 import os
 from pathlib import Path
@@ -31,7 +32,8 @@ from infinigen2.exporters.render_cycles import (
 from infinigen2.exporters.render_cycles_clay import render_cycles_clay
 from infinigen2.exporters.util.blender_render import DisplacementMode
 from infinigen2.exporters.util.format import ExportType, RenderPass
-from infinigen2.cameras import monocular
+from infinigen2.cameras import camera_cube_free_space_check, monocular
+import infinigen2.scenes.placement.collision as ccol
 from infinigen2.scenes.room import room
 from infinigen2.util.render_metadata import time_step, write_render_metadata
 from infinigen2.util.scene_cleanup import cleanup_except
@@ -39,6 +41,20 @@ from infinigen2.util.scene_cleanup import cleanup_except
 logger = logging.getLogger(__name__)
 
 AO_DISTANCE = 2.0
+
+
+def _camera_accept_pred(
+    camera: pf.CameraObject,
+    colliders: ccol.CollisionSet,
+    floor_colliders: ccol.CollisionSet,
+) -> bool:
+    if not camera_cube_free_space_check(camera, colliders, forward_clearance=0.75):
+        return False
+    origin = np.array([camera.item().matrix_world.translation])
+    _hits, ray_indices, _tri_indices = ccol.raycast(
+        floor_colliders, origin, np.array([[0.0, 0.0, -1.0]])
+    )
+    return len(ray_indices) > 0
 
 
 def main():
@@ -110,6 +126,10 @@ def main():
         )
     dimensions = living.dimensions
     objects = list(living.all_objects)
+    floor_colliders = ccol.collision_set([living.floor])
+    accept_pred = functools.partial(
+        _camera_accept_pred, floor_colliders=floor_colliders
+    )
 
     with time_step(times, "linear_pan_camera"):
         gen_rng, rng = rng.spawn(2)
@@ -120,6 +140,7 @@ def main():
             bbox=(np.zeros(3), np.array(dimensions)),
             frame_start=frame_start,
             frame_end=frame_end,
+            accept_pred=accept_pred,
         )
     camera = cameras[0]
 

@@ -16,8 +16,8 @@ from infinigen2.util.errors import RejectedScene
 
 __all__ = [
     "attach_stereo_right",
-    "camera_collision_check",
-    "camera_transform_collision_check",
+    "camera_cube_free_space_check",
+    "camera_transform_cube_free_space_check",
     "pose_and_filter",
     "total_bbox",
 ]
@@ -40,16 +40,16 @@ def total_bbox(objects: list[pf.MeshObject]) -> tuple[np.ndarray, np.ndarray]:
     return all_min, all_max
 
 
-def camera_collision_check(
+def camera_cube_free_space_check(
     camera: pf.CameraObject,
     colliders: ccol.CollisionSet,
     probe_offset: float = 0.0,
     probe_size: float = 0.75,
     forward_clearance: float = 0.0,
 ) -> bool:
-    """Return True if camera pose is acceptable (no collision)."""
+    """Return whether the camera's clearance cubes avoid all colliders."""
     bpy.context.view_layer.update()
-    return camera_transform_collision_check(
+    return camera_transform_cube_free_space_check(
         np.array(camera.item().matrix_world),
         colliders,
         probe_offset=probe_offset,
@@ -58,14 +58,14 @@ def camera_collision_check(
     )
 
 
-def camera_transform_collision_check(
+def camera_transform_cube_free_space_check(
     transform: np.ndarray,
     colliders: ccol.CollisionSet,
     probe_offset: float = 0.0,
     probe_size: float = 0.75,
     forward_clearance: float = 0.0,
 ) -> bool:
-    """Return True if a camera collision box at *transform* is acceptable."""
+    """Return whether clearance cubes at *transform* avoid all colliders."""
     transform = np.array(transform, dtype=np.float64, copy=True)
     offsets = [probe_offset]
     if forward_clearance > 0:
@@ -105,7 +105,7 @@ def pose_and_filter(
     loc, rot = pose_rand(r)
     pf.ops.object.set_transform(cam, location=loc, rotation_euler=rot)
     if colliders is not None:
-        pred = accept_pred or camera_collision_check
+        pred = accept_pred or camera_cube_free_space_check
         if not pred(cam, colliders):
             return None
     return loc, rot

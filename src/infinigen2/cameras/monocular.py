@@ -3,6 +3,8 @@
 
 # Authors: Alexander Raistrick, Karhan Kayan
 
+import functools
+
 import numpy as np
 import procfunc as pf
 
@@ -13,7 +15,7 @@ from infinigen2.util.errors import RejectedScene
 from .util import (
     AcceptPred,
     _place_camera_in_bbox,
-    camera_collision_check,
+    camera_cube_free_space_check,
     total_bbox,
 )
 
@@ -70,12 +72,12 @@ def _linear_pan_attempt(
     max_length: float,
     frame_start: int,
     steps: int,
-    forward_clearance: float,
+    accept_pred: AcceptPred,
 ) -> pf.CameraObject | None:
     """One linear-pan trajectory: a straight segment between two points sampled
     uniformly in the interior box, shortened to `max_length` if it would exceed
     the per-frame speed cap. Sets/checks/keyframes each pose in a single pass;
-    returns None (for retry) the moment a pose fails the collision probe."""
+    returns None (for retry) the moment a pose fails `accept_pred`."""
     height_frac = float(pf.random.clip_gaussian(r, 0.5, 0.2, 0.2, 0.8))
     z = box_lo.z + height_frac * (box_hi.z - box_lo.z)
     lo_z = pf.Vector((box_lo.x, box_lo.y, z))
@@ -98,9 +100,7 @@ def _linear_pan_attempt(
     for t in range(steps + 1):
         loc = start.lerp(end, t / steps)
         pf.ops.object.set_transform(camera, location=loc, rotation_euler=rot)
-        if not camera_collision_check(
-            camera, colliders, forward_clearance=forward_clearance
-        ):
+        if not accept_pred(camera, colliders):
             return None
         camera.item().keyframe_insert("location", frame=frame_start + t)
         camera.item().keyframe_insert("rotation_euler", frame=frame_start + t)
@@ -120,12 +120,21 @@ def linear_pan_camera_rand(
     footprint_frac: float = 0.4,
     forward_clearance: float = 0.75,
     max_tries: int = 200,
+    accept_pred: AcceptPred | None = None,
 ) -> list[pf.CameraObject]:
     """Dolly travelling in a straight line between two points drawn uniformly in
     the room interior, at up to `speed` metres/frame, holding a random fixed yaw
-    and slight downward pitch so the scene slides across the view."""
+    and slight downward pitch so the scene slides across the view.
+
+    `accept_pred` replaces the default collision probe as the test every pose
+    along the trajectory must satisfy, so a custom predicate must include any
+    required collision checks."""
     if bbox is None:
         bbox = total_bbox(objects)
+    if accept_pred is None:
+        accept_pred = functools.partial(
+            camera_cube_free_space_check, forward_clearance=forward_clearance
+        )
     bb_lo, bb_hi = bbox
     lo = pf.Vector(tuple(float(v) for v in bb_lo))
     hi = pf.Vector(tuple(float(v) for v in bb_hi))
@@ -163,7 +172,7 @@ def linear_pan_camera_rand(
         max_length=max_length,
         frame_start=frame_start,
         steps=steps,
-        forward_clearance=forward_clearance,
+        accept_pred=accept_pred,
     )
     if result is None:
         raise RejectedScene(

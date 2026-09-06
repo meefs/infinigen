@@ -6,7 +6,7 @@ import procfunc as pf
 
 import infinigen2.scenes.placement.collision as ccol
 from infinigen2.cameras.stereo import stereo_accept_pred
-from infinigen2.cameras.util import attach_stereo_right, camera_collision_check
+from infinigen2.cameras.util import attach_stereo_right, camera_cube_free_space_check
 
 
 def _left_clear_right_blocked():
@@ -27,7 +27,7 @@ def _left_clear_right_blocked():
 def test_stereo_accept_pred_rejects_blocked_right_eye():
     left, colliders, baseline = _left_clear_right_blocked()
     # the monocular check passes - the left camera itself is clear
-    assert camera_collision_check(left, colliders) is True
+    assert camera_cube_free_space_check(left, colliders) is True
     # the stereo predicate rejects it because the right eye would collide
     assert stereo_accept_pred(baseline)(left, colliders) is False
 
