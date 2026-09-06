@@ -430,8 +430,7 @@ def wall_painting_grid_rand(
     rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
     wall_width, wall_height = _wall_uv_dimensions(wall)
 
-    # margins first, then size each painting dimension from 0.5m up to 80% of the
-    # wall extent minus its margins
+    # margins first, then size each painting against the remaining wall region
     top_gap = max(0.12, 0.10 * wall_height)
     side_margin = wall_width * pf.random.uniform(rng, 0.075, 0.25) * 2.0
     avail_w = wall_width - side_margin
@@ -439,12 +438,8 @@ def wall_painting_grid_rand(
     bottom_min = 0.30 * wall_height
     avail_v = wall_height - bottom_min - top_gap
 
-    art_height = pf.random.uniform(rng, 0.5, max(0.5, 0.8 * avail_v))
-    # width caps at 2x height so paintings never become thin horizontal bars;
-    # portrait (taller than wide) is unconstrained
-    art_width = pf.random.uniform(
-        rng, 0.5, max(0.5, min(0.8 * avail_w, 2.0 * art_height))
-    )
+    art_height = pf.random.uniform(rng, 0.5, max(0.5, 0.9 * avail_v))
+    art_width = pf.random.uniform(rng, 0.5, max(0.5, 0.9 * avail_w))
     art_depth = pf.random.uniform(rng, 0.03, 0.06)
     art = wall_art.wall_art_rand(
         rng, dimensions=pf.Vector((art_depth, art_width, art_height))
@@ -453,9 +448,8 @@ def wall_painting_grid_rand(
     wall_thick = _extrude_for_thickness(wall, wall_thickness)
     wall_thick.item().name = "room_wall_back"
 
-    # small gaps (down to 0.1m) let paintings cluster into tight grids
-    spacing_x = pf.random.uniform(rng, 0.1, 1.5 * art_width)
-    spacing_y = pf.random.uniform(rng, 0.1, 1.5 * art_height)
+    spacing_x = pf.random.uniform(rng, 0.1, 0.5)
+    spacing_y = pf.random.uniform(rng, 0.1, 0.5)
     margin_split = pf.random.uniform(rng, 0.375, 0.625)
 
     # stack 1..3 rows in the top region, biased upward: the slack is pushed below
@@ -815,6 +809,14 @@ def _fit_grid_margins(
     return min_margin + slack * split, min_margin + slack * (1 - split), n
 
 
+def _wall_storage_width_rand(
+    rng: pf.RNG, wall_width: float, min_margin: float
+) -> float:
+    usable_width = max(0.8, wall_width - 2 * min_margin)
+    max_width = 0.9 * usable_width
+    return pf.random.uniform(rng, min(1.0, max_width), max_width)
+
+
 @pf.tracer.grammar
 def wall_storage_shelf_rand(
     rng: pf.RNG,
@@ -827,9 +829,8 @@ def wall_storage_shelf_rand(
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
 
-    # half-depth edge margins keep corner cabinets clear; guard tiny walls
+    # half-depth edge margins keep corner cabinets clear
     min_margin = depth * 0.5
-    usable_width = max(0.8, wall_width - 2 * min_margin)
 
     # bimodal cabinet height: short band vs tall band
     def _short_band() -> float:
@@ -840,8 +841,7 @@ def wall_storage_shelf_rand(
 
     height = pf.control.choice(rng, [(_short_band, 1.0), (_tall_band, 1.0)])()
 
-    max_width = usable_width * 0.98
-    width = pf.random.uniform(rng, min(1.5, max_width), max_width)
+    width = _wall_storage_width_rand(rng, wall_width, min_margin)
     spacing_x = pf.random.uniform(rng, 0.1, 0.5)
 
     margin_split = pf.random.uniform(rng, 0.375, 0.625)
@@ -909,6 +909,7 @@ def wall_cubby_rand(
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
     min_margin = depth * 0.5
+    width = _wall_storage_width_rand(rng, wall_width, min_margin)
 
     bottom = pf.random.uniform(rng, 0.25, 0.45) * wall_height
     top = (0.02 + 0.18 * pf.random.uniform(rng, 0.0, 1.0) ** 2) * wall_height
@@ -918,9 +919,6 @@ def wall_cubby_rand(
     hi = max(0.6, min(band, 0.8 * wall_height))
     height = pf.random.clip_gaussian(rng, 0.6, 0.5, 0.6, hi)
     height = min(height, band, 0.8 * wall_height)
-    aspect = pf.random.clip_gaussian(rng, 4.0, 1.0, 0.2, 5.0)
-    width = min(height * aspect, 0.8 * wall_width)
-
     spacing_x = pf.random.uniform(rng, 0.1, 0.5)
     spacing_y = pf.random.uniform(rng, 0.05, 0.6) * height
 
@@ -1005,7 +1003,6 @@ def wall_storage_flush_rand(
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
     min_margin = depth * 0.5
-    usable_width = max(0.8, wall_width - 2 * min_margin)
 
     def _short_band() -> float:
         return wall_height * pf.random.uniform(rng, 0.20, 0.50)
@@ -1015,8 +1012,7 @@ def wall_storage_flush_rand(
 
     height = pf.control.choice(rng, [(_short_band, 1.0), (_tall_band, 1.0)])()
 
-    max_width = usable_width * 0.98
-    width = pf.random.uniform(rng, min(1.5, max_width), max_width)
+    width = _wall_storage_width_rand(rng, wall_width, min_margin)
     spacing_x = pf.random.uniform(rng, 0.1, 0.5)
 
     margin_split = pf.random.uniform(rng, 0.375, 0.625)

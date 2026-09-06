@@ -162,7 +162,10 @@ def art_frame_swept(
     centerline = pf.nodes.geo.set_curve_normal(
         centerline, normal=(0.0, 0.0, -1.0), mode="FREE"
     )
-    swept = curve_to_mesh_with_uv(centerline, frame_profile).mesh
+    mitered_profile = pf.nodes.geo.transform(
+        geometry=frame_profile, scale=(1.0, 2**0.5, 1.0)
+    )
+    swept = curve_to_mesh_with_uv(centerline, mitered_profile).mesh
     swept = pf.nodes.geo.flip_faces(swept)
     frame = pf.nodes.geo.set_material(
         geometry=swept, material=frame_material, selection=True
