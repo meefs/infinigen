@@ -3,27 +3,16 @@
 
 # Authors: Alexander Raistrick
 
-import functools
 import logging
 from typing import NamedTuple
 
 import procfunc as pf
 
 from infinigen2.lighting import sky_lighting
+from infinigen2.scenes.desk_setup import desk_setup_in_room_rand
+from infinigen2.scenes.dining_table_setup import dining_table_setup_rand
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding
-from infinigen2.scenes.room.room_furniture import (
-    MeshResult,
-    back_face_grounded,
-    dining_table_setup_rand,
-    retry_place,
-    snap_back_front,
-    snap_on_top,
-    sofa_lamps_rand,
-    sofa_setup_rand,
-    storage_object_rand,
-    table_decoration_object_rand,
-)
 from infinigen2.scenes.room.room_shape import (
     room_shape_rand,
 )
@@ -37,6 +26,15 @@ from infinigen2.scenes.room.room_surface_features import (
     room_walls_rand,
     skirting_rand,
 )
+from infinigen2.scenes.setup_utils import (
+    MeshResult,
+    retry_place,
+    snap_on_top,
+    sofa_lamps_rand,
+    table_decoration_object_rand,
+)
+from infinigen2.scenes.sofa_setup import sofa_setup_rand
+from infinigen2.scenes.wall_storage_setup import wall_storage_setup_rand
 
 __all__ = [
     "LivingroomResult",
@@ -71,37 +69,6 @@ def _rename(objs: list[pf.MeshObject], name: str) -> list[pf.MeshObject]:
     return named
 
 
-def _wall_storage_objects(
-    rng: pf.RNG,
-    wall_planes: list[pf.MeshObject],
-    colliders: ccol.CollisionSet,
-) -> tuple[list[MeshResult], ccol.CollisionSet]:
-    n = pf.random.randint(rng, 4, 10)
-    rngs = rng.spawn(n)
-    storage = [storage_object_rand(rngs[i]) for i in range(n)]
-    wall_margins = [pf.random.uniform(rngs[i], 0.03, 0.10) for i in range(n)]
-    wall_colliders = ccol.collision_set(wall_planes)
-    placed_storage = []
-    for i in range(n):
-        grounded = functools.partial(
-            back_face_grounded, colliders=wall_colliders, margin=wall_margins[i]
-        )
-        storage_obj = retry_place(
-            rngs[i],
-            storage[i],
-            colliders,
-            snap_back_front,
-            attempts=12,
-            parents=wall_planes,
-            margin=wall_margins[i],
-            accept_fn=grounded,
-        )
-        placed_storage.append(storage_obj)
-    storage_objects, colliders = keep_non_colliding(placed_storage, colliders)
-    logger.info(f"Placed {len(storage_objects)} storage objects out of {n} attempts")
-    return storage_objects, colliders
-
-
 def _surface_decorations(
     rng: pf.RNG,
     surface_meshes: list[pf.MeshObject],
@@ -125,15 +92,21 @@ def _surface_decorations(
     return decorations, colliders
 
 
+def _desk_active_rand(rng: pf.RNG) -> bool:
+    return pf.control.choice(rng, [(False, 7.0), (True, 3.0)])
+
+
 def _furnished_room_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None,
     setups: list[tuple[object, float]],
 ) -> LivingroomResult:
     """Build the room shell, pick one furniture centerpiece from `setups`, add wall
-    storage, lamps, surface decorations and scattered small objects. `setups` is a
-    weighted list of setup entrypoints (e.g. sofa_setup_rand, dining_table_setup_rand),
-    each called with (rng, wall_planes, room_dimensions, colliders)."""
+    storage, lamps, surface decorations and scattered small objects. After the
+    centerpiece choice, a desk setup is independently added 30% of the time.
+    `setups` is a weighted list of setup entrypoints (e.g. sofa_setup_rand,
+    dining_table_setup_rand), each called with (rng, wall_planes, room_dimensions,
+    colliders)."""
     # rng lanes: 0 room shell, 1 furniture, 2 small objects
     rng_room, rng_furniture, rng_small = rng.spawn(3)
 
@@ -170,7 +143,14 @@ def _furnished_room_rand(
     windowsills = wall_result.sills + ceiling_result.sills
     room_dimensions = shape.dimensions
 
-    rng_sky, rng_setup, rng_lamp, rng_storage_place, rng_decor = rng_furniture.spawn(5)
+    (
+        rng_sky,
+        rng_setup,
+        rng_desk,
+        rng_lamp,
+        rng_storage_place,
+        rng_decor,
+    ) = rng_furniture.spawn(6)
     sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
     colliders = ccol.collision_set(
         wall_result.wall_planes
@@ -197,6 +177,22 @@ def _furnished_room_rand(
     ]
     colliders = ccol.collision_set(colliders.objs + solid, cache=colliders)
 
+    rng_desk_active, rng_desk_setup = rng_desk.spawn(2)
+    desk_result = None
+    if _desk_active_rand(rng_desk_active):
+        desk_result = desk_setup_in_room_rand(
+            rng_desk_setup,
+            wall_planes=wall_result.wall_planes,
+            room_dimensions=room_dimensions,
+            colliders=colliders,
+        )
+    desks = [desk_result.desk] if desk_result is not None else []
+    desk_chairs = [desk_result.chair] if desk_result is not None else []
+    desk_lamps = list(desk_result.lamps) if desk_result is not None else []
+    desk_lights = list(desk_result.lights) if desk_result is not None else []
+    desk_objects = desk_result.all_objects if desk_result is not None else []
+    colliders = ccol.collision_set(colliders.objs + desk_objects, cache=colliders)
+
     floor_lamps, table_lamps, lamp_lights, colliders = sofa_lamps_rand(
         rng_lamp,
         [r.mesh for r in sofas],
@@ -204,15 +200,20 @@ def _furnished_room_rand(
         colliders,
     )
 
-    storage_objects, colliders = _wall_storage_objects(
-        rng_storage_place, wall_result.wall_planes, colliders
+    storage_setup = wall_storage_setup_rand(
+        rng_storage_place,
+        wall_planes=wall_result.wall_planes,
+        room_dimensions=room_dimensions,
+        colliders=colliders,
     )
+    storage_objects = storage_setup.storage
+    colliders = storage_setup.colliders
 
     surface_results = dining_tables + coffee_tables + side_tables + storage_objects
-    surface_meshes = [r.mesh for r in surface_results]
+    surface_meshes = [r.mesh for r in surface_results] + desks
     decorations, colliders = _surface_decorations(rng_decor, surface_meshes, colliders)
 
-    lights = lights + sky.lights + lamp_lights
+    lights = lights + sky.lights + lamp_lights + desk_lights
 
     all_furniture = (
         _rename(list(getattr(setup, "rugs", [])), "rug")
@@ -225,6 +226,9 @@ def _furnished_room_rand(
         + _rename([r.mesh for r in decorations], "decoration")
         + _rename([r.mesh for r in dining_tables], "dining_table")
         + _rename([r.mesh for r in dining_chairs], "dining_chair")
+        + _rename(desks, "desk")
+        + _rename(desk_chairs, "desk_chair")
+        + _rename(desk_lamps, "desk_lamp")
     )
 
     furnished_objects = all_room + all_furniture

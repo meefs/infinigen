@@ -515,13 +515,38 @@
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_furniture.dining_setup_rand",
+    "name": "infinigen2.scenes.dining_table_setup.dining_setup_rand",
     "integration_test_string": "dining_setup_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_furniture.centered_sofa_setup_rand",
+    "name": "infinigen2.scenes.dining_table_setup.dining_table_setup_rand",
+    "integration_test_string": "dining_table_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.centered_sofa_setup.centered_sofa_setup_rand",
     "integration_test_string": "centered_sofa_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.wall_sofa_setup.wall_sofa_setup_rand",
+    "integration_test_string": "wall_sofa_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.sofa_setup.sofa_setup_rand",
+    "integration_test_string": "sofa_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.wall_storage_setup.wall_storage_setup_rand",
+    "integration_test_string": "wall_storage_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.desk_setup.desk_setup_rand",
+    "integration_test_string": "desk_setup_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
