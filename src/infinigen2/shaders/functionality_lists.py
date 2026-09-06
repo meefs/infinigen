@@ -291,7 +291,8 @@ def furniture_fabric(
 @pf.tracer.grammar
 def paint_wall_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
     displacement_pct = pf.random.uniform(rng, 0.0, 0.8)
-    color = paint.paint_color_rand(rng)
+    paint_value = pf.random.clip_gaussian(rng, 0.5, 0.4, 0.02, 0.95)
+    color = paint.paint_color_rand(rng, value=paint_value, saturation_power=0.9)
     return paint.paint_rand(
         rng, vector, displacement_pct=displacement_pct, base_color=color
     )
