@@ -1351,6 +1351,11 @@ def skirting_on_walls_rand(
     if profile_curve is None:
         profile_curve = skirting_profile_rand(rng)
     profile_curve_geo = pf.nodes.geo.object_info(profile_curve).geometry
+    profile_y = pf.nodes.geo.input_position().y
+    profile_stat = pf.nodes.geo.attribute_statistic(
+        geometry=profile_curve_geo, attribute=profile_y
+    )
+    profile_height = profile_stat.max - profile_stat.min
     # close the silhouette so fill_caps can seal the cut ends at door gaps
     profile_curve_geo = pf.nodes.geo.set_spline_cyclic(profile_curve_geo, cyclic=True)
 
@@ -1365,7 +1370,8 @@ def skirting_on_walls_rand(
     ]
     joined = pf.nodes.geo.join_geometry(wall_geos)
     # weld coincident verts so boundary slivers collapse
-    joined = pf.nodes.geo.merge_by_distance(joined, distance=0.005)
+    wall_merge_distance = 0.005
+    joined = pf.nodes.geo.merge_by_distance(joined, distance=wall_merge_distance)
 
     # outward wall normal (swept depth is -normal): stable per-point across splits
     cap = pf.nodes.geo.capture_attribute(
@@ -1393,11 +1399,14 @@ def skirting_on_walls_rand(
     near_bottom = pf.nodes.func.boolean_and(a=near_bottom, b=long_edge)
     near_top = pf.nodes.func.boolean_and(a=near_top, b=long_edge)
 
-    # gap the floor curve under doorways: drop edges with open wall at knee height
+    # drop floor edges where the wall does not back the skirting profile
     mid = (edge_v.position_1 + edge_v.position_2) * 0.5
-    knee = pf.nodes.math.combine_xyz(x=mid.x, y=mid.y, z=z_stat.min + 0.5)
-    knee_prox = pf.nodes.geo.proximity(geometry=joined, sample_position=knee)
-    near_bottom = pf.nodes.func.boolean_and(a=near_bottom, b=knee_prox.distance < 0.05)
+    profile_top = pf.nodes.math.combine_xyz(
+        x=mid.x, y=mid.y, z=z_stat.min + profile_height
+    )
+    wall_prox = pf.nodes.geo.proximity(geometry=joined, sample_position=profile_top)
+    has_wall_backing = wall_prox.distance < wall_merge_distance
+    near_bottom = pf.nodes.func.boolean_and(a=near_bottom, b=has_wall_backing)
 
     floor_curve_node = _skirting_path_curve(
         joined, near_bottom, cap.wall_outward, up_sign=1.0

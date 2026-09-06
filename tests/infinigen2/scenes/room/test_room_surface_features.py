@@ -10,6 +10,7 @@ import procfunc as pf
 import pytest
 
 from infinigen2 import generate
+from infinigen2.curves import skirting_board_profile
 from infinigen2.scenes.room import room_surface_features
 from infinigen2.shaders import functionality_lists
 from infinigen2.util import mesh as mesh_util
@@ -112,3 +113,49 @@ def test_wall_cutouts_fall_back_on_narrow_wall(
 
     assert len(result.wall_planes) == 1
     assert result.decorations == {}
+
+
+def _wall_with_opening(opening_bottom: float) -> pf.MeshObject:
+    rectangles = [
+        (0.0, 1.0, 0.0, 2.5),
+        (1.0, 2.0, 0.0, opening_bottom),
+        (1.0, 2.0, 2.0, 2.5),
+        (2.0, 3.0, 0.0, 2.5),
+    ]
+    vertices = []
+    faces = []
+    for y_min, y_max, z_min, z_max in rectangles:
+        start = len(vertices)
+        vertices.extend(
+            [
+                (0.0, y_min, z_min),
+                (0.0, y_max, z_min),
+                (0.0, y_max, z_max),
+                (0.0, y_min, z_max),
+            ]
+        )
+        faces.append((start, start + 1, start + 2, start + 3))
+    return pf.ops.primitives.mesh_from_numpy(
+        vertices=np.array(vertices), faces=np.array(faces)
+    )
+
+
+@pytest.mark.parametrize(
+    "opening_bottom, profile_height, expected_under_opening",
+    [(0.15, 0.12, True), (0.15, 0.18, False), (0.01, 0.12, False)],
+    ids=["window-above-board", "window-overlaps-board", "door"],
+)
+def test_skirting_on_walls_follows_profile_height(
+    opening_bottom: float, profile_height: float, expected_under_opening: bool
+) -> None:
+    wall = _wall_with_opening(opening_bottom)
+    profile = skirting_board_profile.skirting_profile(height=profile_height, width=0.04)
+    material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
+
+    skirt = room_surface_features.skirting_on_walls_rand(
+        np.random.default_rng(2), [wall], material, profile_curve=profile
+    )[0]
+    vertices = np.array([vertex.co for vertex in skirt.item().data.vertices])
+    center_distance = np.abs(vertices[:, 1] - 1.5).min()
+
+    assert bool(center_distance < 0.05) == expected_under_opening
