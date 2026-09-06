@@ -14,6 +14,7 @@ __all__ = [
     "plastic_black_rubberized_preset",
     "plastic_black_translucent",
     "plastic_black_translucent_preset",
+    "plastic_grayscale_color_rand",
     "plastic_grayscale_rand",
     "plastic_high_gloss",
     "plastic_opaque",
@@ -30,6 +31,9 @@ __all__ = [
     "plastic_white_textured_preset",
 ]
 
+_PLASTIC_RELIEF_RATIO = 2.0
+_PLASTIC_RELIEF_TAPER_SIZE = 0.001
+
 
 def plastic_rand(
     rng: pf.RNG,
@@ -40,7 +44,7 @@ def plastic_rand(
     if translucence is None:
         translucence = 0.0
 
-    m_gloss = pf.random.uniform(rng, 0.0, 1.0)
+    roughness_max = pf.random.clip_gaussian(rng, 0.25, 0.25, 0.01, 0.75)
     m_size = pf.random.uniform(rng, 0.0, 1.0)
     m_colorvar = pf.random.uniform(rng, 0.0, 1.0)
     m_value = pf.random.uniform(rng, 0.0, 1.0)
@@ -55,8 +59,8 @@ def plastic_rand(
     c2_scale = 1.0 + (pf.random.uniform(rng, 0.5, 1.5) - 1.0) * m_colorvar
     color_2 = pf.nodes.color.hue_saturation(fac=1.0, color=base_color, value=c2_scale)
 
-    roughness = 0.9 * (0.01 / 0.9) ** m_gloss
-    roughness_min = roughness * pf.random.uniform(rng, 0.5, 1.0)
+    roughness_variation = pf.random.uniform(rng, 0.0, 1.0)
+    roughness_min = roughness_max * (0.5 + 0.5 * roughness_variation)
 
     specular = pf.random.uniform(rng, 0.2, 1.0)
     specular_min = specular * pf.random.uniform(rng, 0.35, 1.0)
@@ -66,9 +70,9 @@ def plastic_rand(
     ior = ior_opaque + (ior_translucent - ior_opaque) * translucence
 
     noise_size = 0.0002 * 5000.0 ** (m_size**2)
-    relief = pf.random.uniform(rng, 0.0, 1.2)
-    taper = 0.5 * relief * noise_size / 2.0e-3
-    noise_height = relief / (1.0 + taper**2)
+    bumpiness = pf.random.clip_gaussian(rng, 0.48, 0.5, 0.0, 1.5)
+    relief_taper = noise_size / _PLASTIC_RELIEF_TAPER_SIZE
+    noise_height = bumpiness * _PLASTIC_RELIEF_RATIO / (1.0 + relief_taper**2)
     noise_detail = pf.random.uniform(rng, 0.0, 5.0)
     noise_distortion_strength = pf.random.uniform(rng, 0.4, 1.0)
     noise_distortion_size = pf.random.uniform(rng, 0.0, 1.0)
@@ -79,7 +83,7 @@ def plastic_rand(
         surface_color_1=base_color,
         surface_color_2=color_2,
         surface_min_roughness=roughness_min,
-        surface_max_roughness=roughness,
+        surface_max_roughness=roughness_max,
         surface_min_specular=specular_min,
         surface_max_specular=specular,
         surface_ior=ior,
@@ -302,12 +306,28 @@ def plastic_opaque(
     )
 
 
+def plastic_grayscale_color_rand(rng: pf.RNG) -> pf.Color:
+    rng_band, rng_value = rng.spawn(2)
+    value_range = pf.control.choice(
+        rng_band,
+        [
+            ((0.02, 0.15), 0.6),
+            ((0.35, 0.90), 0.4),
+        ],
+    )
+    perceptual_value = pf.random.uniform(rng_value, value_range[0], value_range[1])
+    return pf.color.hsv_color(
+        hue=0.0,
+        saturation=0.0,
+        value=perceptual_value**2.2,
+    )
+
+
 def plastic_grayscale_rand(
     rng: pf.RNG,
     vector: pf.ProcNode[pf.Vector],
 ) -> pf.Material:
-    value = pf.random.uniform(rng, 0.02, 0.9)
-    base_color = pf.color.hsv_color(hue=0.0, saturation=0.0, value=value)
+    base_color = plastic_grayscale_color_rand(rng)
     return plastic_rand(rng, vector, base_color=base_color)
 
 
