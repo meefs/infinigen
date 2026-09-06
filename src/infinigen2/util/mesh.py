@@ -20,6 +20,7 @@ __all__ = [
     "crease_by_angle",
     "crease_sharp",
     "extrude_mesh_seamless_uvs",
+    "extrude_mesh_seamless_uvs_along",
     "face_selection_boundary_curve",
     "fill_between_curves",
     "grid_from_corners",
@@ -86,10 +87,10 @@ def _cylinder_side(
     )
     store_named_attribute = pf.nodes.geo.store_named_attribute(
         geometry=cylinder.mesh,
-        name="uv_map",
+        name="UVMap",
         value=cylinder.uv_map,
         domain="CORNER",
-        data_type=NodeDataType.FLOAT_VECTOR,
+        data_type="FLOAT2",
     )
     return _CylinderSideResult(
         store_named_attribute, cylinder.top, cylinder.side, cylinder.bottom
@@ -216,7 +217,7 @@ def extrude_mesh_seamless_uvs(
     offset_scale: t.SocketOrVal[float],
     uv_winding_sign: t.SocketOrVal[float] = 1.0,
 ) -> ExtrudeSeamlessResult:
-    """Extrude faces and continue source UVs onto the new side faces seamlessly.
+    """Extrude faces along their normals and continue source UVs seamlessly.
 
     Each side corner gets uv0 plus a perpendicular offset proportional to its
     extrusion depth. The boundary edge driving that offset is found per corner via
@@ -224,6 +225,24 @@ def extrude_mesh_seamless_uvs(
     broadcast across the side face with accumulate_field.
     """
 
+    return extrude_mesh_seamless_uvs_along(
+        mesh=mesh,
+        selection=selection,
+        offset_scale=offset_scale,
+        offset=pf.nodes.geo.input_normal(),
+        uv_winding_sign=uv_winding_sign,
+    )
+
+
+@pf.nodes.node_function
+def extrude_mesh_seamless_uvs_along(
+    mesh: pf.ProcNode[pf.MeshObject],
+    selection: t.SocketOrVal[bool],
+    offset_scale: t.SocketOrVal[float],
+    offset: t.SocketOrVal[pf.Vector],
+    uv_winding_sign: t.SocketOrVal[float] = 1.0,
+) -> ExtrudeSeamlessResult:
+    """Continue source UVs while extruding along an explicit offset."""
     uv_name = "UVMap"
     pos0 = pf.nodes.geo.input_position()
     uv0 = pf.nodes.geo.input_named_attribute(
@@ -235,6 +254,7 @@ def extrude_mesh_seamless_uvs(
         mesh=cap.geometry,
         selection=selection,
         offset_scale=offset_scale,
+        offset=offset,
         individual=False,
     )
 
@@ -535,7 +555,7 @@ def _grid_from_curves(
 
 
 def _store_metric_box_uvs(mesh: pf.ProcNode) -> pf.ProcNode:
-    """Box-projected UVs in world units (1 UV unit = 1 meter), as 'uv_map'.
+    """Box-projected UVs in world units (1 UV unit = 1 meter), as 'UVMap'.
     Inlines into the calling node_function; corner-domain normals evaluate to the
     exact owning-face normal, which picks the projection axis per face."""
     axis = pf.nodes.math.separate_xyz(
@@ -547,7 +567,11 @@ def _store_metric_box_uvs(mesh: pf.ProcNode) -> pf.ProcNode:
         axis.x * p.z + axis.y * p.z + axis.z * p.y,
     )
     return pf.nodes.geo.store_named_attribute(
-        geometry=mesh, name="uv_map", value=uv, domain="CORNER"
+        geometry=mesh,
+        name="UVMap",
+        value=uv,
+        domain="CORNER",
+        data_type="FLOAT2",
     )
 
 
@@ -673,10 +697,15 @@ def fill_between_curves(
 ) -> pf.ProcNode[pf.MeshObject]:
     """Ruled surface bridging two curves: resample both to n_points, then lerp
     an n_rows x n_points grid between the sample positions. n_rows > 2 keeps
-    faces small and near-planar so downstream bevel/warp modifiers behave."""
+    faces small and near-planar so downstream bevel/warp modifiers behave.
+
+    Stores metric UVs with U along the curves and V between them."""
     grid = pf.nodes.geo.mesh_grid(vertices_x=n_rows, vertices_y=n_points)
     left = pf.nodes.geo.resample_curve_count(curve=curve_left, count=n_points)
     right = pf.nodes.geo.resample_curve_count(curve=curve_right, count=n_points)
+    left = pf.nodes.geo.capture_attribute(
+        geometry=left, length=pf.nodes.geo.spline_parameter().length
+    )
     index = pf.nodes.geo.input_index()
     index_f = index.astype(dtype=float)
     n_points_f = n_points.astype(dtype=float)
@@ -685,7 +714,7 @@ def fill_between_curves(
     factor = row / (n_rows.astype(dtype=float) - 1.0)
     position = pf.nodes.geo.input_position()
     left_pos = pf.nodes.geo.sample_index(
-        geometry=left,
+        geometry=left.geometry,
         index=along.astype(dtype=int),
         value=position,
         data_type=NodeDataType.FLOAT_VECTOR,
@@ -697,8 +726,25 @@ def fill_between_curves(
         data_type=NodeDataType.FLOAT_VECTOR,
     )
     lerped = left_pos + (right_pos - left_pos) * factor
-    return pf.nodes.geo.set_position(
-        geometry=grid.mesh, position=lerped, offset=(0.0, 0.0, 0.0)
+    u = pf.nodes.geo.sample_index(
+        geometry=left.geometry,
+        index=along.astype(dtype=int),
+        value=left.length,
+    )
+    v = factor * pf.nodes.math.vector_length(right_pos - left_pos)
+    uv = pf.nodes.geo.capture_attribute(
+        geometry=grid.mesh,
+        uv=pf.nodes.math.combine_xyz(x=u, y=v),
+    )
+    positioned = pf.nodes.geo.set_position(
+        geometry=uv.geometry, position=lerped, offset=(0.0, 0.0, 0.0)
+    )
+    return pf.nodes.geo.store_named_attribute(
+        geometry=positioned,
+        name="UVMap",
+        value=uv.uv,
+        domain="CORNER",
+        data_type="FLOAT2",
     )
 
 

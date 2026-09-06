@@ -321,11 +321,11 @@ def _round_seat_n_gon_cylinder(
     resample_curve_count = pf.nodes.geo.resample_curve_count(
         curve=n_gon_profile_result, count=profile_resolution
     )
-    curve_to = pf.nodes.geo.curve_to_mesh(
+    curve_to = curve_to_mesh_with_uv(
         curve=capture_attribute.geometry,
-        profile_curve=resample_curve_count,
+        profile=resample_curve_count,
         fill_caps=True,
-    )
+    ).mesh
     input_position = pf.nodes.geo.input_position()
     sample_curve = pf.nodes.geo.sample_curve(
         curves=radius_curve,
@@ -426,9 +426,9 @@ def _round_seat_generate_table_top(
         rotation=(1.5708, 1.5708, 0.0),
         scale=thickness.astype(dtype=pf.Vector),
     )
-    curve_to = pf.nodes.geo.curve_to_mesh(
-        curve=n_gon_cylinder_result.profile_curve, profile_curve=transform_5
-    )
+    curve_to = curve_to_mesh_with_uv(
+        curve=n_gon_cylinder_result.profile_curve, profile=transform_5
+    ).mesh
     transform_6_translation = pf.nodes.math.combine_xyz(z=thickness * -0.5)
     transform_6 = pf.nodes.geo.transform(
         geometry=curve_to, translation=transform_6_translation
@@ -450,25 +450,18 @@ def _round_seat_create_cap(
     uv_sphere = pf.nodes.geo.mesh_uv_sphere(
         segments=resolution, rings=uv_sphere_rings.astype(dtype=int), radius=radius
     )
-    store_named_attribute = pf.nodes.geo.store_named_attribute(
-        geometry=uv_sphere.mesh,
-        name="uv_map",
-        value=uv_sphere.uv_map,
-        domain="CORNER",
-        data_type=NodeDataType.FLOAT_VECTOR,
-    )
     transform_a = radius**2.0
     transform_translation_z = pf.nodes.math.sqrt(transform_a - 1.0)
     transform_translation = pf.nodes.math.combine_xyz(z=transform_translation_z * -1.0)
     transform = pf.nodes.geo.transform(
-        geometry=store_named_attribute, translation=transform_translation
+        geometry=uv_sphere.mesh, translation=transform_translation
     )
     input_position = pf.nodes.geo.input_position()
     result_0_selection = pf.nodes.func.less_than(a=input_position.z, b=0.0)
     delete = pf.nodes.geo.delete_geometry(
         geometry=transform, selection=result_0_selection
     )
-    return delete
+    return mesh.metric_box_uv(delete)
 
 
 @pf.nodes.node_function
@@ -649,11 +642,11 @@ def _wheeled_base_n_gon_cylinder(
     resample_curve_count = pf.nodes.geo.resample_curve_count(
         curve=n_gon_profile_result, count=profile_resolution
     )
-    curve_to = pf.nodes.geo.curve_to_mesh(
+    curve_to = curve_to_mesh_with_uv(
         curve=capture_attribute.geometry,
-        profile_curve=resample_curve_count,
+        profile=resample_curve_count,
         fill_caps=True,
-    )
+    ).mesh
     input_position = pf.nodes.geo.input_position()
     sample_curve = pf.nodes.geo.sample_curve(
         curves=radius_curve,
@@ -771,9 +764,9 @@ def _wheeled_base_generate_table_top(
         rotation=(1.5708, 1.5708, 0.0),
         scale=thickness.astype(dtype=pf.Vector),
     )
-    curve_to = pf.nodes.geo.curve_to_mesh(
-        curve=n_gon_cylinder_result.profile_curve, profile_curve=transform_5
-    )
+    curve_to = curve_to_mesh_with_uv(
+        curve=n_gon_cylinder_result.profile_curve, profile=transform_5
+    ).mesh
     transform_6_translation = pf.nodes.math.combine_xyz(z=thickness * -0.5)
     transform_6 = pf.nodes.geo.transform(
         geometry=curve_to, translation=transform_6_translation
@@ -795,25 +788,18 @@ def _wheeled_base_create_cap(
     uv_sphere = pf.nodes.geo.mesh_uv_sphere(
         segments=resolution, rings=uv_sphere_rings.astype(dtype=int), radius=radius
     )
-    store_named_attribute = pf.nodes.geo.store_named_attribute(
-        geometry=uv_sphere.mesh,
-        name="uv_map",
-        value=uv_sphere.uv_map,
-        domain="CORNER",
-        data_type=NodeDataType.FLOAT_VECTOR,
-    )
     transform_a = radius**2.0
     transform_translation_z = pf.nodes.math.sqrt(transform_a - 1.0)
     transform_translation = pf.nodes.math.combine_xyz(z=transform_translation_z * -1.0)
     transform = pf.nodes.geo.transform(
-        geometry=store_named_attribute, translation=transform_translation
+        geometry=uv_sphere.mesh, translation=transform_translation
     )
     input_position = pf.nodes.geo.input_position()
     result_0_selection = pf.nodes.func.less_than(a=input_position.z, b=0.0)
     delete = pf.nodes.geo.delete_geometry(
         geometry=transform, selection=result_0_selection
     )
-    return delete
+    return mesh.metric_box_uv(delete)
 
 
 @pf.nodes.node_function
@@ -890,6 +876,7 @@ def _wheeled_base_wheel(
     transform_2 = pf.nodes.geo.transform(
         geometry=cylinder.mesh, translation=transform_2_translation
     )
+    transform_2 = mesh.metric_box_uv(transform_2)
     arc_top_result = _wheeled_base_arc_top(
         diameter=transform_a_a + 0.08, sweep_angle=arc_sweep_angle
     )
@@ -899,9 +886,9 @@ def _wheeled_base_wheel(
     fillet_curve_poly = pf.nodes.geo.fillet_curve_poly(
         curve=curve_quadrilateral, radius=0.03, count=4, limit_radius=True
     )
-    curve_to = pf.nodes.geo.curve_to_mesh(
-        curve=arc_top_result, profile_curve=fillet_curve_poly, fill_caps=True
-    )
+    curve_to = curve_to_mesh_with_uv(
+        curve=arc_top_result, profile=fillet_curve_poly, fill_caps=True
+    ).mesh
     curve_line_1_start = pf.nodes.math.combine_xyz(y=wheel_width)
     curve_line_1_end = pf.nodes.math.combine_xyz(y=wheel_width * -1.0)
     curve_line_1 = pf.nodes.geo.curve_line(
@@ -1122,6 +1109,7 @@ def _wheeled_base_geometry(
     transform = pf.nodes.geo.transform(
         geometry=cylinder.mesh, translation=transform_translation
     )
+    transform = mesh.metric_box_uv(transform)
     create_anchors_profile_width = pf.nodes.math.constant(0.001)
     create_anchors_result = _wheeled_base_create_anchors(
         profile_n_gon=leg_number,
@@ -1166,6 +1154,7 @@ def _wheeled_base_geometry(
     transform_2 = pf.nodes.geo.transform(
         geometry=cylinder_1.mesh, translation=transform_2_translation
     )
+    transform_2 = mesh.metric_box_uv(transform_2)
     column = pf.nodes.geo.join_geometry([transform, transform_2])
     if material is not None:
         column = pf.nodes.geo.set_material(column, material)
@@ -1250,7 +1239,6 @@ def curvy_seat_rand(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
-    pf.ops.uv.cube_project(obj, uv_name="UVMap")
     return ChairResult(mesh=obj)
 
 
@@ -1280,7 +1268,6 @@ def round_seat_rand(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
-    pf.ops.uv.cube_project(obj, uv_name="UVMap")
     return ChairResult(mesh=obj)
 
 
@@ -1316,7 +1303,6 @@ def wheeled_base_rand(
         geo, translation=(0, 0, 0), rotation=(0, 0, 1.5708), scale=(1, 1, 1)
     )
     obj = pf.nodes.to_mesh_object(geo)
-    pf.ops.uv.cube_project(obj, uv_name="UVMap")
     return ChairResult(mesh=obj)
 
 
@@ -1376,17 +1362,6 @@ def _chair_back_geometry(
         rotation=(0, 0, 0),
         scale=(1, 1, 1),
     )
-    crest_uv = pf.nodes.geo.input_named_attribute(
-        "uv_map", data_type="FLOAT_VECTOR"
-    ).attribute
-    crest = pf.nodes.geo.store_named_attribute(
-        geometry=crest,
-        name="UVMap",
-        value=crest_uv,
-        domain="CORNER",
-        data_type="FLOAT2",
-    )
-
     if slat_material is not None:
         slats = pf.nodes.geo.set_material(slats, slat_material)
     if crest_material is not None:
@@ -1501,8 +1476,11 @@ def chair_back_solid(
     panel = mesh.fill_between_curves(
         curve_left=bottom, curve_right=top, n_points=n_points, n_rows=17
     )
-    solid = pf.nodes.geo.extrude_mesh(
-        mesh=panel, offset=pf.nodes.math.combine_xyz(x=dimensions.x), individual=False
+    solid = mesh.extrude_mesh_seamless_uvs_along(
+        mesh=panel,
+        selection=True,
+        offset_scale=1.0,
+        offset=pf.nodes.math.combine_xyz(x=dimensions.x),
     )
     geo = pf.nodes.geo.join_geometry([panel, pf.nodes.geo.flip_faces(solid.mesh)])
     geo = pf.nodes.geo.merge_by_distance(geo, distance=1e-5)
@@ -1563,8 +1541,11 @@ def dining_seat(
     top = mesh.fill_between_curves(
         curve_left=back_edge, curve_right=front_edge, n_points=n_points, n_rows=9
     )
-    solid = pf.nodes.geo.extrude_mesh(
-        mesh=top, offset=pf.nodes.math.combine_xyz(z=thickness * -1.0), individual=False
+    solid = mesh.extrude_mesh_seamless_uvs_along(
+        mesh=top,
+        selection=True,
+        offset_scale=1.0,
+        offset=pf.nodes.math.combine_xyz(z=thickness * -1.0),
     )
     # downward extrude leaves bottom and walls wound inward; bevel offsets invert
     flipped = pf.nodes.geo.flip_faces(solid.mesh)
@@ -1756,7 +1737,6 @@ def _dining_seat_with_back(
     back_obj = pf.nodes.to_mesh_object(back)
     pf.ops.modifier.bevel(back_obj, width=back_round, segments=4)
     pf.ops.object.join(obj, back_obj)
-    pf.ops.uv.cube_project(obj, uv_name="UVMap")
     return obj
 
 

@@ -147,13 +147,20 @@ def _curtain_geometry(
 
     boolean = pf.nodes.geo.mesh_boolean(a=set_material, b=set_position_1)
 
-    icosphere_radius = radius * 2.0
-    icosphere = pf.nodes.geo.mesh_icosphere(radius=icosphere_radius, subdivisions=4)
+    finial_radius = radius * 2.0
+    finial = pf.nodes.geo.mesh_uv_sphere(segments=32, rings=16, radius=finial_radius)
+    finial_mesh = pf.nodes.geo.store_named_attribute(
+        geometry=finial.mesh,
+        name="UVMap",
+        value=finial.uv_map,
+        domain="CORNER",
+        data_type="FLOAT2",
+    )
 
     sample_curve = pf.nodes.geo.sample_curve(curves=curve_line_2, value=0.0, factor=0.0)
 
     set_position_2 = pf.nodes.geo.set_position(
-        geometry=icosphere.mesh, offset=sample_curve.position
+        geometry=finial_mesh, offset=sample_curve.position
     )
 
     curve_line_3_end = pf.nodes.math.combine_xyz(x=curve_x_0, z=frame_depth)
@@ -170,14 +177,12 @@ def _curtain_geometry(
         curve=join_1, profile=curve_circle_1, fill_caps=True
     ).mesh
 
-    icosphere_1 = pf.nodes.geo.mesh_icosphere(radius=icosphere_radius, subdivisions=4)
-
     sample_curve_1 = pf.nodes.geo.sample_curve(
         curves=curve_line_2, value=0.0, factor=1.0
     )
 
     set_position_3 = pf.nodes.geo.set_position(
-        geometry=icosphere_1.mesh, offset=sample_curve_1.position
+        geometry=finial_mesh, offset=sample_curve_1.position
     )
 
     join_2 = pf.nodes.geo.join_geometry([set_position_2, curve_to_2, set_position_3])

@@ -764,7 +764,7 @@ def base_straight_rand(
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
     if material is None:
-        material = furniture_material_rand(rng_mat, pf.nodes.shader.geometry().position)
+        material = furniture_material_rand(rng_mat, pf.nodes.shader.coord().uv)
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
@@ -889,7 +889,7 @@ def base_square_rand(
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
     if material is None:
-        material = furniture_material_rand(rng_mat, pf.nodes.shader.geometry().position)
+        material = furniture_material_rand(rng_mat, pf.nodes.shader.coord().uv)
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
@@ -926,7 +926,7 @@ def dining_table_rand(
 
     top_height = z - top_thickness
 
-    vec = pf.nodes.shader.geometry().position
+    vec = pf.nodes.shader.coord().uv
     if top_material is None:
         top_material = table_top_material_rand(rng_top_mat, vec)
     if leg_material is None:

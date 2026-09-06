@@ -61,7 +61,7 @@ def _box(
         geometry=cube.mesh, position=set_position_position
     )
 
-    return set_position
+    return metric_box_uv(set_position)
 
 
 @pf.nodes.node_function
@@ -352,7 +352,6 @@ def _shelf_geometry(
 def _shelves_finish(
     geo: pf.ProcNode, frame_material: pf.Material, bevel_width: float
 ) -> StorageResult:
-    geo = metric_box_uv(geo)
     geo = pf.nodes.geo.set_material(geometry=geo, material=frame_material)
     result = pf.nodes.to_mesh_object(geo)
     pf.ops.modifier.bevel(result, width=bevel_width, segments=2)

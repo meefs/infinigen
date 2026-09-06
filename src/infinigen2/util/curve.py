@@ -101,15 +101,47 @@ def curve_to_mesh_with_uv(
     out_y = pf.nodes.func.switch(switch=swap_uv, a=v_metric, b=u)
     vector = pf.nodes.math.combine_xyz(x=out_x, y=out_y)
 
-    store_named_attribute = pf.nodes.geo.store_named_attribute(
+    mesh_with_uv = pf.nodes.geo.store_named_attribute(
         domain="CORNER",
         geometry=to_mesh,
         name="UVMap",
         value=vector,
         data_type="FLOAT2",
     )
+    face_count = pf.nodes.geo.attribute_domain_size(to_mesh).face_count
+    first_cap = face_count.astype(dtype=float) - 2.0
+    is_cap = pf.nodes.func.boolean_and(
+        a=fill_caps,
+        b=pf.nodes.func.greater_than(
+            a=face_of_corner.face_index.astype(dtype=float),
+            b=first_cap - 1.0,
+        ),
+    )
+    position = pf.nodes.geo.input_position()
+    normal = pf.nodes.math.vector_absolute(pf.nodes.geo.input_normal())
+    cap_facing_x = pf.nodes.math.combine_xyz(x=position.y, y=position.z)
+    cap_facing_y = pf.nodes.math.combine_xyz(x=position.x, y=position.z)
+    cap_facing_z = pf.nodes.math.combine_xyz(x=position.x, y=position.y)
+    cap_uv = pf.nodes.func.switch(
+        switch=normal.y > normal.x,
+        a=cap_facing_x,
+        b=cap_facing_y,
+    )
+    cap_uv = pf.nodes.func.switch(
+        switch=normal.z > pf.nodes.math.maximum(normal.x, normal.y),
+        a=cap_uv,
+        b=cap_facing_z,
+    )
+    mesh_with_uv = pf.nodes.geo.store_named_attribute(
+        domain="CORNER",
+        geometry=mesh_with_uv,
+        name="UVMap",
+        selection=is_cap,
+        value=cap_uv,
+        data_type="FLOAT2",
+    )
     return CurveToMeshWithUvResult(
-        mesh=store_named_attribute,
+        mesh=mesh_with_uv,
         vector=vector,
     )
 

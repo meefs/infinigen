@@ -5,6 +5,7 @@ import math
 
 import bmesh
 import bpy
+import numpy as np
 import procfunc as pf
 import pytest
 
@@ -90,3 +91,28 @@ def test_crease_by_angle_matches_binary_when_band_narrow():
     vals = _crease_values(geo)
     assert all(v > 0.99 or v < 0.01 for v in vals)
     assert sum(1 for v in vals if v > 0.5) == 2 * 16
+
+
+def test_metric_box_uv_puts_each_face_long_axis_on_v():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    cube = pf.nodes.geo.mesh_cube(size=(0.2, 0.4, 1.0)).mesh
+    obj = pf.nodes.to_mesh_object(mesh_util.metric_box_uv(cube))
+    mesh = obj.item().data
+    uv = np.array([entry.uv[:] for entry in mesh.uv_layers["UVMap"].data])
+
+    for polygon in mesh.polygons:
+        face_uv = uv[list(polygon.loop_indices)]
+        u_span, v_span = np.ptp(face_uv, axis=0)
+        assert v_span > u_span
+
+
+def test_fill_between_curves_stores_metric_uvs():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    left = pf.nodes.geo.curve_line(start=(0, 0, 0), end=(0, 2, 0))
+    right = pf.nodes.geo.curve_line(start=(3, 0, 0), end=(3, 2, 0))
+    surface = mesh_util.fill_between_curves(left, right, n_points=5, n_rows=3)
+    obj = pf.nodes.to_mesh_object(surface)
+    uv = obj.item().data.uv_layers["UVMap"].data
+    coords = np.array([entry.uv[:] for entry in uv])
+
+    assert np.allclose(np.ptp(coords, axis=0), (2.0, 3.0))
