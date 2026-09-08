@@ -520,11 +520,23 @@ def _leg_square(
         rotation=(1.5708, 0.0, 0.0),
         scale=(1, 1, 1),
     )
-    transform_2_scale = pf.nodes.math.combine_xyz(x=width, y=1.0, z=height)
+    n_gon_profile_result = _n_gon_profile(
+        profile_n_gon=profile_n_gon,
+        profile_width=profile_width,
+        profile_aspect_ratio=profile_aspect_ratio,
+        profile_fillet_ratio=profile_fillet_ratio,
+    )
+    profile_mesh = pf.nodes.geo.curve_to_mesh(n_gon_profile_result)
+    profile_z_radius = pf.nodes.geo.bound_box(profile_mesh).max.y
+    bottom_profile_radius = pf.nodes.func.switch(
+        switch=has_bottom_connector, a=0.0, b=profile_z_radius
+    )
+    centerline_height = height - profile_z_radius - bottom_profile_radius
+    transform_2_scale = pf.nodes.math.combine_xyz(x=width, y=1.0, z=centerline_height)
     transform_2 = pf.nodes.geo.transform(
         geometry=transform_1,
         scale=transform_2_scale,
-        translation=(0, 0, 0),
+        translation=pf.nodes.math.combine_xyz(z=profile_z_radius * -1.0),
         rotation=(0, 0, 0),
     )
 
@@ -535,13 +547,6 @@ def _leg_square(
         radius=fillet_radius,
         limit_radius=True,
         count=8,
-    )
-
-    n_gon_profile_result = _n_gon_profile(
-        profile_n_gon=profile_n_gon,
-        profile_width=profile_width,
-        profile_aspect_ratio=profile_aspect_ratio,
-        profile_fillet_ratio=profile_fillet_ratio,
     )
 
     curve_to = curve.curve_to_mesh_with_uv(
@@ -748,16 +753,26 @@ def base_straight_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
+    leg_diameter: float | None = None,
+    leg_placement_bottom_scale: float | None = None,
 ) -> TableResult:
-    """4-leg base with optional stretchers."""
+    """4-leg base with optional stretchers. leg_placement_bottom_scale > 1 splays
+    the legs outward; pass 1.0 for an upright base to sit under a carcass."""
     rng, rng_dims, rng_mat = rng.spawn(3)
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
+    # drawn unconditionally so explicit overrides do not shift the stream
+    sampled_diameter = pf.random.uniform(rng, 0.02, 0.10)
+    if leg_diameter is None:
+        leg_diameter = sampled_diameter
+    sampled_bottom_scale = pf.random.uniform(rng, 0.95, 1.25)
+    if leg_placement_bottom_scale is None:
+        leg_placement_bottom_scale = sampled_bottom_scale
     geo = _base_straight_geometry(
         dimensions=dimensions,
-        leg_diameter=pf.random.uniform(rng, 0.02, 0.10),
+        leg_diameter=leg_diameter,
         leg_placement_top_scale=0.8,
-        leg_placement_bottom_scale=pf.random.uniform(rng, 0.95, 1.25),
+        leg_placement_bottom_scale=leg_placement_bottom_scale,
         stretcher_increment=pf.control.choice(rng, [(0, 1.0), (1, 1.0), (2, 1.0)]),
         stretcher_relative_pos=pf.random.uniform(rng, 0.2, 0.6),
     )
@@ -874,16 +889,24 @@ def base_square_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
+    leg_diameter: float | None = None,
+    leg_placement_bottom_scale: float | None = None,
 ) -> TableResult:
-    """2 box-frame legs."""
+    """2 box-frame legs. leg_placement_bottom_scale > 1 splays the frames outward."""
     rng, rng_dims, rng_mat = rng.spawn(3)
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
+    # drawn unconditionally so an explicit leg_diameter does not shift the stream
+    sampled_diameter = pf.random.uniform(rng, 0.03, 0.14)
+    if leg_diameter is None:
+        leg_diameter = sampled_diameter
+    if leg_placement_bottom_scale is None:
+        leg_placement_bottom_scale = 1.0
     geo = _base_square_geometry(
         dimensions=dimensions,
-        leg_diameter=pf.random.uniform(rng, 0.03, 0.14),
+        leg_diameter=leg_diameter,
         leg_placement_top_scale=0.8,
-        leg_placement_bottom_scale=1.0,
+        leg_placement_bottom_scale=leg_placement_bottom_scale,
         has_bottom_connector=pf.control.choice(rng, [(True, 2.0), (False, 1.0)]),
     )
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)

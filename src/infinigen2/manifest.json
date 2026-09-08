@@ -639,6 +639,10 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.window.window_composite_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.window.curtain_rand"
   },
   {
@@ -727,6 +731,10 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.door.door_composite_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.handles.lever_handle_rand"
   },
   {
@@ -752,6 +760,14 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.storage.cabinet_with_door_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.storage.cabinet_with_base_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.sofa.sofa_with_base_rand"
   },
   {
     "category": "Object",

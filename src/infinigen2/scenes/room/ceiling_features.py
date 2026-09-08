@@ -200,7 +200,6 @@ def ceiling_skylights_rand(
     window_result = window.window_rand(
         rng,
         dimensions=window_dimensions,
-        curtain=pf.ops.primitives.mesh_single_vertex(),
     )
     win = window_result.mesh
 
@@ -210,6 +209,11 @@ def ceiling_skylights_rand(
     center = (np.array(bmin) + np.array(bmax)) / 2
     pf.ops.object.set_transform(win, location=-center)
     pf.ops.mesh.transform_apply(win)
+    if window_result.light is not None:
+        pf.ops.object.set_transform(
+            window_result.light,
+            location=np.array(window_result.light.item().location) - center,
+        )
     bmin, bmax = pf.ops.attr.bbox_min_max(win)
     win_dims = (np.array(bmax) - np.array(bmin))[[1, 2]]
 

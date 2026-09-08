@@ -12,6 +12,7 @@ from mathutils import Euler
 
 from infinigen2.curves.skirting_board_profile import trim_profile_rand
 from infinigen2.objects import storage, wall_art, window
+from infinigen2.objects.door import door_composite_rand
 from infinigen2.scenes.placement.distribute import duplicates
 from infinigen2.scenes.room.wall_base import (
     WallResult,
@@ -215,11 +216,16 @@ def _arrange_window_portals(
     window_obj: pf.MeshObject,
     window_portal: pf.LightObject,
 ) -> list[pf.LightObject]:
+    relative_location = (
+        window_obj.item().matrix_world.inverted() @ window_portal.item().location
+    )
     relative_rot_quat = (
         window_portal.item().rotation_euler.to_quaternion()
         @ window_obj.item().rotation_euler.to_quaternion().inverted()
     )
-    light_locations = np.array([obj.item().location for obj in walls_window_aliases])
+    light_locations = np.array(
+        [obj.item().matrix_world @ relative_location for obj in walls_window_aliases]
+    )
     light_rotations = np.array(
         [
             (
@@ -260,9 +266,19 @@ def _resolve_window_inputs(
         dimensions = window.window_dimensions_rand(
             rng_defaults, width=width, height=height
         )
-        window_result = window.window_rand(rng_defaults, dimensions=dimensions)
+        window_result = window.window_composite_rand(
+            rng_defaults, dimensions=dimensions
+        )
         window_obj = window_result.mesh
         window_portal = window_result.light
+        wall_offset = pf.Vector((0.0, dimensions.y * -0.5, 0.0))
+        pf.ops.object.set_transform(window_obj, location=wall_offset)
+        pf.ops.mesh.transform_apply(window_obj)
+        if window_portal is not None:
+            pf.ops.object.set_transform(
+                window_portal,
+                location=window_portal.item().location + wall_offset,
+            )
 
     _depth, width, height = window_obj.item().dimensions
     if window_spacing is None:
@@ -681,8 +697,9 @@ def wall_doors_rand(
     reveal_depth = pf.random.uniform(rng, 0.1, 0.3)
     recess_pct = 0.9 + 0.1 * pf.random.uniform(rng, 0.0, 1.0)
 
-    door = storage.door_with_handle_rand(
-        rng, dimensions=pf.Vector((door_thickness, door_width, door_height))
+    door = door_composite_rand(
+        rng,
+        dimensions=pf.Vector((door_thickness, door_width, door_height)),
     ).mesh
     # centre the slab along the wall (Y); an off-centre along-wall origin lands it
     # beside its hole. Use door_width, not the bbox, so the handle bump does not bias it
@@ -761,17 +778,16 @@ def wall_full_window_rand(
         return wall_plain_rand(rng, wall, wall_material, wall_thickness)
 
     win_dims = window.window_dimensions_rand(rng, width=target_w, height=target_h)
-    win_result = window.window_rand(rng, dimensions=win_dims)
+    win_result = window.window_composite_rand(rng, dimensions=win_dims)
     win_obj = win_result.mesh
-    pf.ops.object.set_transform(
-        win_obj,
-        scale=(
-            1.0,
-            target_w / win_obj.item().dimensions.y,
-            target_h / win_obj.item().dimensions.z,
-        ),
-    )
+    wall_offset = pf.Vector((0.0, win_dims.y * -0.5, 0.0))
+    pf.ops.object.set_transform(win_obj, location=wall_offset)
     pf.ops.mesh.transform_apply(win_obj)
+    if win_result.light is not None:
+        pf.ops.object.set_transform(
+            win_result.light,
+            location=win_result.light.item().location + wall_offset,
+        )
 
     inner_x = slack_x - 2.0 * gap_x
     inner_y = slack_y - 2.0 * gap_y

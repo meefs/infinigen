@@ -6,12 +6,14 @@
 # - Stamatis Alexandropolous, Yiming Zuo - add footrest and alternate arm/leg styles
 
 
+import math
 from typing import NamedTuple
 
 import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 
+from infinigen2.objects.table import base_square_rand, base_straight_rand
 from infinigen2.shaders.functionality_lists import (
     decorative_material_rand,
     furniture_fabric,
@@ -20,8 +22,16 @@ from infinigen2.shaders.functionality_lists import (
 __all__ = [
     "SofaResult",
     "sofa",
+    "sofa_dimensions_rand",
     "sofa_rand",
+    "sofa_with_base_rand",
 ]
+
+_SUPPORT_HEIGHT_ATTRIBUTE = "sofa_support_height"
+_SUPPORT_DEPTH_ATTRIBUTE = "sofa_support_depth"
+_SUPPORT_CENTER_X_ATTRIBUTE = "sofa_support_center_x"
+_BASE_DEPTH_ATTRIBUTE = "sofa_base_depth"
+_BASE_CENTER_X_ATTRIBUTE = "sofa_base_center_x"
 
 
 class SofaResult(NamedTuple):
@@ -120,6 +130,7 @@ def _sofa_geometry(
     leg_dimensions: t.SocketOrVal[float],
     leg_z: t.SocketOrVal[float],
     leg_faces: t.SocketOrVal[int],
+    has_feet: t.SocketOrVal[bool] = True,
     footrest: t.SocketOrVal[bool] = False,
     count: t.SocketOrVal[int] = 0,
     scaling_footrest: t.SocketOrVal[float] = 0,
@@ -610,16 +621,48 @@ def _sofa_geometry(
     all_fabric = pf.nodes.geo.join_geometry([join_1, join_7])
     all_fabric = pf.nodes.geo.set_material(all_fabric, fabric_material)
 
-    geometry = pf.nodes.geo.join_geometry([all_fabric, feet])
+    # dropping the feet lets a separate base be composed underneath instead
+    with_feet = pf.nodes.geo.join_geometry([all_fabric, feet])
+    geometry = pf.nodes.func.switch(switch=has_feet, a=all_fabric, b=with_feet)
 
-    # TODO: this messes up the overall `dimensions`
+    support_z = pf.nodes.geo.bound_box(base_board_2).min.z
     bbox_min_z = pf.nodes.geo.bound_box(geometry).min.z
+    support_height = support_z - bbox_min_z
+    support_depth = base_board_2_dimensions.x
+    support_center_x = base_board_2_location.x + support_depth * 0.5
+    base_depth = support_depth + base_board_2_location.x
+    base_center_x = base_depth * 0.5
     translation_for_legs = pf.nodes.math.combine_xyz(x=0, y=0, z=bbox_min_z * -1.0)
     geometry = pf.nodes.geo.transform(
         geometry, translation=translation_for_legs, rotation=(0, 0, 0), scale=(1, 1, 1)
     )
 
     geometry = pf.nodes.geo.merge_by_distance(geometry, distance=1e-5)
+    geometry = pf.nodes.geo.store_named_attribute(
+        geometry=geometry,
+        name=_SUPPORT_HEIGHT_ATTRIBUTE,
+        value=support_height,
+    )
+    geometry = pf.nodes.geo.store_named_attribute(
+        geometry=geometry,
+        name=_SUPPORT_DEPTH_ATTRIBUTE,
+        value=support_depth,
+    )
+    geometry = pf.nodes.geo.store_named_attribute(
+        geometry=geometry,
+        name=_SUPPORT_CENTER_X_ATTRIBUTE,
+        value=support_center_x,
+    )
+    geometry = pf.nodes.geo.store_named_attribute(
+        geometry=geometry,
+        name=_BASE_DEPTH_ATTRIBUTE,
+        value=base_depth,
+    )
+    geometry = pf.nodes.geo.store_named_attribute(
+        geometry=geometry,
+        name=_BASE_CENTER_X_ATTRIBUTE,
+        value=base_center_x,
+    )
 
     return geometry
 
@@ -648,6 +691,7 @@ def sofa(
     arm_back_crease: float = 0.2,
     fabric_material: pf.Material | None = None,
     foot_material: pf.Material | None = None,
+    has_feet: bool = True,
 ) -> SofaResult:
     if dimensions is None:
         dimensions = pf.Vector((0.925, 1.75, 0.83))
@@ -679,6 +723,7 @@ def sofa(
         leg_dimensions=leg_dimensions,
         leg_z=leg_z,
         leg_faces=leg_faces,
+        has_feet=has_feet,
         footrest=False,
         body_crease=body_crease,
         cushion_crease=cushion_crease,
@@ -690,19 +735,25 @@ def sofa(
     return SofaResult(mesh=obj)
 
 
+def sofa_dimensions_rand(rng: pf.RNG) -> pf.Vector:
+    """Default sofa dimensions."""
+    return (
+        pf.random.uniform(rng, 0.85, 1.0),
+        pf.random.clip_gaussian(rng, 1.75, 0.75, 0.9, 3),
+        pf.random.uniform(rng, 0.69, 0.97),
+    )
+
+
 def sofa_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
     foot_material: pf.Material | None = None,
+    has_feet: bool = True,
 ) -> SofaResult:
     rng, rng_fabric, rng_foot = rng.spawn(3)
     if dimensions is None:
-        dimensions = (
-            pf.random.uniform(rng, 0.85, 1.0),
-            pf.random.clip_gaussian(rng, 1.75, 0.75, 0.9, 3),
-            pf.random.uniform(rng, 0.69, 0.97),
-        )
+        dimensions = sofa_dimensions_rand(rng)
 
     arm_type = pf.control.choice(
         rng,
@@ -761,6 +812,7 @@ def sofa_rand(
         leg_dimensions=leg_dimensions,
         leg_z=leg_z,
         leg_faces=leg_faces,
+        has_feet=has_feet,
         footrest=False,  # disabled due to bugs with missing footrest seat and too tricky to assign the material
         body_crease=body_crease,
         cushion_crease=cushion_crease,
@@ -770,3 +822,54 @@ def sofa_rand(
     pf.ops.uv.cube_project(obj, uv_name="UVMap")
     pf.ops.modifier.subdivide_surface(obj, levels=5, _skip_apply=True)
     return SofaResult(mesh=obj)
+
+
+def sofa_with_base_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    material: pf.Material | None = None,
+    base_material: pf.Material | None = None,
+) -> SofaResult:
+    """Sofa body raised on a table-style leg base instead of its built-in feet.
+    The base is 2-10 inches high, with 4-10 inch legs held upright."""
+    rng, rng_sofa, rng_dims, rng_mat, rng_base_sel, rng_base = rng.spawn(6)
+    if dimensions is None:
+        dimensions = sofa_dimensions_rand(rng_dims)
+    width = dimensions[1]
+    base_height_factor = pf.random.uniform(rng, 0.0, 1.0)
+    leg_diameter = pf.random.uniform(rng, 0.1016, 0.254)
+
+    body = sofa_rand(
+        rng_sofa, dimensions=dimensions, material=material, has_feet=False
+    ).mesh
+    support_height = pf.ops.attr.read_attribute(body, _SUPPORT_HEIGHT_ATTRIBUTE)[0]
+    base_depth = pf.ops.attr.read_attribute(body, _BASE_DEPTH_ATTRIBUTE)[0]
+    base_center_x = pf.ops.attr.read_attribute(body, _BASE_CENTER_X_ATTRIBUTE)[0]
+    min_base_height = max(0.0508, support_height + 0.0254)
+    max_base_height = max(0.254, min_base_height)
+    base_height_range = max_base_height - min_base_height
+    base_height = min_base_height + base_height_factor * base_height_range
+    body_clearance = base_height - support_height
+    pf.ops.object.set_transform(body, location=(0.0, 0.0, body_clearance))
+
+    if base_material is None:
+        base_material = decorative_material_rand(rng_mat, pf.nodes.shader.coord().uv)
+    base_fn = pf.control.choice(
+        rng_base_sel, [(base_straight_rand, 2.0), (base_square_rand, 1.0)]
+    )
+    base = base_fn(
+        rng_base,
+        dimensions=pf.Vector((width, base_depth, base_height)),
+        material=base_material,
+        leg_diameter=leg_diameter,
+        leg_placement_bottom_scale=1.0,
+    ).mesh
+    # bases separate their frames along local x, so turn that across the length
+    pf.ops.object.set_transform(
+        base,
+        location=(base_center_x, 0.0, 0.0),
+        rotation_euler=(0.0, 0.0, math.pi / 2),
+    )
+    pf.ops.object.join(body, base)
+    pf.ops.mesh.transform_apply(body)
+    return SofaResult(mesh=body)

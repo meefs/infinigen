@@ -6,7 +6,7 @@ from typing import NamedTuple
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import handles
+from infinigen2.objects import handles, window
 from infinigen2.shaders.functionality_lists import (
     furniture_material_rand,
     glass_material_rand,
@@ -15,6 +15,7 @@ from infinigen2.util.mesh import metric_box_uv
 
 __all__ = [
     "DoorResult",
+    "door_composite_rand",
     "door_body",
     "door_body_rand",
     "door_with_handle",
@@ -244,6 +245,53 @@ def door_with_handle_rand(
         frame_material=material,
         panel_material=material,
     ).mesh
+
+    if handle is None:
+        handle = _choose_handle_rand(rng_handle_choice, rng_handle)
+
+    edge_offset = pf.random.uniform(rng_place, 0.04, 0.08)
+    handle_z_frac = pf.random.uniform(rng_place, 0.42, 0.5)
+    _place_handle(door, handle, dimensions, edge_offset, handle_z_frac)
+    return DoorResult(mesh=door)
+
+
+def door_composite_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    material: pf.Material | None = None,
+    handle: pf.MeshObject | None = None,
+) -> DoorResult:
+    rng, rng_body, rng_handle_choice, rng_handle, rng_place = rng.spawn(5)
+    if dimensions is None:
+        width = pf.random.uniform(rng, 0.7, 0.95)
+        height = pf.random.uniform(rng, 1.9, 2.1)
+        thickness = pf.random.uniform(rng, 0.035, 0.045)
+        dimensions = pf.Vector((thickness, width, height))
+
+    def standard_body() -> DoorResult:
+        return door_body_rand(
+            rng_body,
+            dimensions=dimensions,
+            frame_material=material,
+            panel_material=material,
+        )
+
+    def window_body() -> window.WindowResult:
+        return window.window_rand(
+            rng_body,
+            dimensions=dimensions,
+            frame_material=material,
+            include_portal=False,
+        )
+
+    body_func = pf.control.choice(
+        rng,
+        [
+            (standard_body, 2.0),
+            (window_body, 1.0),
+        ],
+    )
+    door = body_func().mesh
 
     if handle is None:
         handle = _choose_handle_rand(rng_handle_choice, rng_handle)

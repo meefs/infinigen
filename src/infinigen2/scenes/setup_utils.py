@@ -11,6 +11,7 @@ import procfunc as pf
 
 from infinigen2.objects import (
     lamp,
+    sofa,
     storage,
     table,
     vase,
@@ -30,6 +31,7 @@ __all__ = [
     "snap_side_by_side",
     "snap_to_wall",
     "sofa_lamps_rand",
+    "sofa_object_rand",
     "standalone_wall_planes",
     "storage_object_rand",
     "table_decoration_object_rand",
@@ -103,6 +105,17 @@ def side_table_object_rand(rng: pf.RNG) -> MeshResult:
     result = func(rng)
     result.mesh.item().name = func.__name__
     return result
+
+
+def sofa_object_rand(rng: pf.RNG) -> MeshResult:
+    func = pf.control.choice(
+        rng,
+        [
+            (sofa.sofa_rand, 1.0),
+            (sofa.sofa_with_base_rand, 1.0),
+        ],
+    )
+    return func(rng)
 
 
 @pf.tracer.grammar

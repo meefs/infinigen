@@ -8,13 +8,14 @@ from typing import NamedTuple
 
 import procfunc as pf
 
-from infinigen2.objects import rug, sofa
+from infinigen2.objects import rug
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.setup_utils import (
     MeshResult,
     retry_place,
     snap_back_front,
+    sofa_object_rand,
     standalone_wall_planes,
 )
 
@@ -78,7 +79,7 @@ def wall_sofa_setup_rand(
     rngs = rng.spawn(n)
     sofas = []
     for i in range(n):
-        sofas.append(sofa.sofa_rand(rngs[i]))
+        sofas.append(sofa_object_rand(rngs[i]))
     placed_sofas = []
     for i in range(n):
         sofa_obj = retry_place(

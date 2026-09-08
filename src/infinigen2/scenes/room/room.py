@@ -200,14 +200,19 @@ def room_walls_rand(
     window_dimensions = window.window_dimensions_rand(
         rng_window, width=window_width, height=window_height
     )
-    window_result = window.window_rand(rng_window, dimensions=window_dimensions)
+    window_result = window.window_composite_rand(
+        rng_window, dimensions=window_dimensions
+    )
     window_obj = window_result.mesh
     window_portal = window_result.light
-
-    pf.ops.object.set_transform(
-        window_obj, scale=(1.0, 1.0, window_height / window_obj.item().dimensions.z)
-    )
+    wall_offset = pf.Vector((0.0, window_dimensions.y * -0.5, 0.0))
+    pf.ops.object.set_transform(window_obj, location=wall_offset)
     pf.ops.mesh.transform_apply(window_obj)
+    if window_portal is not None:
+        pf.ops.object.set_transform(
+            window_portal,
+            location=window_portal.item().location + wall_offset,
+        )
 
     _depth, _width, _height = window_obj.item().dimensions
     wmin, _wmax = pf.ops.attr.bbox_min_max(window_obj)

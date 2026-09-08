@@ -9,11 +9,11 @@ from typing import NamedTuple
 import numpy as np
 import procfunc as pf
 
-from infinigen2.objects import rug, sofa, table
+from infinigen2.objects import rug, table
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding, keep_unobstructed
 from infinigen2.scenes.placement.snap import snap_to_plane
-from infinigen2.scenes.setup_utils import MeshResult, retry_place
+from infinigen2.scenes.setup_utils import MeshResult, retry_place, sofa_object_rand
 
 __all__ = ["CenteredSofaSetupResult", "centered_sofa_setup_rand"]
 
@@ -101,7 +101,7 @@ def centered_sofa_setup_rand(
     rngs = rng.spawn(n)
     sofas = []
     for i in range(n):
-        sofas.append(sofa.sofa_rand(rngs[i]))
+        sofas.append(sofa_object_rand(rngs[i]))
     placed_sofas = []
     for i in range(n):
         sofa_obj = retry_place(

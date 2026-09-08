@@ -4,6 +4,7 @@
 # Authors:
 # - Alexander Raistrick
 
+import math
 from typing import NamedTuple
 
 import procfunc as pf
@@ -11,9 +12,10 @@ from procfunc.nodes import types as t
 
 from infinigen2.objects import handles
 from infinigen2.objects.door import (
+    door_composite_rand,
     door_with_handle,
-    door_with_handle_rand,
 )
+from infinigen2.objects.table import base_square, base_square_rand, base_straight_rand
 from infinigen2.shaders.functionality_lists import (
     furniture_material_rand,
 )
@@ -21,6 +23,8 @@ from infinigen2.util.mesh import metric_box_uv
 
 __all__ = [
     "StorageResult",
+    "cabinet_with_base",
+    "cabinet_with_base_rand",
     "cabinet_with_door",
     "cabinet_with_door_rand",
     "shelves",
@@ -434,6 +438,82 @@ def shelves_rand(
     return _shelves_finish(geo, frame_material, bevel_width)
 
 
+def cabinet_with_base(
+    dimensions: pf.Vector | None = None,
+    base_height: float = 0.0762,
+    leg_diameter: float = 0.0762,
+    frame_material: pf.Material | None = None,
+) -> StorageResult:
+    """Cabinet carcass raised on a leg base occupying the bottom base_height of
+    the overall height."""
+    if dimensions is None:
+        dimensions = pf.Vector((0.3, 0.5, 1.2))
+    if frame_material is None:
+        frame_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
+    depth, width, height = dimensions.x, dimensions.y, dimensions.z
+    carcass = shelves(
+        dimensions=pf.Vector((depth, width, height - base_height)),
+        frame_material=frame_material,
+    ).mesh
+    pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
+    base = base_square(
+        dimensions=pf.Vector((width, depth, base_height)),
+        leg_diameter=leg_diameter,
+    ).mesh
+    pf.ops.object.set_material(
+        base, surface=frame_material.surface, displacement=frame_material.displacement
+    )
+    # bases separate their frames along local x, so turn that across the width
+    pf.ops.object.set_transform(
+        base,
+        location=(depth * 0.5, width * 0.5, 0.0),
+        rotation_euler=(0.0, 0.0, math.pi / 2),
+    )
+    pf.ops.object.join(carcass, base)
+    return StorageResult(mesh=carcass)
+
+
+def cabinet_with_base_rand(
+    rng: pf.RNG, dimensions: pf.Vector | None = None
+) -> StorageResult:
+    rng, rng_shelves, rng_mat, rng_base_sel, rng_base = rng.spawn(5)
+    if dimensions is None:
+        depth = pf.random.uniform(rng, 0.25, 0.35)
+        width = pf.random.uniform(rng, 0.3, 0.55)
+        height = pf.random.uniform(rng, 0.9, 1.8)
+        dimensions = pf.Vector((depth, width, height))
+    depth, width, height = dimensions.x, dimensions.y, dimensions.z
+
+    frame_material = furniture_material_rand(rng_mat, pf.nodes.shader.coord().uv)
+    base_height = pf.random.uniform(rng, 0.0254, 0.1524)
+    leg_diameter = pf.random.uniform(rng, 0.0508, 0.127)
+
+    carcass = shelves_rand(
+        rng_shelves,
+        dimensions=pf.Vector((depth, width, height - base_height)),
+        frame_material=frame_material,
+    ).mesh
+    pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
+    base_fn = pf.control.choice(
+        rng_base_sel, [(base_square_rand, 1.0), (base_straight_rand, 1.0)]
+    )
+    base = base_fn(
+        rng_base,
+        dimensions=pf.Vector((width, depth, base_height)),
+        material=frame_material,
+        leg_diameter=leg_diameter,
+        leg_placement_bottom_scale=1.0,
+    ).mesh
+    # bases separate their frames along local x, so turn that across the width
+    pf.ops.object.set_transform(
+        base,
+        location=(depth * 0.5, width * 0.5, 0.0),
+        rotation_euler=(0.0, 0.0, math.pi / 2),
+    )
+    pf.ops.object.join(carcass, base)
+    return StorageResult(mesh=carcass)
+
+
 def cabinet_with_door(
     dimensions: pf.Vector | None = None,
     frame_material: pf.Material | None = None,
@@ -458,7 +538,7 @@ def cabinet_with_door(
 def cabinet_with_door_rand(
     rng: pf.RNG, dimensions: pf.Vector | None = None
 ) -> StorageResult:
-    rng, rng_shelves, rng_door, rng_mat, rng_door_mat, rng_handle = rng.spawn(6)
+    rng, rng_shelves, rng_front, rng_mat, rng_front_mat, rng_handle = rng.spawn(6)
     if dimensions is None:
         depth = pf.random.uniform(rng, 0.25, 0.35)
         # cap width to v1's single-door range so one door stays a realistic panel
@@ -468,8 +548,8 @@ def cabinet_with_door_rand(
     depth, width, height = dimensions.x, dimensions.y, dimensions.z
 
     frame_material = furniture_material_rand(rng_mat, pf.nodes.shader.coord().uv)
-    door_material = pf.control.choice(
-        rng_door_mat, [(frame_material, 2.0), (None, 1.0)]
+    front_material = pf.control.choice(
+        rng_front_mat, [(frame_material, 2.0), (None, 1.0)]
     )
 
     thickness = pf.random.uniform(rng, 0.016, 0.022)
@@ -487,12 +567,12 @@ def cabinet_with_door_rand(
             (handles.lever_handle_rand, 1.0),
         ],
     )
-    door = door_with_handle_rand(
-        rng_door,
+    front = door_composite_rand(
+        rng_front,
         dimensions=pf.Vector((thickness, width, height)),
-        material=door_material,
+        material=front_material,
         handle=handle_func(rng_handle).mesh,
     ).mesh
-    pf.ops.object.set_transform(door, location=(depth - thickness, 0.0, 0.0))
-    pf.ops.object.join(carcass, door)
+    pf.ops.object.set_transform(front, location=(depth - thickness, 0.0, 0.0))
+    pf.ops.object.join(carcass, front)
     return StorageResult(mesh=carcass)
