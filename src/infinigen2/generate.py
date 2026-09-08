@@ -162,7 +162,7 @@ def get_parser():
         "--displacement_mode",
         type=str,
         choices=[m.name for m in DisplacementMode],
-        default=DisplacementMode.DISPLACEMENT_AND_BUMP.name,
+        default=DisplacementMode.DISPLACEMENT.name,
     )
     parser.add_argument(
         "--trace",

@@ -55,7 +55,7 @@ cp src/infinigen2/manifest.json $OUTPUT_PATH
 # their _rand without importing infinigen2 (the web server runs a minimal env)
 uv run python -c "import json, sys; from infinigen2.list import preset_parents; sys.stdout.write(json.dumps(preset_parents()))" > $OUTPUT_PATH/preset_parents.json
 
-GEN_ARGS="--loglevel WARNING"
+GEN_ARGS="--loglevel WARNING --sampling_noise_threshold 0.02"
 if [ -n "${RENDER_RUNNER:-}" ]; then
     read -r -a RENDER_RUNNER_ARGS <<< "$RENDER_RUNNER"
     PY_BIN="${RENDER_RUNNER_ARGS[0]}"
@@ -134,24 +134,24 @@ PRESET_DEFAULTS=$(defaults_in_shard "$PRESET_CMDS" "$PRESETS")
 for i in {0..5}; do
     echo "$MATERIAL_DEFAULTS" | xargs $MATERIAL_XARGS "${RENDER_RUNNER_ARGS[@]}" {} material_cube render_cycles $NORMAL_STEPS \
         $GEN_ARGS --output $OUTPUT_PATH/material-{}-cube-cycles-$i --seed $i \
-        --passes rgb surface-normal --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+        --passes rgb surface-normal --displacement_mode DISPLACEMENT -r 192 192 -s 128
     while IFS=$'\t' read -r sn cmd; do
         [ -z "$sn" ] && continue
         "${RENDER_RUNNER_ARGS[@]}" $cmd $NORMAL_STEPS \
             $GEN_ARGS --output $OUTPUT_PATH/material-$sn-cube-cycles-$i --seed $i \
-            --passes rgb surface-normal --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+            --passes rgb surface-normal --displacement_mode DISPLACEMENT -r 192 192 -s 128
     done <<< "$MATERIAL_OVERRIDES"
 done
 
 # MATERIAL PRESETS VISUAL CHECK (fixed-look variants; deterministic, one seed each)
 echo "$PRESET_DEFAULTS" | xargs $MATERIAL_XARGS "${RENDER_RUNNER_ARGS[@]}" {} material_cube render_cycles \
     $GEN_ARGS --output $OUTPUT_PATH/preset-{}-cube-cycles-0 --seed 0 \
-    --passes rgb --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+    --passes rgb --displacement_mode DISPLACEMENT -r 192 192 -s 128
 while IFS=$'\t' read -r sn cmd; do
     [ -z "$sn" ] && continue
     "${RENDER_RUNNER_ARGS[@]}" $cmd \
         $GEN_ARGS --output $OUTPUT_PATH/preset-$sn-cube-cycles-0 --seed 0 \
-        --passes rgb --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+        --passes rgb --displacement_mode DISPLACEMENT -r 192 192 -s 128
 done <<< "$PRESET_OVERRIDES"
 
 # MATERIALS DISPLACEMENT TEST (Cycles GT is geometry-agnostic; DISPLACEMENT_AND_BUMP from seed loop)
