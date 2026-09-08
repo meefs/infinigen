@@ -555,6 +555,11 @@
   },
   {
     "category": "Scene",
+    "name": "infinigen2.scenes.sink_setup.sink_setup_rand",
+    "integration_test_string": "sink_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
     "name": "infinigen2.scenes.room.room.livingroom_rand"
   },
   {
@@ -728,6 +733,14 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.vase.vase_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.tap.tap_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.sink.sink_rand"
   },
   {
     "category": "Object",
