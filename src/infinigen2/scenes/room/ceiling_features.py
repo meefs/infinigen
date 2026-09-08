@@ -48,25 +48,6 @@ class CeilingFeaturesResult(NamedTuple):
     lights: list[pf.LightObject]
 
 
-def _ceiling_shade_lamp_template(rng: pf.RNG, energy: float) -> lamp.LampResult:
-    bot_radius = pf.random.clip_gaussian(rng, 0.35, 0.1, 0.1, 0.6)
-    top_radius = bot_radius * pf.random.clip_gaussian(rng, 1.1, 0.1, 0.9, 1.5)
-    height = pf.random.clip_gaussian(rng, 0.3, 0.15, 0.2, 0.6)
-    result = lamp.lamp_rand(
-        rng,
-        energy=energy,
-        head_top_radius=top_radius,
-        head_bot_radius=bot_radius,
-        height=height,
-    )
-    result.mesh.item().rotation_euler = (np.pi, 0, 0)
-    # flip the light through the same pi-about-x as the shade
-    lx, ly, lz = result.light.item().location
-    result.light.item().parent = None
-    result.light.item().location = (lx, -ly, -lz)
-    return result
-
-
 @pf.tracer.grammar
 def ceiling_light_placement_rand(
     rng: pf.RNG,
@@ -90,7 +71,7 @@ def ceiling_light_placement_rand(
         rng,
         [
             (ceiling_light_rand, 2.5),
-            (_ceiling_shade_lamp_template, 1.0),
+            (lamp.ceiling_shade_lamp_rand, 1.0),
         ],
     )
     lamp_template = template_fn(rng, energy=per_energy)

@@ -715,7 +715,15 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.lamp.ceiling_shade_lamp_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.lamp.desk_lamp_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.lamp.floor_lamp_rand"
   },
   {
     "category": "Object",

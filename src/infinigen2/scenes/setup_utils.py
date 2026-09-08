@@ -284,9 +284,7 @@ def sofa_lamps_rand(
 
     n = min(pf.random.randint(rng_lamp, 0, 3), len(sofa_meshes))
     rngs = rng_lamp.spawn(n)
-    floor_lamps = [
-        lamp.lamp_rand(rngs[i], pf.random.uniform(rngs[i], 1.0, 2.0)) for i in range(n)
-    ]
+    floor_lamps = [lamp.floor_lamp_rand(rngs[i]) for i in range(n)]
     placed_floor_lamps = []
     for i in range(n):
         floor_lamp = retry_place(
