@@ -9,11 +9,14 @@ from typing import NamedTuple
 import procfunc as pf
 
 from infinigen2.lighting import sky_lighting
+from infinigen2.objects import window
 from infinigen2.scenes.desk_setup import desk_setup_in_room_rand
 from infinigen2.scenes.dining_table_setup import dining_table_setup_rand
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding
+from infinigen2.scenes.room.ceiling_features import ceiling_feature_rand
 from infinigen2.scenes.room.room_shape import (
+    RoomShapeResult,
     room_shape_rand,
 )
 from infinigen2.scenes.room.room_small_objects import (
@@ -21,10 +24,24 @@ from infinigen2.scenes.room.room_small_objects import (
     objects_scattered_on_surface,
     small_objects_collection_rand,
 )
-from infinigen2.scenes.room.room_surface_features import (
-    ceiling_feature_rand,
-    room_walls_rand,
-    skirting_rand,
+from infinigen2.scenes.room.skirting import skirting_rand
+from infinigen2.scenes.room.wall_base import (
+    ROOM_SUBSURF_LEVELS,
+    WallResult,
+    _extrude_for_thickness,
+    _resolve_wall_inputs,
+    wall_plain_rand,
+)
+from infinigen2.scenes.room.wall_cutouts import (
+    wall_cubby_rand,
+    wall_doors_rand,
+    wall_full_window_rand,
+    wall_painting_grid_rand,
+    wall_windows_rand,
+)
+from infinigen2.scenes.room.wall_mounts import (
+    wall_board_shelf_rand,
+    wall_storage_flush_rand,
 )
 from infinigen2.scenes.setup_utils import (
     MeshResult,
@@ -35,11 +52,14 @@ from infinigen2.scenes.setup_utils import (
 )
 from infinigen2.scenes.sofa_setup import sofa_setup_rand
 from infinigen2.scenes.wall_storage_setup import wall_storage_setup_rand
+from infinigen2.shaders.functionality_lists import wall_material_rand
 
 __all__ = [
     "LivingroomResult",
     "livingroom_rand",
+    "room_walls_rand",
     "room_rand",
+    "wall_arrangement_rand",
 ]
 
 logger = logging.getLogger(__name__)
@@ -67,6 +87,194 @@ def _rename(objs: list[pf.MeshObject], name: str) -> list[pf.MeshObject]:
         obj.item().name = f"{name}.{i:02d}"
         _name_materials(obj, f"{name}.{i:02d}")
     return named
+
+
+@pf.tracer.grammar
+def wall_arrangement_rand(
+    rng: pf.RNG,
+    wall: pf.MeshObject | None = None,
+    window_obj: pf.MeshObject | None = None,
+    window_portal: pf.LightObject | None = None,
+    wall_material: pf.Material | None = None,
+    window_spacing: float | None = None,
+    window_bottom: float | None = None,
+    wall_thickness: float = 0.05,
+) -> WallResult:
+    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+
+    def plain(rng, wall, wall_material):
+        return wall_plain_rand(rng, wall, wall_material, wall_thickness=wall_thickness)
+
+    def windows(rng, wall, wall_material):
+        return wall_windows_rand(
+            rng,
+            wall,
+            wall_material,
+            window_obj=window_obj,
+            window_portal=window_portal,
+            window_spacing=window_spacing,
+            window_bottom=window_bottom,
+            wall_thickness=wall_thickness,
+        )
+
+    def painting_grid(rng, wall, wall_material):
+        return wall_painting_grid_rand(
+            rng, wall, wall_material, wall_thickness=wall_thickness
+        )
+
+    def board_shelf(rng, wall, wall_material):
+        return wall_board_shelf_rand(
+            rng, wall, wall_material, wall_thickness=wall_thickness
+        )
+
+    def storage_flush(rng, wall, wall_material):
+        return wall_storage_flush_rand(
+            rng, wall, wall_material, wall_thickness=wall_thickness
+        )
+
+    def cubby(rng, wall, wall_material):
+        return wall_cubby_rand(rng, wall, wall_material, wall_thickness=wall_thickness)
+
+    def doors(rng, wall, wall_material):
+        return wall_doors_rand(rng, wall, wall_material, wall_thickness=wall_thickness)
+
+    def full_wall_window(rng, wall, wall_material):
+        return wall_full_window_rand(
+            rng, wall, wall_material, wall_thickness=wall_thickness
+        )
+
+    rng_choice, rng_feature = rng.spawn(2)
+    option = pf.control.choice(
+        rng_choice,
+        [
+            (plain, 0.5),
+            (windows, 3.0),
+            (painting_grid, 1.0),
+            (board_shelf, 1.5),
+            (storage_flush, 1.0),
+            (cubby, 0.5),
+            (doors, 0.2),
+            (full_wall_window, 0.6),
+        ],
+    )
+    return option(rng=rng_feature, wall=wall, wall_material=wall_material)
+
+
+@pf.tracer.grammar
+def room_walls_rand(
+    rng: pf.RNG,
+    shape: RoomShapeResult,
+    wall_thickness: float = 0.1,
+) -> WallResult:
+    vec_wall = pf.nodes.shader.coord().uv
+
+    rng_materials, rng_window, rng_walls = rng.spawn(3)
+    rng_mat_1, rng_mat_2 = rng_materials.spawn(2)
+    wall_material_1 = wall_material_rand(rng_mat_1, vec_wall)
+    wall_material_2 = wall_material_rand(rng_mat_2, vec_wall)
+
+    wall_back = _extrude_for_thickness(shape.walls, wall_thickness)
+    wall_back.item().name = "room_wall_back"
+
+    pf.ops.object.set_material(
+        shape.walls,
+        surface=wall_material_1.surface,
+        displacement=wall_material_1.displacement,
+    )
+    pf.ops.modifier.subdivide_surface(
+        shape.walls, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True
+    )
+
+    edge_gap_pct = 0.10
+    edge_gap = edge_gap_pct * shape.dimensions.z
+    usable_height = shape.dimensions.z - 2.0 * edge_gap
+    window_height_pct = pf.random.clip_gaussian(
+        rng_window, 0.75, 0.2, 0.6, 1.0 - 2.0 * edge_gap_pct
+    )
+    window_height = shape.dimensions.z * window_height_pct
+    # window size is independent of walls; too-wide windows fall back to plain wall
+    max_window_width = max(2.0, max(shape.dimensions.x, shape.dimensions.y) - 0.5)
+    window_width = (
+        1.0 + (max_window_width - 1.0) * pf.random.uniform(rng_window, 0.0, 1.0) ** 2
+    )
+    window_dimensions = window.window_dimensions_rand(
+        rng_window, width=window_width, height=window_height
+    )
+    window_result = window.window_rand(rng_window, dimensions=window_dimensions)
+    window_obj = window_result.mesh
+    window_portal = window_result.light
+
+    pf.ops.object.set_transform(
+        window_obj, scale=(1.0, 1.0, window_height / window_obj.item().dimensions.z)
+    )
+    pf.ops.mesh.transform_apply(window_obj)
+
+    _depth, _width, _height = window_obj.item().dimensions
+    wmin, _wmax = pf.ops.attr.bbox_min_max(window_obj)
+    free_height = usable_height - _height
+    window_bottom_pct = pf.random.clip_gaussian(rng_window, 0.7, 0.15, 0.35, 0.85)
+    window_bottom = edge_gap + free_height * window_bottom_pct - wmin[2]
+    window_spacing = pf.random.uniform(rng_window, 0.1, 0.25) * _width
+
+    wall_planes = []
+    backs = [wall_back]
+    sills = []
+    storage = []
+    lights = []
+    decorations: dict[str, list[pf.MeshObject]] = {}
+
+    # cull decorations against those on other walls (seed empty; walls are coincident)
+    colliders = ccol.collision_set([])
+    for wall, rng_wall in zip(
+        shape.flat_walls, rng_walls.spawn(len(shape.flat_walls)), strict=True
+    ):
+        rng_wall_mat, rng_wall_dec = rng_wall.spawn(2)
+        mat = pf.control.choice(
+            rng_wall_mat,
+            [(wall_material_1, 3), (wall_material_2, 1)],
+        )
+        result = wall_arrangement_rand(
+            rng_wall_dec,
+            wall,
+            window_obj,
+            window_portal,
+            wall_material=mat,
+            window_spacing=window_spacing,
+            window_bottom=window_bottom,
+            wall_thickness=wall_thickness,
+        )
+        flat_decorations = [o for objs in result.decorations.values() for o in objs]
+        kept, colliders = keep_non_colliding(
+            flat_decorations, colliders, key=lambda o: o
+        )
+        dropped = set(id(o) for o in flat_decorations) - set(id(o) for o in kept)
+        wall_planes.extend(result.wall_planes)
+        backs.extend(result.backs)
+        sills.extend(result.sills)
+        storage.extend(o for o in result.storage if id(o) not in dropped)
+        lights.extend(result.lights)
+        for kind, objs in result.decorations.items():
+            decorations.setdefault(kind, []).extend(
+                o for o in objs if id(o) not in dropped
+            )
+
+    for kind, objs in sorted(decorations.items()):
+        logger.info(f"Created {len(objs)} wall {kind} objects")
+    logger.info(f"Created {len(storage)} wall storage surfaces")
+
+    # storage aliases also appear under decorations, so dedup by identity
+    objects = wall_planes + [shape.walls] + backs + sills + storage
+    objects += [o for objs in decorations.values() for o in objs]
+    return WallResult(
+        all_objects=list({id(o): o for o in objects}.values()),
+        wall_planes=wall_planes,
+        corner_walls=[shape.walls],
+        backs=backs,
+        sills=sills,
+        storage=storage,
+        lights=lights,
+        decorations=decorations,
+    )
 
 
 def _surface_decorations(

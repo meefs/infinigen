@@ -567,61 +567,61 @@
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_plain_rand",
+    "name": "infinigen2.scenes.room.wall_base.wall_plain_rand",
     "integration_test_string": "wall_plain_rand object_demo render_cycles",
     "num_seeds": 1
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_windows_rand",
+    "name": "infinigen2.scenes.room.wall_cutouts.wall_windows_rand",
     "integration_test_string": "wall_windows_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_painting_grid_rand",
+    "name": "infinigen2.scenes.room.wall_cutouts.wall_painting_grid_rand",
     "integration_test_string": "wall_painting_grid_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_board_shelf_rand",
+    "name": "infinigen2.scenes.room.wall_mounts.wall_board_shelf_rand",
     "integration_test_string": "wall_board_shelf_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_storage_shelf_rand",
+    "name": "infinigen2.scenes.room.wall_cutouts.wall_storage_shelf_rand",
     "integration_test_string": "wall_storage_shelf_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_cubby_rand",
+    "name": "infinigen2.scenes.room.wall_cutouts.wall_cubby_rand",
     "integration_test_string": "wall_cubby_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_storage_flush_rand",
+    "name": "infinigen2.scenes.room.wall_mounts.wall_storage_flush_rand",
     "integration_test_string": "wall_storage_flush_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_doors_rand",
+    "name": "infinigen2.scenes.room.wall_cutouts.wall_doors_rand",
     "integration_test_string": "wall_doors_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_full_window_rand",
+    "name": "infinigen2.scenes.room.wall_cutouts.wall_full_window_rand",
     "integration_test_string": "wall_full_window_rand object_demo render_cycles",
     "num_seeds": 3
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room_surface_features.wall_arrangement_rand",
+    "name": "infinigen2.scenes.room.room.wall_arrangement_rand",
     "integration_test_string": "wall_arrangement_rand object_demo render_cycles",
     "num_seeds": 3
   },

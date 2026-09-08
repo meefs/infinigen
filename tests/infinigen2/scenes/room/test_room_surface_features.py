@@ -11,21 +11,27 @@ import pytest
 
 from infinigen2 import generate
 from infinigen2.curves import skirting_board_profile
-from infinigen2.scenes.room import room_surface_features
+from infinigen2.scenes.room import (
+    room,
+    skirting,
+    wall_base,
+    wall_cutouts,
+    wall_mounts,
+)
 from infinigen2.shaders import functionality_lists
 from infinigen2.util import mesh as mesh_util
 
 WALL_GENERATORS = [
-    room_surface_features.wall_plain_rand,
-    room_surface_features.wall_windows_rand,
-    room_surface_features.wall_painting_grid_rand,
-    room_surface_features.wall_board_shelf_rand,
-    room_surface_features.wall_storage_shelf_rand,
-    room_surface_features.wall_cubby_rand,
-    room_surface_features.wall_storage_flush_rand,
-    room_surface_features.wall_doors_rand,
-    room_surface_features.wall_full_window_rand,
-    room_surface_features.wall_arrangement_rand,
+    wall_base.wall_plain_rand,
+    wall_cutouts.wall_windows_rand,
+    wall_cutouts.wall_painting_grid_rand,
+    wall_mounts.wall_board_shelf_rand,
+    wall_cutouts.wall_storage_shelf_rand,
+    wall_cutouts.wall_cubby_rand,
+    wall_mounts.wall_storage_flush_rand,
+    wall_cutouts.wall_doors_rand,
+    wall_cutouts.wall_full_window_rand,
+    room.wall_arrangement_rand,
 ]
 
 
@@ -41,7 +47,7 @@ def _evaluated_world_extent(obj: pf.MeshObject) -> np.ndarray:
 
 @pytest.mark.parametrize("func", WALL_GENERATORS, ids=lambda func: func.__name__)
 def test_wall_generators_run_standalone(
-    func: collections.abc.Callable[[pf.RNG], room_surface_features.WallResult],
+    func: collections.abc.Callable[[pf.RNG], wall_base.WallResult],
     rng: pf.RNG,
 ) -> None:
     result = func(rng)
@@ -52,7 +58,7 @@ def test_wall_generators_run_standalone(
 
 
 def test_standalone_wall_has_vertical_metric_uvs(rng: pf.RNG) -> None:
-    wall = room_surface_features._standalone_wall_rand(rng, width=1.75, height=2.25)
+    wall = wall_base._standalone_wall_rand(rng, width=1.75, height=2.25)
     uvs = pf.ops.attr.uv_coords(wall)
     bbox_min, bbox_max = pf.ops.attr.bbox_min_max(wall)
     extent = np.array(bbox_max) - np.array(bbox_min)
@@ -64,13 +70,11 @@ def test_standalone_wall_has_vertical_metric_uvs(rng: pf.RNG) -> None:
 
 
 def test_wall_generator_accepts_precreased_wall(rng: pf.RNG) -> None:
-    wall = room_surface_features._standalone_wall_rand(rng, width=3.0, height=2.5)
+    wall = wall_base._standalone_wall_rand(rng, width=3.0, height=2.5)
     pf.ops.attr.write_attribute(wall, 0.0, "crease_edge", domain="EDGE")
     material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
 
-    result = room_surface_features.wall_plain_rand(
-        rng, wall=wall, wall_material=material
-    )
+    result = wall_base.wall_plain_rand(rng, wall=wall, wall_material=material)
     creases = pf.ops.attr.read_attribute(
         result.wall_planes[0], "crease_edge", domain="EDGE"
     )
@@ -80,10 +84,10 @@ def test_wall_generator_accepts_precreased_wall(rng: pf.RNG) -> None:
 
 @pytest.mark.parametrize("func", WALL_GENERATORS, ids=lambda func: func.__name__)
 def test_wall_generators_preserve_outer_extent_after_subdivision(
-    func: collections.abc.Callable[..., room_surface_features.WallResult],
+    func: collections.abc.Callable[..., wall_base.WallResult],
 ) -> None:
     rng = np.random.default_rng(42)
-    wall = room_surface_features._standalone_wall_rand(rng, width=3.0, height=2.5)
+    wall = wall_base._standalone_wall_rand(rng, width=3.0, height=2.5)
     material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
 
     result = func(rng, wall=wall, wall_material=material)
@@ -95,16 +99,16 @@ def test_wall_generators_preserve_outer_extent_after_subdivision(
 @pytest.mark.parametrize(
     "func",
     [
-        room_surface_features.wall_doors_rand,
-        room_surface_features.wall_full_window_rand,
+        wall_cutouts.wall_doors_rand,
+        wall_cutouts.wall_full_window_rand,
     ],
     ids=lambda func: func.__name__,
 )
 def test_wall_cutouts_fall_back_on_narrow_wall(
-    func: collections.abc.Callable[..., room_surface_features.WallResult],
+    func: collections.abc.Callable[..., wall_base.WallResult],
     rng: pf.RNG,
 ) -> None:
-    wall = room_surface_features._standalone_wall_rand(rng, width=0.02, height=2.5)
+    wall = wall_base._standalone_wall_rand(rng, width=0.02, height=2.5)
     material = functionality_lists.wall_material_rand(
         np.random.default_rng(100), pf.nodes.shader.coord().uv
     )
@@ -152,7 +156,7 @@ def test_skirting_on_walls_follows_profile_height(
     profile = skirting_board_profile.skirting_profile(height=profile_height, width=0.04)
     material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
 
-    skirt = room_surface_features.skirting_on_walls_rand(
+    skirt = skirting.skirting_on_walls_rand(
         np.random.default_rng(2), [wall], material, profile_curve=profile
     )[0]
     vertices = np.array([vertex.co for vertex in skirt.item().data.vertices])
