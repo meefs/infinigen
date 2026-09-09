@@ -43,7 +43,7 @@ from infinigen2.shaders.composites.splats_overlay import (
     splats_base_material_rand,
     splats_overlay_rand,
 )
-from infinigen2.shaders.masks import cracks, splats
+from infinigen2.shaders.masks import cracks, graphicdesign, splats
 from infinigen2.shaders.masks.tile_shapes import (
     tile_coord_transform_rand,
     tile_mask_rand,
@@ -51,8 +51,6 @@ from infinigen2.shaders.masks.tile_shapes import (
 
 __all__ = [
     "all_materials_rand",
-    "art_color_rand",
-    "art_pattern_material_rand",
     "castor_wheel_material_rand",
     "ceiling_material_rand",
     "decorative_material_rand",
@@ -243,6 +241,21 @@ def _dark_scratches_overlay(rng: pf.RNG, vector, material: pf.Material) -> pf.Ma
     )
 
 
+def _art_patterned_fabric_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+    translucency: float,
+) -> pf.Material:
+    rng_color, rng_fabric = rng.spawn(2)
+    color = graphicdesign.art_rand(rng_color, vector)
+    return fabric.fabric_translucent_rand(
+        rng_fabric,
+        vector,
+        base_color=color,
+        translucency=translucency,
+    )
+
+
 def furniture_fabric(
     rng: pf.RNG,
     vec,
@@ -265,11 +278,16 @@ def furniture_fabric(
         fabric_patterned.fabric_patterned_translucent_rand,
         translucency=translucency,
     )
+    art_patterned = partial(
+        _art_patterned_fabric_rand,
+        translucency=translucency,
+    )
     material_func = pf.control.choice(
         rng_choice,
         [
             (plain, 1.5),
             (patterned, 2.0),
+            (art_patterned, 0.5),
             (opaque, 1.0),
             (leather.leather_rand, 3.0),
         ],
@@ -318,6 +336,15 @@ def paint_patterned_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mate
         tile_mask_result=tile_mask,
     )
     return paint.paint_rand(r_paint, vector, base_color=base_color)
+
+
+def _art_patterned_paint_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+) -> pf.Material:
+    rng_color, rng_paint = rng.spawn(2)
+    color = graphicdesign.art_rand(rng_color, vector)
+    return paint.paint_rand(rng_paint, vector, base_color=color)
 
 
 def paint_flaked_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
@@ -431,6 +458,7 @@ def wall_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Materi
         [
             (paint_wall_rand, 3.0),
             (paint_patterned_rand, 1.0),
+            (_art_patterned_paint_rand, 0.5),
             (wood_planks.wood_planks_rand, 1.5),
             (paint_flaked_rand, 1.0),
             (concrete.concrete_rand, 1.0),
@@ -526,39 +554,6 @@ def ceiling_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mat
         ],
     )
     return func(rng_func, vector)
-
-
-def art_color_rand(rng: pf.RNG) -> pf.Color:
-    hue = pf.random.uniform(rng, 0.0, 1.0)
-    value = pf.random.clip_gaussian(rng, 0.6, 0.5, 0.05, 0.95)
-    sat = pf.random.clip_gaussian(rng, 0.7, 0.4, 0.05, 0.95)
-    return pf.color.hsv_color(hue=hue, saturation=sat, value=value)
-
-
-def art_pattern_material_rand(
-    rng: pf.RNG, vector: pf.ProcNode[pf.Vector]
-) -> pf.Material:
-    r_tile, r_colors, r_choice, r_mat = rng.spawn(4)
-    scale = pf.random.uniform(r_tile, 1.0, 20.0)
-
-    tile_vec = tile_coord_transform_rand(r_tile, vector, scale=scale)
-    tile_mask = tile_mask_rand(r_tile, tile_vec)
-
-    base_color = fabric_patterned.patterned_color_rand(
-        r_colors,
-        color1=art_color_rand(r_colors),
-        color2=art_color_rand(r_colors),
-        color3=art_color_rand(r_colors),
-        tile_mask_result=tile_mask,
-    )
-    func = pf.control.choice(
-        r_choice,
-        [
-            (paint.paint_rand, 1.0),
-            (fabric.fabric_rand, 1.0),
-        ],
-    )
-    return func(r_mat, vector, base_color=base_color)
 
 
 def rug_material_rand(
