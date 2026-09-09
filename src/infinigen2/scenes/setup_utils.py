@@ -225,31 +225,32 @@ def back_face_grounded(
     margin: float,
     eps: float = 0.5,
 ) -> bool:
-    """True iff every corner of `obj`'s back (-X local) face has a collider
+    """True iff the corners and center of `obj`'s back (-X local) face have a collider
     directly behind it within (1 + eps) * margin. Rejects placements where part
-    of the back overhangs a window/door alcove (no wall behind that corner).
+    of the back overhangs a window/door alcove (no nearby wall behind a sample).
     """
     bmin, bmax = pf.ops.attr.bbox_min_max(obj, global_coords=False)
-    corners_local = np.array(
+    samples_local = np.array(
         [
             [bmin[0], bmin[1], bmin[2]],
             [bmin[0], bmin[1], bmax[2]],
             [bmin[0], bmax[1], bmin[2]],
             [bmin[0], bmax[1], bmax[2]],
+            [bmin[0], (bmin[1] + bmax[1]) / 2, (bmin[2] + bmax[2]) / 2],
         ]
     )
     mw = np.array(obj.item().matrix_world)
-    corners_world = corners_local @ mw[:3, :3].T + mw[:3, 3]
+    samples_world = samples_local @ mw[:3, :3].T + mw[:3, 3]
     back_normal = mw[:3, :3] @ np.array([-1.0, 0.0, 0.0])
     back_normal = back_normal / np.linalg.norm(back_normal)
 
     hits, ray_idx, _ = ccol.raycast(
-        colliders, corners_world, np.tile(back_normal, (4, 1))
+        colliders, samples_world, np.tile(back_normal, (len(samples_world), 1))
     )
     threshold = (1.0 + eps) * margin
-    grounded = np.zeros(4, dtype=bool)
+    grounded = np.zeros(len(samples_world), dtype=bool)
     for loc, ri in zip(hits, ray_idx, strict=False):
-        if np.linalg.norm(loc - corners_world[ri]) <= threshold:
+        if np.linalg.norm(loc - samples_world[ri]) <= threshold:
             grounded[ri] = True
     return bool(grounded.all())
 
