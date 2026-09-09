@@ -41,6 +41,7 @@ __all__ = [
 BULB_HUB_HEIGHT = 0.015
 _DEFAULT_SUPPORT_SHADE_OVERLAP = 0.03
 _SHADE_CORNER_ATTRIBUTE = "lamp_shade_corner"
+_RACK_CORNER_ATTRIBUTE = "lamp_rack_corner"
 
 
 def point_light_indoor(
@@ -121,7 +122,7 @@ def _bulb_rack(
     transform_1 = pf.nodes.geo.transform(
         geometry=curve_circle_1,
         translation=transform_1_translation,
-        rotation=(0, 0, 0),
+        rotation=(0, 0, pi / 4.0),
         scale=(1, 1, 1),
     )
 
@@ -157,11 +158,33 @@ def _bulb_rack(
         position=sample_curve_1.position,
     )
 
-    join = pf.nodes.geo.join_geometry([transform, set_position_1, transform_1])
+    join = pf.nodes.geo.join_geometry([transform, set_position_1])
 
     curve_circle_2 = pf.nodes.geo.curve_circle(resolution=6, radius=thickness)
     curve_to = curve_to_mesh_with_uv(curve=join, profile=curve_circle_2, fill_caps=True)
-    return curve_to.mesh
+    ring = pf.nodes.geo.capture_attribute(
+        geometry=transform_1, index=pf.nodes.geo.input_index()
+    )
+    ring_mesh = curve_to_mesh_with_uv(curve=ring.geometry, profile=curve_circle_2).mesh
+    edge_vertices = pf.nodes.geo.input_mesh_edge_vertices()
+    start = pf.nodes.geo.field_at_index(
+        value=ring.index, index=edge_vertices.vertex_index_1, domain="POINT"
+    )
+    end = pf.nodes.geo.field_at_index(
+        value=ring.index, index=edge_vertices.vertex_index_2, domain="POINT"
+    )
+    corner = pf.nodes.func.boolean_and(
+        a=pf.nodes.func.equal(a=start, b=end),
+        b=pf.nodes.func.equal(a=outer_resolution, b=4),
+    )
+    ring_mesh = pf.nodes.geo.store_named_attribute(
+        geometry=ring_mesh,
+        name=_RACK_CORNER_ATTRIBUTE,
+        value=corner,
+        domain="EDGE",
+        data_type="BOOLEAN",
+    )
+    return pf.nodes.geo.join_geometry([curve_to.mesh, ring_mesh])
 
 
 @pf.nodes.node_function
@@ -910,12 +933,16 @@ def _assemble_lamp(
         name=_SHADE_CORNER_ATTRIBUTE,
         data_type="BOOLEAN",
     ).attribute
+    rack_corner = pf.nodes.geo.input_named_attribute(
+        name=_RACK_CORNER_ATTRIBUTE, data_type="BOOLEAN"
+    ).attribute
+    corner = pf.nodes.func.boolean_or(a=shade_corner, b=rack_corner)
     geo = pf.nodes.geo.store_named_attribute(
         geometry=geo,
         name="crease_edge",
         value=1.0,
         domain="EDGE",
-        selection=shade_corner,
+        selection=corner,
     )
     mesh = pf.nodes.to_mesh_object(geo)
     pf.ops.modifier.subdivide_surface(mesh, levels=2, _skip_apply=True)
