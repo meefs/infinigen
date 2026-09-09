@@ -267,6 +267,61 @@
   },
   {
     "category": "Material",
+    "name": "infinigen2.shaders.base_materials.sandstone.sandstone_rand",
+    "integration_test_string": "sandstone_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.stone.stone_rand",
+    "integration_test_string": "stone_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.cracked_ground.cracked_ground_rand",
+    "integration_test_string": "cracked_ground_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.ice.ice_rand",
+    "integration_test_string": "ice_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.soil.soil_rand",
+    "integration_test_string": "soil_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.dirt.dirt_rand",
+    "integration_test_string": "dirt_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.mud.mud_rand",
+    "integration_test_string": "mud_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.sand.sand_rand",
+    "integration_test_string": "sand_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.lava.lava_rand",
+    "integration_test_string": "lava_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.cobble_stone.cobble_stone_rand",
+    "integration_test_string": "cobble_stone_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.atmosphere_light_haze.atmosphere_light_haze_rand",
+    "integration_test_string": "atmosphere_light_haze_rand material_sphere render_cycles"
+  },
+  {
+    "category": "Material",
     "name": "infinigen2.shaders.base_materials.paint.paint_rand",
     "integration_test_string": "paint_rand material_cube render_cycles",
     "presets": [
@@ -476,6 +531,11 @@
   {
     "category": "Scene",
     "name": "infinigen2.scenes.demo_material.material_cube",
+    "num_seeds": 0
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.demo_material.material_ground_plane",
     "num_seeds": 0
   },
   {
