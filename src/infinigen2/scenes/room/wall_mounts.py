@@ -8,6 +8,7 @@ import logging
 import procfunc as pf
 
 from infinigen2.objects import storage
+from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
 from infinigen2.scenes.room.wall_base import (
     WallResult,
     _extrude_for_thickness,
@@ -194,6 +195,7 @@ def wall_storage_flush_rand(
         normal_offset=pf.random.uniform(rng, 0.02, 0.05),
     )
     aliases = pf.nodes.to_aliases(instances)
+    propagate_modifiers_to_instances([cab], aliases)
     if not aliases:
         logger.warning(
             "wall_storage_flush: no cabinets fit on %.2fm-wide wall "

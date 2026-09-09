@@ -14,15 +14,14 @@ from mathutils import Euler
 from procfunc.nodes import types as t
 
 from infinigen2.shaders.functionality_lists import (
-    furniture_fabric,
+    fabric_light_rand,
     furniture_material_rand,
     glass_material_rand,
 )
 from infinigen2.util.curve import curve_to_mesh_with_uv
+from infinigen2.util.mesh import crease_sharp
 
-# window/curtain parts are built flat in the XY plane (X=width, Y=height,
-# Z=depth); this Euler reorients them into the shared wall placement frame
-# (X=depth out of wall, Y=width, Z=height up), matching door_body
+# parts are built flat in XY; reorients them into the wall frame like door_body
 _WALL_REORIENT = (math.pi / 2, 0.0, math.pi / 2)
 
 __all__ = [
@@ -68,6 +67,25 @@ def _line_seq(
 
 
 @pf.nodes.node_function
+def _pleat_curve(
+    start: t.SocketOrVal[float],
+    end: t.SocketOrVal[float],
+    width: t.SocketOrVal[float],
+    interval_number: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.CurveObject]:
+    # segments per sine period, so pleats resolve the same at any panel width
+    curve = pf.nodes.geo.curve_line(
+        start=pf.nodes.math.combine_xyz(start), end=pf.nodes.math.combine_xyz(end)
+    )
+    span = pf.nodes.math.absolute(end - start)
+    periods = interval_number * span / width
+    count = pf.nodes.math.ceil(periods * 6.0)
+    return pf.nodes.geo.resample_curve_count(
+        curve=curve, count=pf.nodes.math.maximum(count, 8.0).astype(dtype=int)
+    )
+
+
+@pf.nodes.node_function
 def _curtain_geometry(
     width: t.SocketOrVal[float],
     depth: t.SocketOrVal[float],
@@ -82,26 +100,11 @@ def _curtain_geometry(
     curtain_frame_material: t.SocketOrVal[pf.Material],
     curtain_material: t.SocketOrVal[pf.Material],
 ) -> pf.ProcNode[pf.MeshObject]:
-    curve_line_start = pf.nodes.math.combine_xyz(l2)
-    curve_line_end = pf.nodes.math.combine_xyz(r2)
-    curve_line = pf.nodes.geo.curve_line(start=curve_line_start, end=curve_line_end)
-
-    resample_curve_count = pf.nodes.geo.resample_curve_count(
-        curve=curve_line, count=100
-    )
-
-    curve_line_1_start = pf.nodes.math.combine_xyz(l1)
-    curve_line_1_end = pf.nodes.math.combine_xyz(r1)
-    curve_line_1 = pf.nodes.geo.curve_line(
-        start=curve_line_1_start, end=curve_line_1_end
-    )
-
-    resample_curve_count_1 = pf.nodes.geo.resample_curve_count(
-        curve=curve_line_1, count=100
-    )
-
     join: pf.ProcNode[pf.CurveObject] = pf.nodes.geo.join_geometry(
-        [resample_curve_count, resample_curve_count_1]
+        [
+            _pleat_curve(l2, r2, width, interval_number),
+            _pleat_curve(l1, r1, width, interval_number),
+        ]
     )
 
     spline_parameter = pf.nodes.geo.spline_parameter()
@@ -135,7 +138,7 @@ def _curtain_geometry(
     curve_line_2 = pf.nodes.geo.curve_line(
         start=curve_line_2_start, end=curve_line_2_end
     )
-    curve_circle = pf.nodes.geo.curve_circle(radius=radius * 1.3)
+    curve_circle = pf.nodes.geo.curve_circle(resolution=12, radius=radius * 1.3)
     curve_to_1 = pf.nodes.geo.curve_to_mesh(
         curve=curve_line_2, profile_curve=curve_circle
     )
@@ -173,7 +176,7 @@ def _curtain_geometry(
 
     join_1 = pf.nodes.geo.join_geometry([curve_line_3, curve_line_4, curve_line_2])
 
-    curve_circle_1 = pf.nodes.geo.curve_circle(radius=radius)
+    curve_circle_1 = pf.nodes.geo.curve_circle(resolution=12, radius=radius)
     curve_to_2 = curve_to_mesh_with_uv(
         curve=join_1, profile=curve_circle_1, fill_caps=True
     ).mesh
@@ -211,8 +214,11 @@ def _curtain_geometry(
 
     join_3 = pf.nodes.geo.join_geometry([creased, set_material_1])
 
+    # rail circles tessellate at ~11 deg, so 60 catches only the hem's 90 deg corners
+    creased = crease_sharp(join_3, threshold_degrees=60.0)
+
     set_shade_smooth = pf.nodes.geo.set_shade_smooth(
-        geometry=join_3, shade_smooth=False
+        geometry=creased, shade_smooth=False
     )
 
     return pf.nodes.geo.transform(geometry=set_shade_smooth, rotation=_WALL_REORIENT)
@@ -280,7 +286,7 @@ def curtain_rand(
         dimensions = window_dimensions_rand(rng)
     vec = pf.nodes.shader.coord().uv
     if material is None:
-        material = furniture_fabric(rng, vec)
+        material = fabric_light_rand(rng, vec)
 
     if rail_material is None:
         rail_material = furniture_material_rand(rng, vec)
@@ -674,22 +680,14 @@ def _window_geometry(
 
     realized = pf.nodes.geo.realize_instances(join)
 
-    # crease frame edges so the unapplied curtain-smoothing subsurf keeps them sharp
-    creased = pf.nodes.geo.store_named_attribute(
-        domain="EDGE",
-        geometry=realized,
-        name="crease_edge",
-        value=1.0,
-    )
-
     # built in the XY plane (X=width, Y=height, Z=depth); reorient into the
     # shared wall frame (X=depth out of wall, Y=width, Z=height up)
-    creased = pf.nodes.geo.transform(geometry=creased, rotation=_WALL_REORIENT)
+    reoriented = pf.nodes.geo.transform(geometry=realized, rotation=_WALL_REORIENT)
 
-    bound_box = pf.nodes.geo.bound_box(creased)
+    bound_box = pf.nodes.geo.bound_box(reoriented)
 
     return _WindowGeometryResult(
-        geometry=creased,
+        geometry=reoriented,
         bounding_box=bound_box.bounding_box,
     )
 
@@ -709,15 +707,8 @@ def _glass_pane(
         end=pf.nodes.math.combine_xyz(x=width * 0.5),
     )
     mesh = curve_to_mesh_with_uv(curve=curve, profile=profile)
-    # uncreased, the frame's boundary_smooth=ALL subsurf rounds the pane inwards
-    creased = pf.nodes.geo.store_named_attribute(
-        domain="EDGE",
-        geometry=mesh.mesh,
-        name="crease_edge",
-        value=1.0,
-    )
     glass = pf.nodes.geo.set_material(
-        geometry=creased, selection=True, material=material
+        geometry=mesh.mesh, selection=True, material=material
     )
     return pf.nodes.geo.transform(geometry=glass, rotation=_WALL_REORIENT)
 
@@ -789,7 +780,6 @@ def window(
         )
         pf.ops.object.join(frame_obj, pane_obj)
 
-    pf.ops.modifier.subdivide_surface(frame_obj, levels=2, _skip_apply=True)
     origin_offset = pf.Vector(
         (sub_frame_thickness * 0.5, dimensions.y * 0.5, dimensions.z * 0.5)
     )
@@ -924,8 +914,6 @@ def window_rand(
         )
         pf.ops.object.join(frame_obj, pane_obj)
 
-    # crease_edge keeps the frame edges sharp during subdivision
-    pf.ops.modifier.subdivide_surface(frame_obj, levels=2, _skip_apply=True)
     origin_offset = dimensions * 0.5
     pf.ops.object.set_transform(frame_obj, location=origin_offset)
     pf.ops.mesh.transform_apply(frame_obj)

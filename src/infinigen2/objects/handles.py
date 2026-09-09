@@ -11,6 +11,7 @@
 # - Alexander Raistrick: port lever handle to infinigen2 (sim articulation
 #   stripped), transpile curved pull, author ball knob and bar (D) pull
 
+import math
 from typing import NamedTuple
 
 import procfunc as pf
@@ -19,6 +20,10 @@ from procfunc.nodes.util.bpy_node_info import NodeDataType
 
 from infinigen2.shaders.functionality_lists import decorative_material_rand
 from infinigen2.util.curve import curve_to_mesh_with_uv
+from infinigen2.util.mesh import quad_cap, quad_cylinder
+
+# the knob's rims are its silhouette, so they get a tight radius not a razor edge
+_KNOB_RIM_CREASE = 0.5
 
 __all__ = [
     "HandleResult",
@@ -38,31 +43,13 @@ class HandleResult(NamedTuple):
     mesh: pf.MeshObject
 
 
-def _quad_cap(
-    profile: pf.ProcNode, insets: int = 3, scale: float = 0.5
-) -> pf.ProcNode[pf.MeshObject]:
-    cap = pf.nodes.geo.fill_curve(profile, mode="NGONS")
-    for _ in range(insets):
-        extruded = pf.nodes.geo.extrude_mesh(
-            cap, offset_scale=0.0, individual=False, mode="FACES"
-        )
-        cap = pf.nodes.geo.scale_elements(
-            extruded.mesh, scale=scale, selection=extruded.top
-        )
-    position = pf.nodes.geo.input_position()
-    uv = pf.nodes.math.combine_xyz(x=position.x, y=position.y)
-    return pf.nodes.geo.store_named_attribute(
-        geometry=cap, name="UVMap", value=uv, domain="CORNER", data_type="FLOAT2"
-    )
-
-
 @pf.nodes.node_function
 def _rounded_prism(
     width: t.SocketOrVal[float],
     height: t.SocketOrVal[float],
     depth: t.SocketOrVal[float],
     radius: t.SocketOrVal[float],
-    count: t.SocketOrVal[int] = 8,
+    count: t.SocketOrVal[int] = 6,
 ) -> pf.ProcNode[pf.MeshObject]:
     quad = pf.nodes.geo.curve_quadrilateral(width=width, height=height)
     profile = pf.nodes.geo.fillet_curve_poly(
@@ -72,9 +59,10 @@ def _rounded_prism(
         start=(0.0, 0.0, 0.0), end=pf.nodes.math.combine_xyz(z=depth)
     )
     walls = curve_to_mesh_with_uv(curve=line, profile=profile, fill_caps=False).mesh
-    cap_start = pf.nodes.geo.flip_faces(_quad_cap(profile))
+    cap_start = pf.nodes.geo.flip_faces(quad_cap(profile, insets=3, scale=0.5))
     cap_end = pf.nodes.geo.transform(
-        geometry=_quad_cap(profile), translation=pf.nodes.math.combine_xyz(z=depth)
+        geometry=quad_cap(profile, insets=3, scale=0.5),
+        translation=pf.nodes.math.combine_xyz(z=depth),
     )
     solid = pf.nodes.geo.join_geometry([walls, cap_start, cap_end])
     return pf.nodes.geo.merge_by_distance(solid, distance=1e-5)
@@ -87,11 +75,45 @@ def _cylinder_with_uv(
     vertices: t.SocketOrVal[int] = 16,
 ) -> pf.ProcNode[pf.MeshObject]:
     cyl = pf.nodes.geo.mesh_cylinder(vertices=vertices, radius=radius, depth=depth)
-    uv = pf.nodes.math.combine_xyz(
-        x=cyl.uv_map.y * depth, y=cyl.uv_map.x * radius * 6.283185307179586
+    # mesh_cylinder packs the wall into v 0.5..1 and each cap into a uv disc of radius 0.225
+    wall = pf.nodes.math.combine_xyz(
+        x=(cyl.uv_map.y - 0.5) * depth * 2.0,
+        y=cyl.uv_map.x * radius * 2.0 * math.pi,
+    )
+    cap = pf.nodes.math.combine_xyz(
+        x=cyl.uv_map.x * radius / 0.225, y=cyl.uv_map.y * radius / 0.225
+    )
+    is_cap = pf.nodes.math.absolute(pf.nodes.geo.input_normal().z) > 0.5
+    uv = pf.nodes.func.switch(
+        switch=is_cap, a=wall, b=cap, data_type=NodeDataType.FLOAT_VECTOR
     )
     return pf.nodes.geo.store_named_attribute(
         geometry=cyl.mesh, name="UVMap", value=uv, domain="CORNER", data_type="FLOAT2"
+    )
+
+
+@pf.nodes.node_function
+def _uv_sphere_with_uv(
+    radius: t.SocketOrVal[float],
+    z_scale: t.SocketOrVal[float] = 1.0,
+    segments: t.SocketOrVal[int] = 24,
+    rings: t.SocketOrVal[int] = 16,
+) -> pf.ProcNode[pf.MeshObject]:
+    sphere = pf.nodes.geo.mesh_uv_sphere(segments=segments, rings=rings, radius=radius)
+    # z_scale shortens the meridian by that factor at the equator and not at all at the poles
+    uv = pf.nodes.math.combine_xyz(
+        x=sphere.uv_map.y * radius * math.pi * z_scale,
+        y=sphere.uv_map.x * radius * 2.0 * math.pi,
+    )
+    mesh = pf.nodes.geo.store_named_attribute(
+        geometry=sphere.mesh,
+        name="UVMap",
+        value=uv,
+        domain="CORNER",
+        data_type="FLOAT2",
+    )
+    return pf.nodes.geo.transform(
+        geometry=mesh, scale=pf.nodes.math.combine_xyz(x=1.0, y=1.0, z=z_scale)
     )
 
 
@@ -237,33 +259,24 @@ def _knob_handle_geometry(
     stem_length: t.SocketOrVal[float] = 0.014,
     head_radius: t.SocketOrVal[float] = 0.013,
 ) -> pf.ProcNode[pf.MeshObject]:
-    base = pf.nodes.geo.mesh_cylinder(vertices=32, radius=base_radius, depth=base_depth)
+    base = quad_cylinder(radius=base_radius, depth=base_depth, resolution=12)
     base = pf.nodes.geo.transform(
-        geometry=base.mesh, translation=pf.nodes.math.combine_xyz(z=base_depth * 0.5)
+        geometry=base, translation=pf.nodes.math.combine_xyz(z=base_depth * 0.5)
     )
-    stem = pf.nodes.geo.mesh_cylinder(
-        vertices=16, radius=stem_radius, depth=stem_length
-    )
+    stem_depth = stem_length + base_depth * 0.5
+    stem = quad_cylinder(radius=stem_radius, depth=stem_depth, resolution=8)
     stem = pf.nodes.geo.transform(
-        geometry=stem.mesh,
-        translation=pf.nodes.math.combine_xyz(z=base_depth + stem_length * 0.5),
+        geometry=stem,
+        translation=pf.nodes.math.combine_xyz(
+            z=base_depth + stem_length - stem_depth * 0.5
+        ),
     )
-    head = pf.nodes.geo.mesh_uv_sphere(segments=24, rings=16, radius=head_radius)
+    head = _uv_sphere_with_uv(radius=head_radius, z_scale=0.8, segments=12, rings=8)
     head = pf.nodes.geo.transform(
-        geometry=head.mesh,
-        scale=(1.0, 1.0, 0.8),
+        geometry=head,
         translation=pf.nodes.math.combine_xyz(z=base_depth + stem_length),
     )
     geo = pf.nodes.geo.join_geometry([base, stem, head])
-    position = pf.nodes.geo.input_position()
-    uv = pf.nodes.math.combine_xyz(x=position.x, y=position.y)
-    geo = pf.nodes.geo.store_named_attribute(
-        geometry=geo,
-        name="UVMap",
-        value=uv,
-        domain="CORNER",
-        data_type="FLOAT2",
-    )
     return pf.nodes.geo.transform(geometry=geo, rotation=(0.0, 1.5708, 0.0))
 
 
@@ -306,8 +319,8 @@ def _curved_pull_handle_geometry(
     span_scale: t.SocketOrVal[float] = 2.0,
     depth_scale: t.SocketOrVal[float] = 1.5,
 ) -> pf.ProcNode[pf.MeshObject]:
-    arc = pf.nodes.geo.curve_arc(radius=arc_radius, sweep_angle=3.1416, resolution=16)
-    profile = pf.nodes.geo.curve_circle(radius=profile_radius, resolution=12)
+    arc = pf.nodes.geo.curve_arc(radius=arc_radius, sweep_angle=3.1416, resolution=24)
+    profile = pf.nodes.geo.curve_circle(radius=profile_radius, resolution=16)
     tube = curve_to_mesh_with_uv(curve=arc, profile=profile, fill_caps=True).mesh
     scale = pf.nodes.math.combine_xyz(x=span_scale, y=depth_scale, z=1.0)
     tube = pf.nodes.geo.transform(
@@ -321,19 +334,23 @@ def _curved_pull_handle_geometry(
     )
 
 
-def _finish(geo: pf.ProcNode, material: pf.Material) -> HandleResult:
+def _finish(
+    geo: pf.ProcNode, material: pf.Material, crease_value: float = 1.0
+) -> HandleResult:
     geo = pf.nodes.geo.set_material(geo, material=material)
     geo = pf.nodes.geo.set_shade_smooth(geometry=geo, shade_smooth=True)
-    sharp = pf.nodes.geo.input_mesh_edge_angle().unsigned_angle > 0.5
+    # round sections tessellate at <=30 deg; genuine shoulders are cap rims at ~90
+    sharp = pf.nodes.geo.input_mesh_edge_angle().unsigned_angle > math.radians(60.0)
     geo = pf.nodes.geo.store_named_attribute(
         geometry=geo,
         name="crease_edge",
         domain="EDGE",
-        value=sharp.astype(dtype=float),
+        value=sharp.astype(dtype=float) * crease_value,
         data_type="FLOAT",
     )
     obj = pf.nodes.to_mesh_object(geo)
-    pf.ops.modifier.subdivide_surface(obj, levels=4, _skip_apply=True)
+    # matches door.py so a handle joined into a door keeps the density it was built for
+    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
     return HandleResult(mesh=obj)
 
 
@@ -373,22 +390,23 @@ def knob_handle(material: pf.Material | None = None) -> HandleResult:
     if material is None:
         material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
     geo = _knob_handle_geometry()
-    return _finish(geo, material)
+    return _finish(geo, material, crease_value=_KNOB_RIM_CREASE)
 
 
 def knob_handle_rand(rng: pf.RNG, material: pf.Material | None = None) -> HandleResult:
     rng, rng_mat = rng.spawn(2)
     stem_radius = pf.random.uniform(rng, 0.004, 0.007)
+    head_radius = pf.random.uniform(rng, stem_radius * 1.8, 0.018)
     geo = _knob_handle_geometry(
         base_radius=pf.random.uniform(rng, 0.012, 0.02),
         base_depth=pf.random.uniform(rng, 0.003, 0.006),
         stem_radius=stem_radius,
-        stem_length=pf.random.uniform(rng, 0.01, 0.022),
-        head_radius=pf.random.uniform(rng, stem_radius * 1.8, 0.018),
+        stem_length=pf.random.uniform(rng, head_radius, 0.022),
+        head_radius=head_radius,
     )
     if material is None:
         material = decorative_material_rand(rng_mat, pf.nodes.shader.coord().object)
-    return _finish(geo, material)
+    return _finish(geo, material, crease_value=_KNOB_RIM_CREASE)
 
 
 def curved_pull_handle(material: pf.Material | None = None) -> HandleResult:

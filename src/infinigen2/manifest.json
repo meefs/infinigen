@@ -724,6 +724,10 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.table.coffee_table_cabinet_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.table.side_table_rand"
   },
   {

@@ -16,7 +16,7 @@ from procfunc.nodes import types as t
 from infinigen2.objects.table import base_square_rand, base_straight_rand
 from infinigen2.shaders.functionality_lists import (
     decorative_material_rand,
-    furniture_fabric,
+    fabric_sturdy_rand,
 )
 
 __all__ = [
@@ -731,7 +731,7 @@ def sofa(
     )
     obj = pf.nodes.to_mesh_object(res)
     pf.ops.uv.cube_project(obj, uv_name="UVMap")
-    pf.ops.modifier.subdivide_surface(obj, levels=5, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=6, _skip_apply=True)
     return SofaResult(mesh=obj)
 
 
@@ -779,7 +779,7 @@ def sofa_rand(
     arms_angle = pf.random.uniform(rng, 0.0, 1.08)
     leg_dimensions = pf.random.uniform(rng, 0.4, 0.9)
     leg_z = pf.random.uniform(rng, 1.1, 2.5)
-    leg_faces = pf.control.choice(rng, [(4, 0.5), (25, 0.5)])
+    leg_faces = pf.control.choice(rng, [(4, 0.5), (8, 0.5)])
 
     body_crease = pf.random.uniform(rng, 0.5, 0.9)
     cushion_crease = pf.random.uniform(rng, 0.0, 0.3)
@@ -787,7 +787,7 @@ def sofa_rand(
 
     vec = pf.nodes.shader.coord().uv
     if material is None:
-        material = furniture_fabric(rng_fabric, vec, translucency=0.0)
+        material = fabric_sturdy_rand(rng_fabric, vec, translucency=0.0)
     if foot_material is None:
         foot_material = decorative_material_rand(rng_foot, vec)
 
@@ -820,7 +820,7 @@ def sofa_rand(
     )
     obj = pf.nodes.to_mesh_object(res)
     pf.ops.uv.cube_project(obj, uv_name="UVMap")
-    pf.ops.modifier.subdivide_surface(obj, levels=5, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=6, _skip_apply=True)
     return SofaResult(mesh=obj)
 
 

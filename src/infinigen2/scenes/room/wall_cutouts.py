@@ -13,7 +13,10 @@ from mathutils import Euler
 from infinigen2.curves.skirting_board_profile import trim_profile_rand
 from infinigen2.objects import storage, wall_art, window
 from infinigen2.objects.door import door_composite_rand
-from infinigen2.scenes.placement.distribute import duplicates
+from infinigen2.scenes.placement.distribute import (
+    duplicates,
+    propagate_modifiers_to_instances,
+)
 from infinigen2.scenes.room.wall_base import (
     WallResult,
     _extrude_for_thickness,
@@ -181,6 +184,7 @@ def cutout_spaced_instances(
         normal_offset=standoff - recess_depth,
     )
     aliases = pf.nodes.to_aliases(instances)
+    propagate_modifiers_to_instances([instance], aliases)
 
     geom = _plane_to_posed_canonical_mesh(geom, up_axis=canonical_up_axis)
     return CutoutResult(geom, sill, lightblocker, aliases, trim_edges)

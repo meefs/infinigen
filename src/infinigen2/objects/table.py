@@ -5,11 +5,13 @@
 # - Yiming Zuo: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/tables/dining_table.py)
 # - Alexander Raistrick: transpile to procfunc/v2
 
+import math
 from typing import NamedTuple
 
 import procfunc as pf
 from procfunc.nodes import types as t
 
+from infinigen2.objects import storage
 from infinigen2.shaders.functionality_lists import (
     furniture_material_rand,
     table_top_material_rand,
@@ -23,6 +25,8 @@ __all__ = [
     "base_straight",
     "base_straight_rand",
     "cocktail_table_rand",
+    "coffee_table_cabinet_rand",
+    "coffee_table_dimensions_rand",
     "coffee_table_rand",
     "dining_table_rand",
     "pedestal_base",
@@ -81,7 +85,7 @@ def _n_gon_profile(
         curve=transform_2,
         radius=profile_width * profile_fillet_ratio,
         limit_radius=True,
-        count=8,
+        count=4,
     )
     return fillet_curve
 
@@ -222,8 +226,8 @@ def _strecher(
         profile_width=profile_width,
         aspect_ratio=1.0,
         fillet_ratio=0.2,
-        profile_resolution=16,
-        resolution=64,
+        profile_resolution=8,
+        resolution=2,
     )
     return n_gon_cylinder_result.mesh
 
@@ -287,7 +291,6 @@ def _create_legs_and_strechers(
     strecher_index_increment: t.SocketOrVal[int],
     strecher_relative_position: t.SocketOrVal[float],
     leg_bottom_offset: t.SocketOrVal[float],
-    align_leg_x_rot: t.SocketOrVal[bool],
 ) -> t.ProcNode[pf.MeshObject]:
     transform_translation = pf.nodes.math.combine_xyz(z=table_height)
     transform = pf.nodes.geo.transform(
@@ -307,9 +310,11 @@ def _create_legs_and_strechers(
         rotation=set_b_rotation,
         center=(0, 0, 0),
     )
+    splay_height_factor = pf.nodes.math.minimum(table_height / 0.4, 1.0)
+    splay_scale = 1.0 + (leg_bottom_relative_scale - 1.0) * splay_height_factor
     set_b_0 = pf.nodes.math.combine_xyz(
-        x=leg_bottom_relative_scale,
-        y=leg_bottom_relative_scale,
+        x=splay_scale,
+        y=splay_scale,
         z=1.0,
     )
     set_position_position_vector = input_position - (set_b_1 * set_b_0)
@@ -378,39 +383,32 @@ def _create_legs_and_strechers(
     )
     instance_z = pf.nodes.math.vector_length(instance_z_vector)
     instance_on_points_scale = pf.nodes.math.combine_xyz(x=1.0, y=1.0, z=instance_z)
+    # increment 0 aims every anchor at itself; a zero-length stretcher is a flat shell
+    spans_a_gap = pf.nodes.func.greater_than(a=instance_z, b=1e-6)
     instance_on_points = pf.nodes.geo.instance_on_points(
         points=set_position,
         instance=strecher_instance,
-        selection=instance_on_points_selection,
+        selection=pf.nodes.func.boolean_and(
+            a=instance_on_points_selection, b=spans_a_gap
+        ),
         rotation=instance.astype(dtype=pf.Euler),
         scale=instance_on_points_scale,
     )
 
     realize_instances = pf.nodes.geo.realize_instances(instance_on_points)
 
-    instance_rotation_a = pf.nodes.func.align_euler_to_vector(
+    leg_rotation = pf.nodes.func.align_euler_to_vector(
         vector=set_position_position_vector,
         axis="Z",
         rotation=(0, 0, 0),
         factor=1.0,
-    )
-    instance_rotation_b = pf.nodes.func.align_euler_to_vector(
-        rotation=instance_rotation_a,
-        vector=input_position,
-        pivot_axis="Z",
-        factor=1.0,
-    )
-    instance_rotation = pf.nodes.func.switch(
-        switch=align_leg_x_rot,
-        a=instance_rotation_a,
-        b=instance_rotation_b,
     )
     instance_scale_z = pf.nodes.math.vector_length(set_position_position_vector)
     instance_scale = pf.nodes.math.combine_xyz(x=1.0, y=1.0, z=instance_scale_z)
     instance_on_points_1 = pf.nodes.geo.instance_on_points(
         points=transform,
         instance=leg_instance,
-        rotation=instance_rotation.astype(dtype=pf.Euler),
+        rotation=leg_rotation.astype(dtype=pf.Euler),
         scale=instance_scale,
     )
 
@@ -430,7 +428,7 @@ def _pedestal_profile(
     flare: t.SocketOrVal[float],
     concavity: t.SocketOrVal[float],
     neck_scale: t.SocketOrVal[float] = 1.0,
-    resolution: t.SocketOrVal[int] = 64,
+    resolution: t.SocketOrVal[int] = 12,
 ) -> t.ProcNode[pf.CurveObject]:
     """Closed silhouette curve (x=radius, y=z) from the axis at the top, out to
     (top_radius, height), down to (bottom_radius, 0), and back to the axis, so
@@ -461,13 +459,17 @@ def _pedestal_profile(
 @pf.nodes.node_function
 def _pedestal_sweep(
     radius_curve: pf.ProcNode[pf.CurveObject],
-    resolution: t.SocketOrVal[int] = 64,
+    resolution: t.SocketOrVal[int] = 16,
 ) -> t.ProcNode[pf.MeshObject]:
     """Lathe a silhouette curve (x=radius, y=z) around the z axis by sweeping it
     around a circle. Profile x offsets add to the unit circle's radius, so shift
     x by -1; mirroring y maps profile y to +Z and keeps faces outward."""
+    # subdivision pulls an n-gon ring in to (2 + cos(2pi/n))/3 of its radius
+    ring_angle = math.tau / resolution.astype(dtype=float)
+    ring_shrink = (2.0 + pf.nodes.math.cos(ring_angle)) / 3.0
+    profile_scale = pf.nodes.math.combine_xyz(x=1.0 / ring_shrink, y=-1.0, z=1.0)
     profile = pf.nodes.geo.transform(
-        geometry=radius_curve, translation=(-1.0, 0.0, 0.0), scale=(1.0, -1.0, 1.0)
+        geometry=radius_curve, translation=(-1.0, 0.0, 0.0), scale=profile_scale
     )
     circle = pf.nodes.geo.curve_circle(resolution=resolution, radius=1.0)
     swept = curve.curve_to_mesh_with_uv(curve=circle, profile=profile).mesh
@@ -485,19 +487,12 @@ def _leg_square(
     profile_aspect_ratio: t.SocketOrVal[float],
     profile_fillet_ratio: t.SocketOrVal[float],
 ) -> t.ProcNode[pf.MeshObject]:
-    curve_arc_resolution = has_bottom_connector.astype(dtype=float) + 4.0
-    curve_arc_sweep_angle = pf.nodes.math.map_range(
-        value=has_bottom_connector.astype(dtype=float),
-        to_max=6.2832,
-        to_min=4.7124,
-    )
-    curve_arc = pf.nodes.geo.curve_arc(
-        resolution=curve_arc_resolution.astype(dtype=int),
-        radius=0.7071,
-        sweep_angle=curve_arc_sweep_angle,
+    curve_circle = pf.nodes.geo.curve_circle(resolution=4, radius=0.7071)
+    curve_circle = pf.nodes.geo.set_spline_cyclic(
+        curve_circle, cyclic=has_bottom_connector
     )
 
-    merge_curve_result = _merge_curve(curve=curve_arc)
+    merge_curve_result = _merge_curve(curve=curve_circle)
 
     set_curve_tilt_tilt = pf.nodes.math.map_range(
         value=has_bottom_connector.astype(dtype=float),
@@ -510,14 +505,14 @@ def _leg_square(
 
     transform = pf.nodes.geo.transform(
         geometry=set_curve_tilt,
-        rotation=(0.0, 0.0, -0.7854),
+        rotation=(0.0, 0.0, 0.7854),
         translation=(0, 0, 0),
         scale=(1, 1, 1),
     )
     transform_1 = pf.nodes.geo.transform(
         geometry=transform,
         translation=(0.0, 0.0, -0.5),
-        rotation=(1.5708, 0.0, 0.0),
+        rotation=(0.0, 1.5708, 0.0),
         scale=(1, 1, 1),
     )
     n_gon_profile_result = _n_gon_profile(
@@ -532,7 +527,7 @@ def _leg_square(
         switch=has_bottom_connector, a=0.0, b=profile_z_radius
     )
     centerline_height = height - profile_z_radius - bottom_profile_radius
-    transform_2_scale = pf.nodes.math.combine_xyz(x=width, y=1.0, z=centerline_height)
+    transform_2_scale = pf.nodes.math.combine_xyz(x=1.0, y=width, z=centerline_height)
     transform_2 = pf.nodes.geo.transform(
         geometry=transform_1,
         scale=transform_2_scale,
@@ -546,7 +541,7 @@ def _leg_square(
         curve=set_curve_radius,
         radius=fillet_radius,
         limit_radius=True,
-        count=8,
+        count=4,
     )
 
     curve_to = curve.curve_to_mesh_with_uv(
@@ -557,7 +552,7 @@ def _leg_square(
 
     transform_3 = pf.nodes.geo.transform(
         geometry=curve_to,
-        rotation=(0.0, 0.0, 1.5708),
+        rotation=(0.0, 0.0, 0.0),
         translation=(0, 0, 0),
         scale=(1, 1, 1),
     )
@@ -590,7 +585,7 @@ def _leg_straight(
         profile_width=leg_diameter,
         aspect_ratio=1.0,
         fillet_ratio=fillet_ratio,
-        profile_resolution=16,
+        profile_resolution=8,
         resolution=resolution,
     )
     return n_gon_cylinder_result.mesh
@@ -619,24 +614,27 @@ def table_top(
 def _base_straight_geometry(
     dimensions: t.SocketOrVal[pf.Vector],
     leg_diameter: t.SocketOrVal[float],
-    leg_placement_top_scale: t.SocketOrVal[float],
+    leg_inset: t.SocketOrVal[float],
     leg_placement_bottom_scale: t.SocketOrVal[float],
     stretcher_increment: t.SocketOrVal[int],
     stretcher_relative_pos: t.SocketOrVal[float],
+    leg_placement_top_scale: t.SocketOrVal[float] = 1.0,
 ) -> t.ProcNode[pf.MeshObject]:
     """4-leg base with optional stretchers."""
     x, y, z = dimensions.x, dimensions.y, dimensions.z
+    leg_span_x = (x - leg_diameter - 2.0 * leg_inset) * leg_placement_top_scale
+    leg_span_y = (y - leg_diameter - 2.0 * leg_inset) * leg_placement_top_scale
     anchors = _create_anchors(
         profile_n_gon=4,
-        profile_width=1.414 * x * leg_placement_top_scale,
-        profile_aspect_ratio=y / x,
+        profile_width=1.414 * leg_span_x,
+        profile_aspect_ratio=leg_span_y / leg_span_x,
         profile_rotation=0.0,
     )
 
     leg = _leg_straight(
         leg_height=1.0,
         leg_diameter=leg_diameter,
-        resolution=32,
+        resolution=8,
         n_gon=4,
         fillet_ratio=0.1,
     )
@@ -656,7 +654,6 @@ def _base_straight_geometry(
         strecher_index_increment=stretcher_increment,
         strecher_relative_position=stretcher_relative_pos,
         leg_bottom_offset=0.0,
-        align_leg_x_rot=True,
     )
 
 
@@ -684,7 +681,7 @@ def _base_square_geometry(
         has_bottom_connector=has_bottom_connector,
         profile_n_gon=4,
         profile_width=leg_diameter,
-        profile_aspect_ratio=0.5,
+        profile_aspect_ratio=1.0,
         profile_fillet_ratio=0.1,
     )
 
@@ -703,7 +700,6 @@ def _base_square_geometry(
         strecher_index_increment=1,
         strecher_relative_position=0.0,
         leg_bottom_offset=0.0,
-        align_leg_x_rot=True,
     )
 
 
@@ -718,7 +714,7 @@ def table_dimensions_rand(
     if width is None:
         width = pf.random.clip_gaussian(rng, 0.975, 0.3, 0.675, 1.5)
     if height is None:
-        height = pf.random.uniform(rng, 0.65, 0.85)
+        height = pf.random.uniform(rng, 0.72, 0.76)
     depth = width / aspect
     width = min(width, 1.875)
     return (width, depth, height)
@@ -727,8 +723,8 @@ def table_dimensions_rand(
 def base_straight(
     dimensions: pf.Vector | None = None,
     leg_diameter: float = 0.06,
-    leg_placement_top_scale: float = 0.8,
-    leg_placement_bottom_scale: float = 1.1,
+    leg_inset: float = 0.1,
+    leg_placement_bottom_scale: float = 1.0,
     stretcher_increment: int = 1,
     stretcher_relative_pos: float = 0.4,
 ) -> TableResult:
@@ -738,14 +734,14 @@ def base_straight(
     geo = _base_straight_geometry(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
-        leg_placement_top_scale=leg_placement_top_scale,
+        leg_inset=leg_inset,
         leg_placement_bottom_scale=leg_placement_bottom_scale,
         stretcher_increment=stretcher_increment,
         stretcher_relative_pos=stretcher_relative_pos,
     )
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=1, _skip_apply=True)
     return TableResult(mesh=obj)
 
 
@@ -755,23 +751,30 @@ def base_straight_rand(
     material: pf.Material | None = None,
     leg_diameter: float | None = None,
     leg_placement_bottom_scale: float | None = None,
+    leg_diameter_range: tuple[float, float] = (0.02, 0.10),
+    leg_inset_range: tuple[float, float] | None = None,
+    leg_placement_top_scale: float = 0.8,
 ) -> TableResult:
     """4-leg base with optional stretchers. leg_placement_bottom_scale > 1 splays
     the legs outward; pass 1.0 for an upright base to sit under a carcass."""
-    rng, rng_dims, rng_mat = rng.spawn(3)
+    rng, rng_dims, rng_mat, rng_inset = rng.spawn(4)
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
     # drawn unconditionally so explicit overrides do not shift the stream
-    sampled_diameter = pf.random.uniform(rng, 0.02, 0.10)
+    sampled_diameter = pf.random.uniform(rng, *leg_diameter_range)
     if leg_diameter is None:
         leg_diameter = sampled_diameter
     sampled_bottom_scale = pf.random.uniform(rng, 0.95, 1.25)
     if leg_placement_bottom_scale is None:
         leg_placement_bottom_scale = sampled_bottom_scale
+    leg_inset = 0.0
+    if leg_inset_range is not None:
+        leg_inset = pf.random.uniform(rng_inset, *leg_inset_range)
     geo = _base_straight_geometry(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
-        leg_placement_top_scale=0.8,
+        leg_inset=leg_inset,
+        leg_placement_top_scale=leg_placement_top_scale,
         leg_placement_bottom_scale=leg_placement_bottom_scale,
         stretcher_increment=pf.control.choice(rng, [(0, 1.0), (1, 1.0), (2, 1.0)]),
         stretcher_relative_pos=pf.random.uniform(rng, 0.2, 0.6),
@@ -783,7 +786,7 @@ def base_straight_rand(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=1, _skip_apply=True)
     return TableResult(mesh=obj)
 
 
@@ -794,7 +797,7 @@ def pedestal_base(
     flare: float = 0.75,
     concavity: float = 0.0,
     neck_scale: float = 1.0,
-    resolution: int = 64,
+    resolution: int = 16,
 ) -> TableResult:
     """Rotationally symmetric pedestal: stays skinny then flares out low
     (flare/concavity); neck_scale bulges or waists the upper column."""
@@ -810,7 +813,7 @@ def pedestal_base(
     geo = _pedestal_sweep(radius_curve, resolution=resolution)
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
     return TableResult(mesh=obj)
 
 
@@ -858,7 +861,7 @@ def pedestal_base_rand(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
     return TableResult(mesh=obj)
 
 
@@ -881,7 +884,7 @@ def base_square(
     )
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=1, _skip_apply=True)
     return TableResult(mesh=obj)
 
 
@@ -891,13 +894,15 @@ def base_square_rand(
     material: pf.Material | None = None,
     leg_diameter: float | None = None,
     leg_placement_bottom_scale: float | None = None,
+    leg_diameter_range: tuple[float, float] = (0.03, 0.14),
+    leg_placement_top_scale: float = 0.8,
 ) -> TableResult:
     """2 box-frame legs. leg_placement_bottom_scale > 1 splays the frames outward."""
     rng, rng_dims, rng_mat = rng.spawn(3)
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
     # drawn unconditionally so an explicit leg_diameter does not shift the stream
-    sampled_diameter = pf.random.uniform(rng, 0.03, 0.14)
+    sampled_diameter = pf.random.uniform(rng, *leg_diameter_range)
     if leg_diameter is None:
         leg_diameter = sampled_diameter
     if leg_placement_bottom_scale is None:
@@ -905,7 +910,7 @@ def base_square_rand(
     geo = _base_square_geometry(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
-        leg_placement_top_scale=0.8,
+        leg_placement_top_scale=leg_placement_top_scale,
         leg_placement_bottom_scale=leg_placement_bottom_scale,
         has_bottom_connector=pf.control.choice(rng, [(True, 2.0), (False, 1.0)]),
     )
@@ -916,8 +921,28 @@ def base_square_rand(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=1, _skip_apply=True)
     return TableResult(mesh=obj)
+
+
+def _table_straight_base_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult:
+    footprint = min(dimensions[0], dimensions[1])
+    return base_straight_rand(
+        rng,
+        dimensions,
+        leg_diameter_range=(0.02, 0.02 + 0.16 * footprint),
+        leg_inset_range=(0.05, 0.15),
+        leg_placement_top_scale=1.0,
+    )
+
+
+def _table_square_base_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult:
+    footprint = min(dimensions[0], dimensions[1])
+    return base_square_rand(
+        rng,
+        dimensions,
+        leg_diameter_range=(0.02, 0.02 + 0.12 * footprint),
+    )
 
 
 def _table_pedestal_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult:
@@ -981,9 +1006,9 @@ def dining_table_rand(
 
     if base is None:
         base_options = [
-            (base_straight_rand, 2.0),
+            (_table_straight_base_rand, 2.0),
             (_table_pedestal_rand, 1.0),
-            (base_square_rand, 0.6),
+            (_table_square_base_rand, 0.6),
         ]
         base_fn = pf.control.choice(rng_base_choice, base_options)
         res = base_fn(rng=rng_base, dimensions=(x, y, top_height))
@@ -1015,16 +1040,42 @@ def side_table_rand(rng: pf.RNG) -> TableResult:
     return dining_table_rand(rng_table, dimensions, top_thickness=top_thickness)
 
 
-def coffee_table_rand(rng: pf.RNG) -> TableResult:
-    """Low rectangular coffee table."""
-    rng, rng_table = rng.spawn(2)
-    dimensions = (
+def coffee_table_dimensions_rand(rng: pf.RNG) -> pf.Vector:
+    """Coffee table dimensions."""
+    return (
         pf.random.uniform(rng, 0.6, 0.9),
         pf.random.uniform(rng, 1.0, 1.5),
         pf.random.uniform(rng, 0.3, 0.5),
     )
+
+
+def _coffee_table_legged_rand(rng: pf.RNG) -> TableResult:
+    """Low rectangular coffee table on legs."""
+    rng, rng_dims, rng_table = rng.spawn(3)
+    dimensions = coffee_table_dimensions_rand(rng_dims)
     top_thickness = pf.random.uniform(rng, 0.02, 0.04)
     return dining_table_rand(rng_table, dimensions, top_thickness=top_thickness)
+
+
+def coffee_table_cabinet_rand(rng: pf.RNG) -> TableResult:
+    """Open-face storage cabinet at coffee table proportions."""
+    rng_dims, rng_cabinet = rng.spawn(2)
+    dimensions = pf.Vector(coffee_table_dimensions_rand(rng_dims))
+    result = storage.shelves_rand(rng_cabinet, dimensions=dimensions)
+    mesh.center_footprint(result.mesh)
+    return TableResult(mesh=result.mesh)
+
+
+def coffee_table_rand(rng: pf.RNG) -> TableResult:
+    """Coffee table, either legged or an open-face cabinet of the same footprint."""
+    func = pf.control.choice(
+        rng,
+        [
+            (_coffee_table_legged_rand, 3.0),
+            (coffee_table_cabinet_rand, 1.0),
+        ],
+    )
+    return func(rng)
 
 
 def cocktail_table_rand(rng: pf.RNG) -> TableResult:

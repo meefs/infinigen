@@ -403,10 +403,11 @@ def _lamp_table_straight_base_rand(
     dimensions: pf.Vector,
 ) -> pf.ProcNode[pf.MeshObject]:
     rng_width, rng_bottom_scale, rng_stretcher, rng_stretcher_position = rng.spawn(4)
+    leg_diameter = _lamp_table_member_width_rand(rng_width)
     return table._base_straight_geometry(
         dimensions=dimensions,
-        leg_diameter=_lamp_table_member_width_rand(rng_width),
-        leg_placement_top_scale=0.8,
+        leg_diameter=leg_diameter,
+        leg_inset=0.1 * (dimensions[0] - leg_diameter),
         leg_placement_bottom_scale=pf.random.uniform(rng_bottom_scale, 0.95, 1.25),
         stretcher_increment=pf.control.choice(
             rng_stretcher, [(0, 1.0), (1, 1.0), (2, 1.0)]

@@ -329,8 +329,8 @@ def _vase_geometry(
 
 
 def vase(
-    u_resolution: int = 64,
-    v_resolution: int = 64,
+    u_resolution: int = 48,
+    v_resolution: int = 24,
     height: float = 0.33,
     diameter: float = 0.15,
     profile_inner_radius: float = 1.0,
@@ -368,7 +368,7 @@ def vase(
     geo = pf.nodes.geo.set_material(geo, material)
     obj = pf.nodes.to_mesh_object(geo)
     pf.ops.modifier.solidify(obj, thickness=thickness)
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
     return VaseResult(mesh=obj)
 
 
@@ -409,15 +409,18 @@ def vase_rand(rng: pf.RNG) -> VaseResult:
     z = pf.random.uniform(rng, 0.17, 0.5)
     x = z * pf.random.uniform(rng, 0.3, 0.6)
 
-    u_resolution = 64
-    v_resolution = 64
+    v_resolution = 24
     neck_scale = pf.random.uniform(rng, 0.2, 0.8)
 
     profile_inner_radius = pf.control.choice(
         rng_radius_choice,
         [(1.0, 0.5), (pf.random.uniform(rng_radius_val, 0.8, 1.0), 0.5)],
     )
-    profile_star_points = pf.random.randint(rng, 16, u_resolution // 2 + 1)
+    profile_star_points = pf.random.randint(rng, 16, 33)
+
+    # two cage samples per flute is the coarsest ring that still resolves the star
+    u_resolution = 2 * profile_star_points
+
     top_scale = neck_scale * pf.random.uniform(rng, 0.8, 1.2)
     neck_mid_position = pf.random.uniform(rng, 0.7, 0.95)
     neck_position = 0.5 * neck_scale + 0.5 + pf.random.uniform(rng, -0.05, 0.05)
@@ -452,6 +455,6 @@ def vase_rand(rng: pf.RNG) -> VaseResult:
 
     thickness = pf.random.uniform(rng, 0.005, 0.01)
     pf.ops.modifier.solidify(obj, thickness=thickness)
-    pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
 
     return VaseResult(mesh=obj)

@@ -10,16 +10,16 @@ from typing import NamedTuple
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import handles
+from infinigen2.objects import handles, table
 from infinigen2.objects.door import (
     door_composite_rand,
     door_with_handle,
 )
-from infinigen2.objects.table import base_square, base_square_rand, base_straight_rand
 from infinigen2.shaders.functionality_lists import (
     furniture_material_rand,
+    glass_material_rand,
 )
-from infinigen2.util.mesh import metric_box_uv
+from infinigen2.util.mesh import crease_sharp, metric_box_uv
 
 __all__ = [
     "StorageResult",
@@ -357,8 +357,11 @@ def _shelves_finish(
     geo: pf.ProcNode, frame_material: pf.Material, bevel_width: float
 ) -> StorageResult:
     geo = pf.nodes.geo.set_material(geometry=geo, material=frame_material)
+    geo = crease_sharp(geo, threshold_degrees=30.0)
     result = pf.nodes.to_mesh_object(geo)
     pf.ops.modifier.bevel(result, width=bevel_width, segments=2)
+    # every part carries this, so whichever one a join keeps covers the whole assembly
+    pf.ops.modifier.subdivide_surface(result, levels=2, _skip_apply=True)
     return StorageResult(mesh=result)
 
 
@@ -456,7 +459,7 @@ def cabinet_with_base(
         frame_material=frame_material,
     ).mesh
     pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
-    base = base_square(
+    base = table.base_square(
         dimensions=pf.Vector((width, depth, base_height)),
         leg_diameter=leg_diameter,
     ).mesh
@@ -495,7 +498,7 @@ def cabinet_with_base_rand(
     ).mesh
     pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
     base_fn = pf.control.choice(
-        rng_base_sel, [(base_square_rand, 1.0), (base_straight_rand, 1.0)]
+        rng_base_sel, [(table.base_square_rand, 1.0), (table.base_straight_rand, 1.0)]
     )
     base = base_fn(
         rng_base,
@@ -547,9 +550,28 @@ def cabinet_with_door_rand(
         dimensions = pf.Vector((depth, width, height))
     depth, width, height = dimensions.x, dimensions.y, dimensions.z
 
-    frame_material = furniture_material_rand(rng_mat, pf.nodes.shader.coord().uv)
+    vec = pf.nodes.shader.coord().uv
+    frame_material = furniture_material_rand(rng_mat, vec)
+
+    def _match_carcass(rng: pf.RNG) -> pf.Material:
+        return frame_material
+
+    def _own_material(rng: pf.RNG) -> pf.Material:
+        return furniture_material_rand(rng, vec)
+
+    rng_front_mat, rng_inner_mat = rng_front_mat.spawn(2)
     front_material = pf.control.choice(
-        rng_front_mat, [(frame_material, 2.0), (None, 1.0)]
+        rng_front_mat, [(_match_carcass, 2.0), (_own_material, 1.0)]
+    )(rng_front_mat)
+
+    def _glazed(rng: pf.RNG) -> pf.Material:
+        return glass_material_rand(rng, vec)
+
+    def _solid(rng: pf.RNG) -> pf.Material:
+        return front_material
+
+    inner_material = pf.control.choice(rng_inner_mat, [(_glazed, 0.4), (_solid, 0.6)])(
+        rng_inner_mat
     )
 
     thickness = pf.random.uniform(rng, 0.016, 0.022)
@@ -571,6 +593,7 @@ def cabinet_with_door_rand(
         rng_front,
         dimensions=pf.Vector((thickness, width, height)),
         material=front_material,
+        inner_material=inner_material,
         handle=handle_func(rng_handle).mesh,
     ).mesh
     pf.ops.object.set_transform(front, location=(depth - thickness, 0.0, 0.0))

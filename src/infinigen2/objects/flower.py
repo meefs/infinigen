@@ -491,7 +491,7 @@ def _flower_geometry(
         base_width=petal_dims.y,
         upper_width=petal_upper_width_clamped,
         resolution_h=8,
-        resolution_v=16,
+        resolution_v=6,
         wrinkle=wrinkle,
         curl=curl,
     )

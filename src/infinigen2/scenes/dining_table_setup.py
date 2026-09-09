@@ -14,6 +14,7 @@ from procfunc.nodes import types as t
 from infinigen2.objects import chair, rug, table
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import place_surrounding
+from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
 from infinigen2.scenes.setup_utils import (
     MeshResult,
     retry_place,
@@ -267,7 +268,9 @@ def arrange_dining_chairs(
         ),
         rotation=table_info.rotation,
     )
-    return pf.nodes.to_aliases(posed)
+    chairs = pf.nodes.to_aliases(posed)
+    propagate_modifiers_to_instances([chair_obj], chairs)
+    return chairs
 
 
 def dining_setup_rand(

@@ -17,7 +17,7 @@ from infinigen2.objects.table import (
 )
 from infinigen2.shaders.functionality_lists import (
     castor_wheel_material_rand,
-    furniture_fabric,
+    fabric_sturdy_rand,
     furniture_material_rand,
 )
 from infinigen2.util import mesh
@@ -46,6 +46,13 @@ __all__ = [
 
 class ChairResult(NamedTuple):
     mesh: pf.MeshObject
+
+
+# every part carries this, so whichever one a join keeps covers the whole assembly
+_CHAIR_SUBDIV = 4
+
+# a 24-vert sweep falls under this and stays smooth; a 4-vert one is 90deg and stays square
+_CREASE_ANGLE = 20.0
 
 
 # ==== from src/infinigen2/objects/_scratch_curvy.py ====
@@ -185,11 +192,7 @@ def _curvy_seat_geometry(
         geometry=curve_circle_5, translation=(0.0, 0.0, 2.02), scale=transform_5_scale
     )
     bent_result_4 = _bent(geometry=transform_5, amount=top_bent)
-    curve_circle_6 = pf.nodes.geo.curve_circle(resolution=u_resolution, radius=0.5)
-    transform_6 = pf.nodes.geo.transform(
-        geometry=curve_circle_6, translation=(0.0, 0.0, 2.1), scale=(0.0, 0.005, 1.0)
-    )
-    join_1 = pf.nodes.geo.join_geometry([bent_result_3, bent_result_4, transform_6])
+    join_1 = pf.nodes.geo.join_geometry([bent_result_3, bent_result_4])
     join_2 = pf.nodes.geo.join_geometry([join, join_1])
     lofting_result = mesh.lofting(
         profile_curves=join_2, u_resolution=u_resolution, v_resolution=v_resolution
@@ -278,7 +281,7 @@ def _round_seat_n_gon_profile(
     fillet_curve_poly = pf.nodes.geo.fillet_curve_poly(
         curve=transform_2,
         radius=profile_width * profile_fillet_ratio,
-        count=8,
+        count=4,
         limit_radius=True,
     )
     return fillet_curve_poly
@@ -392,17 +395,8 @@ def _round_seat_generate_table_top(
         profile_width=profile_width,
         aspect_ratio=aspect_ratio,
         fillet_ratio=fillet_ratio,
-        profile_resolution=512,
-        resolution=10,
-    )
-    input_index = pf.nodes.geo.input_index()
-    store_named_attribute = pf.nodes.geo.store_named_attribute(
-        geometry=n_gon_cylinder_result.caps,
-        name="TAG_support",
-        selection=input_index == 0,
-        value=True,
-        domain="FACE",
-        data_type=NodeDataType.BOOLEAN,
+        profile_resolution=12,
+        resolution=4,
     )
     curve_arc = pf.nodes.geo.curve_arc(resolution=4, radius=0.7071, sweep_angle=4.7124)
     transform_1 = pf.nodes.geo.transform(
@@ -419,7 +413,7 @@ def _round_seat_generate_table_top(
     )
     transform_4 = pf.nodes.geo.transform(geometry=transform_3, scale=transform_4_scale)
     fillet_curve_poly = pf.nodes.geo.fillet_curve_poly(
-        curve=transform_4, radius=fillet_radius_vertical, count=8, limit_radius=True
+        curve=transform_4, radius=fillet_radius_vertical, count=4, limit_radius=True
     )
     transform_5 = pf.nodes.geo.transform(
         geometry=fillet_curve_poly,
@@ -433,35 +427,62 @@ def _round_seat_generate_table_top(
     transform_6 = pf.nodes.geo.transform(
         geometry=curve_to, translation=transform_6_translation
     )
-    join = pf.nodes.geo.join_geometry([store_named_attribute, transform_6])
-    flip_faces = pf.nodes.geo.flip_faces(join)
-    geometry_translation = pf.nodes.math.combine_xyz(z=thickness)
-    transform = pf.nodes.geo.transform(
-        geometry=flip_faces, translation=geometry_translation
+    flip_faces = pf.nodes.geo.flip_faces(transform_6)
+    bottom_fill = pf.nodes.geo.fill_curve(
+        curve=n_gon_cylinder_result.profile_curve, mode="NGONS"
     )
+    bottom_translation = pf.nodes.math.combine_xyz(z=thickness * -1.0)
+    bottom_cap = pf.nodes.geo.transform(
+        geometry=pf.nodes.geo.flip_faces(bottom_fill), translation=bottom_translation
+    )
+    join = pf.nodes.geo.join_geometry([flip_faces, bottom_cap])
+    geometry_translation = pf.nodes.math.combine_xyz(z=thickness)
+    transform = pf.nodes.geo.transform(geometry=join, translation=geometry_translation)
     return _RoundSeatTableTopResult(transform, n_gon_cylinder_result.profile_curve)
+
+
+# Radii tuned so the subdivided cap lands back on the sphere it is sampled from.
+_ROUND_SEAT_CAP_RINGS = (0.66, 0.24)
 
 
 @pf.nodes.node_function
 def _round_seat_create_cap(
-    radius: t.SocketOrVal[float] = 1.0, resolution: t.SocketOrVal[int] = 64
+    rim_curve: pf.ProcNode,
+    radius: t.SocketOrVal[float] = 1.0,
+    height_scale: t.SocketOrVal[float] = 1.0,
+    z_offset: t.SocketOrVal[float] = 0.0,
 ) -> pf.ProcNode[pf.MeshObject]:
-    uv_sphere_rings = radius * 257.0
-    uv_sphere = pf.nodes.geo.mesh_uv_sphere(
-        segments=resolution, rings=uv_sphere_rings.astype(dtype=int), radius=radius
+    rim_z = pf.nodes.math.sqrt(radius**2.0 - 1.0)
+    mid_r, top_r = _ROUND_SEAT_CAP_RINGS
+    mid_z = pf.nodes.math.sqrt(radius**2.0 - mid_r**2.0) - rim_z
+    top_z = pf.nodes.math.sqrt(radius**2.0 - top_r**2.0) - rim_z
+    mid_z = mid_z * height_scale + z_offset
+    top_z = top_z * height_scale + z_offset
+    fill_curve = pf.nodes.geo.fill_curve(curve=rim_curve, mode="NGONS")
+    extrude_mid = pf.nodes.geo.extrude_mesh(
+        mesh=fill_curve, offset=(0.0, 0.0, 1.0), offset_scale=mid_z, individual=False
     )
-    transform_a = radius**2.0
-    transform_translation_z = pf.nodes.math.sqrt(transform_a - 1.0)
-    transform_translation = pf.nodes.math.combine_xyz(z=transform_translation_z * -1.0)
-    transform = pf.nodes.geo.transform(
-        geometry=uv_sphere.mesh, translation=transform_translation
+    scale_mid = pf.nodes.geo.scale_elements(
+        geometry=extrude_mid.mesh, scale=mid_r, selection=extrude_mid.top
     )
-    input_position = pf.nodes.geo.input_position()
-    result_0_selection = pf.nodes.func.less_than(a=input_position.z, b=0.0)
-    delete = pf.nodes.geo.delete_geometry(
-        geometry=transform, selection=result_0_selection
+    extrude_top = pf.nodes.geo.extrude_mesh(
+        mesh=scale_mid,
+        offset=(0.0, 0.0, 1.0),
+        offset_scale=top_z - mid_z,
+        individual=False,
+        selection=extrude_mid.top,
     )
-    return mesh.metric_box_uv(delete)
+    scale_top = pf.nodes.geo.scale_elements(
+        geometry=extrude_top.mesh, scale=top_r / mid_r, selection=extrude_top.top
+    )
+    cap = pf.nodes.geo.store_named_attribute(
+        geometry=scale_top,
+        name="TAG_support",
+        value=True,
+        domain="FACE",
+        data_type=NodeDataType.BOOLEAN,
+    )
+    return mesh.metric_box_uv(cap)
 
 
 @pf.nodes.node_function
@@ -483,18 +504,19 @@ def _round_seat_capped_cylinder(
         fillet_ratio=0.0,
         fillet_radius_vertical=fillet_radius_vertical,
     )
-    create_cap_1 = _round_seat_create_cap(radius=cap_flatness, resolution=resolution)
-    transform_translation = pf.nodes.math.combine_xyz(
-        z=generate_table_top_thickness + cap_relative_z_offset
+    create_cap_1 = _round_seat_create_cap(
+        rim_curve=generate_table_top_result.curve,
+        radius=cap_flatness,
+        height_scale=radius * 0.5 + cap_relative_scale,
+        z_offset=cap_relative_z_offset,
     )
-    transform_scale = radius * 0.5 + cap_relative_scale
+    transform_translation = pf.nodes.math.combine_xyz(z=generate_table_top_thickness)
     transform = pf.nodes.geo.transform(
-        geometry=create_cap_1,
-        translation=transform_translation,
-        scale=transform_scale.astype(dtype=pf.Vector),
+        geometry=create_cap_1, translation=transform_translation
     )
     join = pf.nodes.geo.join_geometry([generate_table_top_result.geometry, transform])
-    return join
+    # Welds the cap rim onto the body ring it was filled from.
+    return pf.nodes.geo.merge_by_distance(geometry=join, distance=0.0001)
 
 
 @pf.nodes.node_function
@@ -511,7 +533,7 @@ def _round_seat_geometry(
         fillet_radius_vertical=bevel_factor / thickness,
         cap_relative_scale=0.014,
         cap_relative_z_offset=-0.002,
-        resolution=128,
+        resolution=32,
     )
 
 
@@ -561,7 +583,7 @@ def _wheeled_base_n_gon_profile(
     fillet_curve_poly = pf.nodes.geo.fillet_curve_poly(
         curve=transform_2,
         radius=profile_width * profile_fillet_ratio,
-        count=8,
+        count=4,
         limit_radius=True,
     )
     return fillet_curve_poly
@@ -619,8 +641,8 @@ def _wheeled_base_n_gon_cylinder(
     profile_width: t.SocketOrVal[float] = 0.5,
     aspect_ratio: t.SocketOrVal[float] = 0.5,
     fillet_ratio: t.SocketOrVal[float] = 0.2,
-    profile_resolution: t.SocketOrVal[int] = 64,
-    resolution: t.SocketOrVal[int] = 128,
+    profile_resolution: t.SocketOrVal[int] = 12,
+    resolution: t.SocketOrVal[int] = 32,
 ) -> _WheeledBaseNGonCylinderResult:
     mesh_position_z_to_min = height * -1.0
     curve_line_end = pf.nodes.math.combine_xyz(z=mesh_position_z_to_min)
@@ -699,7 +721,7 @@ def _wheeled_base_arc_top(
     curve_arc_start_angle = pf.nodes.math.deg_to_rad(curve_a * -1.0)
     curve_arc_sweep_angle = pf.nodes.math.deg_to_rad(sweep_angle)
     curve_arc = pf.nodes.geo.curve_arc(
-        resolution=32,
+        resolution=12,
         radius=diameter / 2.0,
         start_angle=curve_arc_start_angle,
         sweep_angle=curve_arc_sweep_angle,
@@ -730,8 +752,8 @@ def _wheeled_base_generate_table_top(
         profile_width=profile_width,
         aspect_ratio=aspect_ratio,
         fillet_ratio=fillet_ratio,
-        profile_resolution=512,
-        resolution=10,
+        profile_resolution=12,
+        resolution=4,
     )
     input_index = pf.nodes.geo.input_index()
     store_named_attribute = pf.nodes.geo.store_named_attribute(
@@ -757,7 +779,7 @@ def _wheeled_base_generate_table_top(
     )
     transform_4 = pf.nodes.geo.transform(geometry=transform_3, scale=transform_4_scale)
     fillet_curve_poly = pf.nodes.geo.fillet_curve_poly(
-        curve=transform_4, radius=fillet_radius_vertical, count=8, limit_radius=True
+        curve=transform_4, radius=fillet_radius_vertical, count=4, limit_radius=True
     )
     transform_5 = pf.nodes.geo.transform(
         geometry=fillet_curve_poly,
@@ -784,7 +806,7 @@ def _wheeled_base_generate_table_top(
 def _wheeled_base_create_cap(
     radius: t.SocketOrVal[float] = 1.0, resolution: t.SocketOrVal[int] = 64
 ) -> pf.ProcNode[pf.MeshObject]:
-    uv_sphere_rings = radius * 257.0
+    uv_sphere_rings = radius * 4.0
     uv_sphere = pf.nodes.geo.mesh_uv_sphere(
         segments=resolution, rings=uv_sphere_rings.astype(dtype=int), radius=radius
     )
@@ -810,7 +832,7 @@ def _wheeled_base_capped_cylinder(
     fillet_radius_vertical: t.SocketOrVal[float] = 0.4,
     cap_relative_scale: t.SocketOrVal[float] = 1.0,
     cap_relative_z_offset: t.SocketOrVal[float] = 0.0,
-    resolution: t.SocketOrVal[int] = 64,
+    resolution: t.SocketOrVal[int] = 12,
 ) -> pf.ProcNode[pf.Vector]:
     generate_table_top_thickness = thickness * 2.0
     generate_table_top_result = _wheeled_base_generate_table_top(
@@ -854,7 +876,7 @@ def _wheeled_base_wheel(
         profile_width=pole_width,
         aspect_ratio=pole_aspect_ratio,
         fillet_ratio=0.15,
-        resolution=32,
+        resolution=8,
     )
     transform_1 = pf.nodes.geo.transform(
         geometry=n_gon_cylinder_result.mesh, rotation=(0.0, -1.5708, 0.0)
@@ -864,8 +886,9 @@ def _wheeled_base_wheel(
         subdivision_surface = pf.nodes.geo.set_material(subdivision_surface, material)
     transform_a_a = pf.nodes.math.constant(0.5)
     cylinder = pf.nodes.geo.mesh_cylinder(
-        side_segments=8,
-        fill_segments=4,
+        vertices=5,
+        side_segments=1,
+        fill_segments=1,
         radius=transform_a_a * 0.1,
         depth=transform_a_a * 0.4,
     )
@@ -884,7 +907,7 @@ def _wheeled_base_wheel(
         width=wheel_width * 2.0, height=0.02
     )
     fillet_curve_poly = pf.nodes.geo.fillet_curve_poly(
-        curve=curve_quadrilateral, radius=0.03, count=4, limit_radius=True
+        curve=curve_quadrilateral, radius=0.03, count=2, limit_radius=True
     )
     curve_to = curve_to_mesh_with_uv(
         curve=arc_top_result, profile=fillet_curve_poly, fill_caps=True
@@ -1100,7 +1123,7 @@ def _wheeled_base_geometry(
     cylinder_1_radius = leg_diameter * 0.5
     cylinder_depth = top_height - joint_height
     cylinder = pf.nodes.geo.mesh_cylinder(
-        vertices=64, radius=cylinder_1_radius - 0.0025, depth=cylinder_depth
+        vertices=12, radius=cylinder_1_radius - 0.0025, depth=cylinder_depth
     )
     transform_translation_z = 0.5 * cylinder_depth
     transform_translation = pf.nodes.math.combine_xyz(
@@ -1145,7 +1168,7 @@ def _wheeled_base_geometry(
     )
     cylinder_1_depth = joint_height - align_bottom_to_floor_result.offset
     cylinder_1 = pf.nodes.geo.mesh_cylinder(
-        vertices=64, radius=cylinder_1_radius, depth=cylinder_1_depth
+        vertices=12, radius=cylinder_1_radius, depth=cylinder_1_depth
     )
     transform_a = cylinder_1_depth * 0.5
     transform_2_translation = pf.nodes.math.combine_xyz(
@@ -1195,15 +1218,23 @@ def office_chair_dimensions_rand(
     width: float | None = None,
     seat_elevation: float | None = None,
 ) -> pf.Vector:
-    """Footprint + seat elevation. v1 derived elevation as total(1.0-1.4) minus
-    shell(0.5-0.7), whose independent tails gave bar-height 0.9m seats; sample
-    the real-world seat elevation directly instead."""
+    """Footprint and ordinary adjustable office-chair seat elevation."""
     rng, rng_w = rng.spawn(2)
     if width is None:
         width = pf.random.uniform(rng_w, 0.5, 0.6)
     if seat_elevation is None:
-        seat_elevation = pf.random.uniform(rng, 0.42, 0.65)
+        seat_elevation = pf.random.uniform(rng, 0.42, 0.55)
     return (width, width, seat_elevation)
+
+
+def _curvy_bend_amount(
+    wrap_angle: float, profile_z: float, width: float, relative_width: float
+) -> float:
+    """`_bent` rotates each profile vertex by |p| * x * amount, so a fixed amount
+    bows a wide profile far harder than a narrow one and folds it back on itself
+    past ~0.85 rad. Convert a target edge wrap angle instead, keeping the bow
+    proportional to the profile's own half-width whatever the taper does."""
+    return wrap_angle * -2.0 / (profile_z * width * relative_width)
 
 
 def curvy_seat_rand(
@@ -1216,17 +1247,29 @@ def curvy_seat_rand(
     if dimensions is None:
         dimensions = office_chair_dimensions_rand(rng_dims)
     x, y, z = dimensions
+
+    back_width = pf.random.uniform(rng, 0.75, 1.05)
+    top_width = back_width - pf.random.uniform(rng, 0.0, 0.5)
+    mid_width = back_width * pf.random.uniform(rng, 0.7, 1.0)
     geo = _curvy_seat_geometry(
         width=x,
-        u_resolution=96,
-        v_resolution=64,
+        u_resolution=16,
+        v_resolution=11,
         front_relative_width=pf.random.uniform(rng, 0.5, 0.8),
         front_bent=pf.random.uniform(rng, -1.5, -0.4),
         seat_bent=pf.random.uniform(rng, -1.5, -0.4),
-        mid_bent=pf.random.uniform(rng, -2.4, -0.5),
-        mid_relative_width=pf.random.uniform(rng, 0.5, 0.9),
-        back_bent=pf.random.uniform(rng, -1.0, -0.1),
-        back_relative_width=pf.random.uniform(rng, 0.6, 0.9),
+        mid_bent=_curvy_bend_amount(
+            pf.random.uniform(rng, 0.07, 0.48), 1.0, x, mid_width
+        ),
+        mid_relative_width=mid_width,
+        back_bent=_curvy_bend_amount(
+            pf.random.uniform(rng, 0.05, 0.5), 1.5, x, back_width
+        ),
+        back_relative_width=back_width,
+        top_bent=_curvy_bend_amount(
+            pf.random.uniform(rng, 0.05, 0.6), 2.02, x, top_width
+        ),
+        top_relative_width=top_width,
         mid_pos=pf.random.uniform(rng, 0.4, 0.6),
         seat_height=pf.random.uniform(rng, 0.5, 0.7),
     )
@@ -1239,6 +1282,7 @@ def curvy_seat_rand(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
+    pf.ops.modifier.subdivide_surface(obj, levels=_CHAIR_SUBDIV, _skip_apply=True)
     return ChairResult(mesh=obj)
 
 
@@ -1268,6 +1312,7 @@ def round_seat_rand(
     pf.ops.object.set_material(
         obj, surface=material.surface, displacement=material.displacement
     )
+    pf.ops.modifier.subdivide_surface(obj, levels=_CHAIR_SUBDIV, _skip_apply=True)
     return ChairResult(mesh=obj)
 
 
@@ -1302,7 +1347,9 @@ def wheeled_base_rand(
     geo = pf.nodes.geo.transform(
         geo, translation=(0, 0, 0), rotation=(0, 0, 1.5708), scale=(1, 1, 1)
     )
+    geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
+    pf.ops.modifier.subdivide_surface(obj, levels=_CHAIR_SUBDIV, _skip_apply=True)
     return ChairResult(mesh=obj)
 
 
@@ -1317,6 +1364,8 @@ def _chair_back_geometry(
     crest_margin: t.SocketOrVal[float],
     crest_loops: t.SocketOrVal[int] = 0,
     slat_span: t.SocketOrVal[float] = 1.0,
+    slat_profile_resolution: t.SocketOrVal[int] = 24,
+    crest_align: t.SocketOrVal[float] = 0.0,
     slat_material: pf.ProcNode[pf.Material] | None = None,
     crest_material: pf.ProcNode[pf.Material] | None = None,
 ) -> pf.ProcNode[pf.MeshObject]:
@@ -1325,17 +1374,24 @@ def _chair_back_geometry(
     (depth, width, height); built straight, bow deferred to the seat. slat_span
     scales the slat row inward from the full width (1 = outermost slats at the
     edges). Reusable as a bed headboard."""
-    slat_height = dimensions.z - crest_height
+    # run into the rail mid-plane so its rounded underside cannot expose the slat tops
+    slat_height = dimensions.z - crest_height * 0.5
     slat_line = pf.nodes.geo.curve_line(
         start=(0, 0, 0), end=pf.nodes.math.combine_xyz(z=slat_height)
     )
-    slat_line = pf.nodes.geo.resample_curve_count(curve=slat_line, count=17)
-    profile = pf.nodes.geo.curve_circle(resolution=12, radius=0.5)
+    slat_line = pf.nodes.geo.resample_curve_count(curve=slat_line, count=5)
+    profile = pf.nodes.geo.curve_circle(resolution=slat_profile_resolution, radius=0.5)
+    # spin half a segment so a 4-vert section is a square rather than a diamond
+    half_segment = 3.14159265 / slat_profile_resolution.astype(dtype=float)
+    profile = pf.nodes.geo.transform(
+        geometry=profile, rotation=pf.nodes.math.combine_xyz(z=half_segment)
+    )
+    flat_to_flat = pf.nodes.math.cos(half_segment)
     profile = pf.nodes.geo.transform(
         geometry=profile,
-        translation=(0, 0, 0),
-        rotation=(0, 0, 0),
-        scale=pf.nodes.math.combine_xyz(x=slat_depth, y=slat_width, z=1.0),
+        scale=pf.nodes.math.combine_xyz(
+            x=slat_depth / flat_to_flat, y=slat_width / flat_to_flat, z=1.0
+        ),
     )
     slat = curve_to_mesh_with_uv(curve=slat_line, profile=profile, fill_caps=True).mesh
 
@@ -1356,9 +1412,13 @@ def _chair_back_geometry(
         loops_y=crest_loops,
         support_loop_offset=crest_offset,
     ).mesh
+    # 0 sits the rail flush with the slat fronts, 1 with their backs, 0.5 centered
+    crest_shift = crest_align * (dimensions.x - slat_depth)
     crest = pf.nodes.geo.transform(
         geometry=crest,
-        translation=pf.nodes.math.combine_xyz(z=dimensions.z - crest_height * 0.5),
+        translation=pf.nodes.math.combine_xyz(
+            x=crest_shift, z=dimensions.z - crest_height * 0.5
+        ),
         rotation=(0, 0, 0),
         scale=(1, 1, 1),
     )
@@ -1368,6 +1428,7 @@ def _chair_back_geometry(
         crest = pf.nodes.geo.set_material(crest, crest_material)
 
     geometry = pf.nodes.geo.join_geometry([slats, crest])
+    geometry = mesh.crease_sharp(geometry, threshold_degrees=_CREASE_ANGLE)
     return pf.nodes.geo.set_shade_smooth(geometry=geometry, shade_smooth=True)
 
 
@@ -1381,6 +1442,8 @@ def chair_back(
     crest_margin: float,
     crest_loops: int = 0,
     slat_span: float = 1.0,
+    slat_profile_resolution: int = 24,
+    crest_align: float = 0.0,
 ) -> ChairResult:
     """Flat slatted back panel: vertical slats arrayed along a straight line in
     Y, capped by a corner-box top rail. Reusable as a bed headboard."""
@@ -1394,8 +1457,11 @@ def chair_back(
         crest_margin=crest_margin,
         crest_loops=crest_loops,
         slat_span=slat_span,
+        slat_profile_resolution=slat_profile_resolution,
+        crest_align=crest_align,
     )
     obj = pf.nodes.to_mesh_object(geo)
+    pf.ops.modifier.subdivide_surface(obj, levels=_CHAIR_SUBDIV, _skip_apply=True)
     return ChairResult(mesh=obj)
 
 
@@ -1443,6 +1509,8 @@ def chair_back_rand(
         crest_height=crest_height,
         crest_offset=(depth_r, corner_r, corner_r),
         crest_margin=0.0,
+        slat_profile_resolution=pf.control.choice(rng, [(24, 2.0), (4, 1.0)]),
+        crest_align=pf.random.uniform(rng, 0.0, 1.0),
     ).mesh
     if material is None:
         material = furniture_material_rand(rng_mat, pf.nodes.shader.coord().uv)
@@ -1456,11 +1524,11 @@ def chair_back_rand(
 def chair_back_solid(
     dimensions: t.SocketOrVal[pf.Vector],
     top_rise: t.SocketOrVal[float] = 0.0,
-    n_points: t.SocketOrVal[int] = 24,
+    n_points: t.SocketOrVal[int] = 7,
 ) -> pf.ProcNode[pf.MeshObject]:
     """Solid back: panel filled between a flat bottom edge and a top edge that
-    bows up by top_rise (0 = square), then extruded for depth. The many fill
-    points give it geometry to bend. dimensions = (depth, width, height)."""
+    bows up by top_rise (0 = square), then extruded for depth. The fill points
+    give it enough geometry to bend. dimensions = (depth, width, height)."""
     hw = dimensions.y * 0.5
     bottom = pf.nodes.geo.curve_line(
         start=pf.nodes.math.combine_xyz(y=hw * -1.0),
@@ -1474,7 +1542,7 @@ def chair_back_solid(
         resolution=16,
     )
     panel = mesh.fill_between_curves(
-        curve_left=bottom, curve_right=top, n_points=n_points, n_rows=17
+        curve_left=bottom, curve_right=top, n_points=n_points, n_rows=5
     )
     solid = mesh.extrude_mesh_seamless_uvs_along(
         mesh=panel,
@@ -1526,7 +1594,7 @@ def dining_seat(
     front_bow: t.SocketOrVal[float] = 0.0,
     back_bow: t.SocketOrVal[float] = 0.0,
     front_dip: t.SocketOrVal[float] = 0.0,
-    n_points: t.SocketOrVal[int] = 16,
+    n_points: t.SocketOrVal[int] = 7,
     material: pf.ProcNode[pf.Material] | None = None,
 ) -> DiningSeatResult:
     """Seat pan bridged between a rear edge and a front edge and extruded down by
@@ -1539,7 +1607,7 @@ def dining_seat(
         x=depth * 0.5, half_width=half_width, bow=front_bow, dip=front_dip
     )
     top = mesh.fill_between_curves(
-        curve_left=back_edge, curve_right=front_edge, n_points=n_points, n_rows=9
+        curve_left=back_edge, curve_right=front_edge, n_points=n_points, n_rows=3
     )
     solid = mesh.extrude_mesh_seamless_uvs_along(
         mesh=top,
@@ -1608,14 +1676,21 @@ def _shear_back(
     )
 
 
-def dining_chair_dimensions_rand(rng: pf.RNG) -> pf.Vector:
+def dining_chair_dimensions_rand(
+    rng: pf.RNG,
+    depth: float | None = None,
+    width: float | None = None,
+    seat_elevation: float | None = None,
+) -> pf.Vector:
     """Real dining-chair footprint (m): seat depth 0.41-0.46, width 0.40-0.50,
     seat height 0.45-0.50 (standard 45-50cm, tables 71-76cm)."""
-    return (
-        pf.random.uniform(rng, 0.41, 0.46),
-        pf.random.uniform(rng, 0.40, 0.50),
-        pf.random.uniform(rng, 0.45, 0.50),
-    )
+    if depth is None:
+        depth = pf.random.uniform(rng, 0.41, 0.46)
+    if width is None:
+        width = pf.random.uniform(rng, 0.40, 0.50)
+    if seat_elevation is None:
+        seat_elevation = pf.random.uniform(rng, 0.45, 0.50)
+    return (depth, width, seat_elevation)
 
 
 def _dining_slat_back(
@@ -1631,22 +1706,24 @@ def _dining_slat_back(
     slat_width = pf.random.uniform(rng, 0.0225, 0.061875)
     aspect = pf.random.clip_gaussian(rng, 0.8, 0.15, 0.4, 1.0)
     slat_depth = slat_width * aspect
-    gap = pf.random.uniform(rng, 1.4, 2.4)
-    n_wide = pf.nodes.math.clamp(
-        pf.nodes.math.round(width / (slat_width * gap)), 4.0, 9.0
-    )
-    two_span = pf.random.clip_gaussian(rng, 0.85, 0.2, 0.4, 1.0)
-    slats_choice = pf.control.choice(
-        rng,
+    rng_gap_choice, rng_gap_dense, rng_gap_wide = rng.spawn(3)
+    gap = pf.control.choice(
+        rng_gap_choice,
         [
-            ((n_wide, 1.0), 3.0),
-            ((2.0, two_span), 1.0),
+            (pf.random.uniform(rng_gap_dense, 0.0127, width * 0.15), 2.0),
+            (pf.random.uniform(rng_gap_wide, 0.0127, width), 1.0),
         ],
     )
-    n_slats = slats_choice[0]
-    slat_span = slats_choice[1]
     crest_height = pf.random.clip_gaussian(rng, 0.0675, 0.035, 0.0375, 0.15)
     corner_r = pf.random.uniform(rng, 0.0, 0.49) * crest_height
+    usable_span = width - slat_width - 2.0 * corner_r
+    n_wide = pf.nodes.math.clamp(
+        pf.nodes.math.round(1.0 + usable_span / (slat_width + gap)),
+        2.0,
+        64.0,
+    )
+    n_slats = n_wide
+    slat_span = 1.0
     return _chair_back_geometry(
         dimensions=pf.nodes.math.combine_xyz(x=slat_depth, y=width, z=height),
         n_slats=n_slats,
@@ -1661,6 +1738,8 @@ def _dining_slat_back(
         ),
         crest_margin=0.0,
         crest_loops=16,
+        slat_profile_resolution=pf.control.choice(rng, [(24, 2.0), (4, 1.0)]),
+        crest_align=pf.random.uniform(rng, 0.0, 1.0),
         slat_material=slat_material,
         crest_material=detail_material,
     ), 0.001
@@ -1696,13 +1775,15 @@ def _dining_seat_with_back(
     back: pf.ProcNode,
     back_round: float,
     back_height: float,
+    back_sink: float,
     slant: float,
     back_bend: float,
 ) -> pf.MeshObject:
     """The seat: a pan with the given back seated on its rear edge. Builds the pan,
     sets the back's rear face on the pan's rear edge, bends the back to follow that
     edge and leans it, then bevels pan and back (separate amounts) and merges them
-    into one uv-mapped object. dimensions = (depth, width, elevation)."""
+    into one uv-mapped object. dimensions = (depth, width, elevation). back_height
+    is the full built height of the back, of which back_sink is buried in the pan."""
     x, y, z = dimensions
     half_width = y * 0.5
     seat_res = dining_seat(
@@ -1720,24 +1801,57 @@ def _dining_seat_with_back(
     bb = pf.nodes.geo.bound_box(back)
     # seat the back's rear face on the seat rear edge so slats don't overhang behind
     forward = bb.min.x * -1.0
+    base_z = z - back_sink
     back = pf.nodes.geo.transform(
         back,
-        translation=pf.nodes.math.combine_xyz(x=forward, z=z),
+        translation=pf.nodes.math.combine_xyz(x=forward, z=base_z),
         rotation=(0, 0, 0),
         scale=(1, 1, 1),
     )
     back = _bend_to_edge(back, edge=seat_res.back_edge, half_width=half_width)
     back = _shear_back(
-        back, slant=slant * -1.0, base_z=z, height=back_height, bend=back_bend
+        back, slant=slant * -1.0, base_z=base_z, height=back_height, bend=back_bend
     )
 
     obj = pf.nodes.to_mesh_object(seat)
     seat_round = pf.random.uniform(rng, 0.05, 0.49) * thickness
-    pf.ops.modifier.bevel(obj, width=seat_round, segments=4)
+    pf.ops.modifier.bevel(obj, width=seat_round, segments=2)
     back_obj = pf.nodes.to_mesh_object(back)
-    pf.ops.modifier.bevel(back_obj, width=back_round, segments=4)
+    pf.ops.modifier.bevel(back_obj, width=back_round, segments=2)
     pf.ops.object.join(obj, back_obj)
     return obj
+
+
+def _chair_straight_base_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector,
+    material: pf.Material,
+) -> ChairResult:
+    result = base_straight_rand(
+        rng,
+        dimensions,
+        material,
+        leg_placement_top_scale=1.0,
+    )
+    return ChairResult(mesh=result.mesh)
+
+
+def _chair_square_base_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector,
+    material: pf.Material,
+) -> ChairResult:
+    rng, rng_diameter = rng.spawn(2)
+    diameter = pf.random.uniform(rng_diameter, 0.03, 0.14)
+    x, y, z = dimensions
+    result = base_square_rand(
+        rng,
+        (x - diameter, y - diameter, z),
+        material,
+        leg_diameter=diameter,
+        leg_placement_top_scale=1.0,
+    )
+    return ChairResult(mesh=result.mesh)
 
 
 def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairResult:
@@ -1769,7 +1883,7 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
     vec = pf.nodes.shader.coord().uv
     material1 = furniture_material_rand(rng_mat1, vec)
     material2 = furniture_material_rand(rng_mat2, vec)
-    fabric = furniture_fabric(rng_fabric, vec, translucency=0.0)
+    fabric = fabric_sturdy_rand(rng_fabric, vec, translucency=0.0)
     seat_material = pf.control.choice(rng_seat_sel, [(material1, 2.0), (fabric, 1.0)])
     backrest_material = pf.control.choice(
         rng_backrest_sel, [(material1, 2.0), (fabric, 1.0)]
@@ -1789,7 +1903,10 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
     back_fn = pf.control.choice(
         rng_back_sel, [(_dining_slat_back, 0.6), (_dining_solid_back, 0.4)]
     )
-    back_res = back_fn(rng_back, y, back_height, backrest_material, slat_material)
+    # the pan mid-plane is the one depth still inside the pan for any round-over
+    back_sink = thickness * 0.5
+    back_built = back_height + back_sink
+    back_res = back_fn(rng_back, y, back_built, backrest_material, slat_material)
     back = back_res[0]
     back_round = back_res[1]
     slant = pf.random.clip_gaussian(rng, 0.23, 0.067, 0.0, 0.4)
@@ -1805,12 +1922,15 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
         seat_material,
         back,
         back_round,
-        back_height,
+        back_built,
+        back_sink=back_sink,
         slant=slant,
         back_bend=bend_frac * 0.15 * back_height * -1.0,
     )
 
     leg_spread = pf.random.uniform(rng, 0.8, 0.95)
+    leg_inset_fraction = pf.random.uniform(rng, 0.05, 0.10)
+    leg_scale = 1.0 - 2.0 * leg_inset_fraction
     seat_bottom = z - thickness * 0.5
     # dipped pan center top sits 0.375*dip below z, center poles must stop below it
     center_bottom = seat_bottom - 0.375 * front_dip
@@ -1819,21 +1939,25 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
         rng: pf.RNG, dimensions: pf.Vector, material: pf.Material
     ) -> ChairResult:
         return wheeled_base_rand(
-            rng, (dimensions[0], dimensions[1], center_bottom), material
+            rng,
+            (x * leg_spread, y * leg_spread, center_bottom),
+            material,
         )
 
     base_fn = pf.control.choice(
         rng_base_sel,
         [
-            (base_straight_rand, 3.0),
-            (base_square_rand, 1.0),
+            (_chair_straight_base_rand, 3.0),
+            (_chair_square_base_rand, 1.0),
             (wheeled_fn, 1.0),
         ],
     )
-    base_dimensions = (x * leg_spread, y * leg_spread, seat_bottom)
+    base_dimensions = (x * leg_scale, y * leg_scale, seat_bottom)
     base = base_fn(rng_base, base_dimensions, leg_material).mesh
 
     pf.ops.object.join(seat, base)
+    seat = pf.nodes.to_mesh_object(mesh.crease_sharp(seat, threshold_degrees=40.0))
+    pf.ops.modifier.subdivide_surface(seat, levels=_CHAIR_SUBDIV, _skip_apply=True)
     return ChairResult(mesh=seat)
 
 
@@ -1862,8 +1986,7 @@ def office_chair_rand(
         rng_base,
         rng_seat_mat,
         rng_base_mat,
-        rng_bevel,
-    ) = rng.spawn(9)
+    ) = rng.spawn(8)
     if dimensions is None:
         dimensions = office_chair_dimensions_rand(rng_dims)
 
@@ -1877,22 +2000,30 @@ def office_chair_rand(
     top = top_fn(rng=rng_top, dimensions=dimensions).mesh
 
     x, y, z = dimensions
-    # Tuck the splayed legs under the seat and poke them 1cm up to connect.
     leg_spread = pf.random.uniform(rng, 0.5, 0.7)
-    base_dimensions = (x * leg_spread, y * leg_spread, z + 0.01)
+    leg_inset_fraction = pf.random.uniform(rng, 0.05, 0.10)
+    leg_scale = (1.0 - 2.0 * leg_inset_fraction) / 2.0**0.5
+    base_dimensions = (x * leg_scale, y * leg_scale, z + 0.01)
+
+    def wheeled_fn(
+        rng: pf.RNG, dimensions: pf.Vector, material: pf.Material
+    ) -> ChairResult:
+        return wheeled_base_rand(
+            rng, (x * leg_spread, y * leg_spread, dimensions[2]), material
+        )
 
     vec = pf.nodes.shader.coord().uv
     if seat_material is None:
-        seat_material = furniture_fabric(rng_seat_mat, vec, translucency=0.0)
+        seat_material = fabric_sturdy_rand(rng_seat_mat, vec, translucency=0.0)
     if base_material is None:
         base_material = furniture_material_rand(rng_base_mat, vec)
 
     base_fn = pf.control.choice(
         rng_base_sel,
         [
-            (base_straight_rand, 3.0),
-            (wheeled_base_rand, 1.0),
-            (base_square_rand, 1.0),
+            (_chair_straight_base_rand, 3.0),
+            (wheeled_fn, 1.0),
+            (_chair_square_base_rand, 1.0),
         ],
     )
     base = base_fn(rng_base, base_dimensions, base_material).mesh
@@ -1901,8 +2032,6 @@ def office_chair_rand(
         top, surface=seat_material.surface, displacement=seat_material.displacement
     )
 
+    # join keeps only the target's stack, so the seat's _CHAIR_SUBDIV covers the base too
     pf.ops.object.join(top, base)
-    pf.ops.modifier.bevel(
-        top, width=pf.random.uniform(rng_bevel, 0.001, 0.005), segments=2
-    )
     return ChairResult(mesh=top)

@@ -10,11 +10,14 @@ import procfunc as pf
 from procfunc.nodes import types as t
 from procfunc.nodes.util.bpy_node_info import NodeDataType
 
+from infinigen2.util.curve import curve_to_mesh_with_uv
+
 __all__ = [
     "CubeWithVertexIndicesResult",
     "ExtrudeSeamlessResult",
     "LoftingResult",
     "WallCutoutResult",
+    "center_footprint",
     "corner_box",
     "crease_all_edges",
     "crease_by_angle",
@@ -26,9 +29,76 @@ __all__ = [
     "grid_from_corners",
     "lofting",
     "metric_box_uv",
+    "quad_cap",
+    "quad_cylinder",
+    "quad_disc",
     "uv_winding_sign",
     "wall_cutout_split",
 ]
+
+
+def quad_cap(
+    profile: pf.ProcNode[pf.CurveObject], insets: int = 1, scale: float = 0.55
+) -> pf.ProcNode[pf.MeshObject]:
+    """Fill a closed profile with concentric quad rings around a centre face.
+
+    A cap filled as one bare ngon shares its vertices with the rim, so a rim
+    crease drags on the whole face; a single inset ring isolates the two and the
+    subdivided cap comes out flat. Ring vertices inherit the profile's angular
+    spacing, which is what keeps the subdivided silhouette round.
+    """
+    cap = pf.nodes.geo.fill_curve(profile, mode="NGONS")
+    for _ in range(insets):
+        extruded = pf.nodes.geo.extrude_mesh(
+            cap, offset_scale=0.0, individual=False, mode="FACES"
+        )
+        cap = pf.nodes.geo.scale_elements(
+            extruded.mesh, scale=scale, selection=extruded.top
+        )
+    position = pf.nodes.geo.input_position()
+    uv = pf.nodes.math.combine_xyz(x=position.x, y=position.y)
+    return pf.nodes.geo.store_named_attribute(
+        geometry=cap, name="UVMap", value=uv, domain="CORNER", data_type="FLOAT2"
+    )
+
+
+def quad_disc(
+    radius: t.SocketOrVal[float] = 1.0,
+    resolution: t.SocketOrVal[int] = 20,
+    insets: int = 1,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Disc of concentric quad rings, uniformly spaced around the rim."""
+    circle = pf.nodes.geo.curve_circle(radius=radius, resolution=resolution)
+    return quad_cap(circle, insets=insets)
+
+
+def quad_cylinder(
+    radius: t.SocketOrVal[float] = 1.0,
+    depth: t.SocketOrVal[float] = 1.0,
+    resolution: t.SocketOrVal[int] = 20,
+    insets: int = 1,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Cylinder capped by quad rings, centred on the origin like mesh_cylinder.
+
+    mesh_cylinder caps each end with a bare ngon whose vertices are the creased
+    rim itself, which tilts the subdivided face; this sweeps the same circle for
+    the wall and caps it with quad_cap instead.
+    """
+    profile = pf.nodes.geo.curve_circle(radius=radius, resolution=resolution)
+    line = pf.nodes.geo.curve_line(
+        start=(0.0, 0.0, 0.0), end=pf.nodes.math.combine_xyz(z=depth)
+    )
+    walls = curve_to_mesh_with_uv(curve=line, profile=profile, fill_caps=False).mesh
+    cap = quad_cap(profile, insets=insets)
+    cap_start = pf.nodes.geo.flip_faces(cap)
+    cap_end = pf.nodes.geo.transform(
+        geometry=cap, translation=pf.nodes.math.combine_xyz(z=depth)
+    )
+    solid = pf.nodes.geo.join_geometry([walls, cap_start, cap_end])
+    centred = pf.nodes.geo.transform(
+        geometry=solid, translation=pf.nodes.math.combine_xyz(z=depth * -0.5)
+    )
+    return pf.nodes.geo.merge_by_distance(centred, distance=1e-6)
 
 
 def metric_box_uv(geometry: pf.ProcNode) -> pf.ProcNode:
@@ -300,6 +370,18 @@ def extrude_mesh_seamless_uvs_along(
         data_type="FLOAT2",
     )
     return ExtrudeSeamlessResult(mesh=out, top=ext.top, side=ext.side)
+
+
+def center_footprint(obj: pf.MeshObject) -> None:
+    """Shift geometry so its bounding box is centered on x/y, leaving z alone.
+
+    Storage carcasses are built into the positive octant while tables are built
+    centered on their footprint; placement code sets a location expecting the
+    latter, so a carcass used as a table has to be recentered first.
+    """
+    bbox = pf.ops.attr.bbox_min_max(obj, global_coords=False)
+    lo, hi = bbox[0], bbox[1]
+    pf.ops.mesh.move(obj, value=(-(lo[0] + hi[0]) * 0.5, -(lo[1] + hi[1]) * 0.5, 0.0))
 
 
 def uv_winding_sign(obj: pf.MeshObject) -> float:
