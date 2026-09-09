@@ -732,6 +732,10 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.bowl.bowl_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.vase.vase_rand"
   },
   {
