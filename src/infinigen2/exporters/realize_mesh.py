@@ -4,13 +4,16 @@
 # Authors: David Yan
 
 import logging
+from collections.abc import Iterable
 
 import bpy
+import procfunc as pf
 
 from infinigen2.exporters.render_cycles import configure_cycles_devices
 
 __all__ = [
     "convert_shader_displacement",
+    "evaluate_shared_subdivision_to_shared_data",
     "realize_scene",
 ]
 
@@ -183,6 +186,63 @@ def _subsurf_settings(mod: bpy.types.Modifier) -> tuple:
         for p in mod.bl_rna.properties
         if not p.is_readonly and p.identifier not in skip
     )
+
+
+def _bake_shared_stack(objs: list[bpy.types.Object]) -> None:
+    lead = objs[0]
+    was_disabled = lead.hide_viewport
+    was_hidden = lead.hide_get()
+    lead.hide_viewport = False
+    lead.hide_set(False)
+    for mod in lead.modifiers:
+        if mod.type == "SUBSURF":
+            mod.levels = mod.render_levels
+        mod.show_viewport = mod.show_render
+    bpy.context.view_layer.update()
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    baked = bpy.data.meshes.new_from_object(
+        lead.evaluated_get(depsgraph), depsgraph=depsgraph
+    )
+    lead.hide_viewport = was_disabled
+    lead.hide_set(was_hidden)
+    old = lead.data
+    name = old.name
+    for obj in objs:
+        obj.modifiers.clear()
+        obj.data = baked
+    if old.users == 0:
+        bpy.data.meshes.remove(old)
+    baked.name = name
+
+
+def evaluate_shared_subdivision_to_shared_data(
+    objects: Iterable[pf.MeshObject],
+) -> None:
+    """Blender evaluates a modifier stack once per object with no reuse across objects
+    sharing a datablock, so N aliases each deferring an identical subsurf pay for N
+    copies of the same result. Bake each such group's stack into one shared mesh;
+    singletons keep their deferred stack."""
+    bpy.context.view_layer.update()
+    groups = {}
+    for wrapped in objects:
+        obj = wrapped.item()
+        if obj is None or obj.type != "MESH" or obj.data is None or not obj.modifiers:
+            continue
+        if any(mod.type != "SUBSURF" for mod in obj.modifiers):
+            continue
+        key = (
+            obj.data.as_pointer(),
+            tuple(_subsurf_settings(mod) for mod in obj.modifiers),
+        )
+        groups.setdefault(key, []).append(obj)
+    for group in groups.values():
+        if len(group) < 2:
+            continue
+        _bake_shared_stack(group)
+        logger.info(
+            f"Baked one shared modifier stack for {len(group)} objects "
+            f"sharing {group[0].data.name!r}"
+        )
 
 
 def _apply_subsurf(obj: bpy.types.Object, subdivided: dict) -> None:

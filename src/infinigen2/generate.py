@@ -54,7 +54,10 @@ from infinigen2.exporters.util.format import (
 from infinigen2.exporters.util.blender_render import DisplacementMode
 from infinigen2 import GENERATORS_MANIFEST
 from infinigen2.cameras import camera_with_distance_framing_objects
-from infinigen2.exporters.realize_mesh import realize_scene
+from infinigen2.exporters.realize_mesh import (
+    evaluate_shared_subdivision_to_shared_data,
+    realize_scene,
+)
 from procfunc.util.manifest import import_item
 from procfunc.util.teardown import skip_teardown_on_exit
 from infinigen2.util.hardware_info import get_hardware_info
@@ -573,6 +576,15 @@ def _unpack_by_category(category: str, result, data: dict):
             raise ValueError(f"Unknown category: {category}")
 
 
+def _finalize_before_export(
+    pipeline_parameters: dict, objects: list[pf.MeshObject]
+) -> None:
+    evaluate_shared_subdivision_to_shared_data(objects)
+    mode = pipeline_parameters.get("displacement_mode")
+    if mode == DisplacementMode.REALIZE_MESH:
+        realize_scene()
+
+
 def execute_generators(
     output_folder: Path,
     generators: list[tuple[str, str, Callable]],
@@ -611,15 +623,8 @@ def execute_generators(
 
         logger.info(f"Executing {generator_str} as {generator_func.__name__}")
 
-        if (
-            category == "Exporter"
-            and not realized
-            and (
-                pipeline_parameters.get("displacement_mode")
-                == DisplacementMode.REALIZE_MESH
-            )
-        ):
-            realize_scene()
+        if category == "Exporter" and not realized:
+            _finalize_before_export(pipeline_parameters, data["objects"])
             realized = True
 
         if category == "Exporter":
@@ -809,6 +814,7 @@ def _main():  # noqa: C901
     generator_times = results.get("generator_times", {})
 
     if args.save_blend:
+        evaluate_shared_subdivision_to_shared_data(results["objects"])
         for l in [
             bpy.data.objects,
             bpy.data.materials,
