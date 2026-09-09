@@ -21,6 +21,7 @@ from infinigen2.shaders.base_materials import (
     terrazzo,
 )
 from infinigen2.shaders.composites import tiles
+from infinigen2.util import mesh as mesh_util
 
 __all__ = [
     "VaseResult",
@@ -367,6 +368,7 @@ def vase(
     )
     geo = pf.nodes.geo.set_material(geo, material)
     obj = pf.nodes.to_mesh_object(geo)
+    mesh_util.metric_cylinder_uv(obj)
     pf.ops.modifier.solidify(obj, thickness=thickness)
     pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
     return VaseResult(mesh=obj)
@@ -451,6 +453,7 @@ def vase_rand(rng: pf.RNG) -> VaseResult:
     geo = pf.nodes.geo.set_material(geo, mat_result)
 
     obj = pf.nodes.to_mesh_object(geo)
+    mesh_util.metric_cylinder_uv(obj)
     obj.item().name = vase_rand.__name__
 
     thickness = pf.random.uniform(rng, 0.005, 0.01)

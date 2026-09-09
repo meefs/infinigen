@@ -29,6 +29,7 @@ __all__ = [
     "grid_from_corners",
     "lofting",
     "metric_box_uv",
+    "metric_cylinder_uv",
     "quad_cap",
     "quad_cylinder",
     "quad_disc",
@@ -138,6 +139,23 @@ def metric_box_uv(geometry: pf.ProcNode) -> pf.ProcNode:
         domain="CORNER",
         data_type="FLOAT2",
     )
+
+
+@pf.tracer.primitive(mutates=["obj"])
+def metric_cylinder_uv(obj: pf.MeshObject) -> None:
+    """Project sides at the widest circumference, with metric Z and planar caps."""
+    positions = pf.ops.attr.vertex_positions(obj)
+    radius = np.linalg.norm(positions[:, :2], axis=1).max()
+    pf.ops.uv.cylinder_project(obj, direction="ALIGN_TO_OBJECT", correct_aspect=False)
+    uv = pf.ops.attr.uv_coords(obj)
+    mesh = obj.item().data
+    corner_positions = positions[[loop.vertex_index for loop in mesh.loops]]
+    uv[:, 0] *= 2 * np.pi * radius
+    uv[:, 1] = corner_positions[:, 2]
+    caps = np.abs(pf.ops.attr.polygon_normals(obj)[:, 2]) > 0.9999
+    cap_corners = np.repeat(caps, [face.loop_total for face in mesh.polygons])
+    uv[cap_corners] = corner_positions[cap_corners, :2]
+    pf.ops.attr.write_uv_coords(obj, uv)
 
 
 class _CylinderSideResult(NamedTuple):

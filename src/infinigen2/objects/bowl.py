@@ -7,6 +7,7 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 from infinigen2.objects import vase
+from infinigen2.util import mesh as mesh_util
 
 __all__ = ["BowlResult", "bowl", "bowl_rand"]
 
@@ -114,6 +115,7 @@ def bowl(
     )
     geo = pf.nodes.geo.set_material(geo, material)
     obj = pf.nodes.to_mesh_object(geo)
+    mesh_util.metric_cylinder_uv(obj)
     pf.ops.modifier.solidify(obj, thickness=thickness, offset=-1.0)
     pf.ops.object.shade_smooth(obj)
     return BowlResult(mesh=obj)
