@@ -25,9 +25,9 @@ class TapResult(NamedTuple):
 def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
     curve = pf.nodes.geo.curve_bezier_segment(
         start=(0.0, 0.0, 0.0),
-        start_handle=(0.0, 0.0, 0.7),
-        end_handle=(0.2, 0.0, 0.7),
-        end=(1.0, 0.0, 0.9),
+        start_handle=(0.0, 0.0, 0.28),
+        end_handle=(0.08, 0.0, 0.28),
+        end=(0.4, 0.0, 0.36),
     )
     spline_parameter = pf.nodes.geo.spline_parameter()
     radius = pf.nodes.math.float_curve(
@@ -36,7 +36,7 @@ def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
         curve=np.array([[0.0, 0.975], [1.0, 0.1625]], dtype=np.float64),
     )
     curve = pf.nodes.geo.set_curve_radius(curve=curve, radius=radius * 1.3)
-    profile = pf.nodes.geo.curve_circle(radius=0.2)
+    profile = pf.nodes.geo.curve_circle(radius=0.08)
     handle = curve_to_mesh_with_uv(
         curve=curve,
         profile=profile,
@@ -45,7 +45,8 @@ def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
     position = pf.nodes.geo.input_position()
     y_scale = pf.nodes.math.map_range(
         value=position.x,
-        from_min=0.2,
+        from_min=0.08,
+        from_max=0.4,
         to_max=2.5,
         to_min=1.0,
         data_type=NodeDataType.FLOAT,
@@ -67,13 +68,13 @@ def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
 @pf.nodes.node_function
 def _tap_geometry(
     material: t.SocketOrVal[pf.Material],
-    base_width: t.SocketOrVal[float] = 0.25,
+    base_width: t.SocketOrVal[float] = 0.1,
     tap_head: t.SocketOrVal[float] = 0.9,
     rotation_z: t.SocketOrVal[float] = 6.25,
     tap_height: t.SocketOrVal[float] = 0.75,
-    base_radius: t.SocketOrVal[float] = 0.05,
+    base_radius: t.SocketOrVal[float] = 0.02,
     switch: t.SocketOrVal[bool] = False,
-    curl: t.SocketOrVal[float] = -0.28,
+    curl: t.SocketOrVal[float] = -0.112,
     hand_type: t.SocketOrVal[bool] = True,
     hands_length_x: t.SocketOrVal[float] = 1.0,
     hands_length_y: t.SocketOrVal[float] = 1.25,
@@ -81,31 +82,31 @@ def _tap_geometry(
     different_type: t.SocketOrVal[bool] = False,
     length_one_side: t.SocketOrVal[bool] = False,
 ) -> pf.ProcNode[pf.MeshObject]:
-    base_curve = pf.nodes.geo.curve_quadrilateral(width=base_width, height=0.7)
+    base_curve = pf.nodes.geo.curve_quadrilateral(width=base_width, height=0.28)
     base_curve = pf.nodes.geo.fillet_curve_poly(
         curve=base_curve,
         radius=base_radius,
         count=19,
     )
     base = pf.nodes.geo.fill_curve(base_curve)
-    base = pf.nodes.geo.extrude_mesh(mesh=base, offset_scale=0.05)
+    base = pf.nodes.geo.extrude_mesh(mesh=base, offset_scale=0.02)
     base_mesh = metric_box_uv(base.mesh)
 
-    stem_cap_curve = pf.nodes.geo.curve_circle(radius=0.05)
+    stem_cap_curve = pf.nodes.geo.curve_circle(radius=0.02)
     stem_cap = pf.nodes.geo.fill_curve(stem_cap_curve)
-    stem_cap = pf.nodes.geo.extrude_mesh(mesh=stem_cap, offset_scale=0.15)
+    stem_cap = pf.nodes.geo.extrude_mesh(mesh=stem_cap, offset_scale=0.06)
     stem_cap_mesh = metric_box_uv(stem_cap.mesh)
 
     lever = _lever_handle()
     lever_left = pf.nodes.geo.transform(
         geometry=lever,
-        translation=(0.0, 0.2, 0.0),
+        translation=(0.0, 0.08, 0.0),
         rotation=(0.0, 0.0, 2.618),
         scale=(0.3, 0.3, 0.3),
     )
     lever_right = pf.nodes.geo.transform(
         geometry=lever,
-        translation=(0.0, -0.2, 0.0),
+        translation=(0.0, -0.08, 0.0),
         rotation=(0.0, 0.0, 3.6652),
         scale=(0.3, 0.3, 0.3),
     )
@@ -114,19 +115,19 @@ def _tap_geometry(
     thin_handle = pf.nodes.geo.mesh_cylinder(
         vertices=41,
         side_segments=39,
-        radius=0.005,
-        depth=0.1,
+        radius=0.002,
+        depth=0.04,
     )
     thin_handle_mesh = metric_box_uv(thin_handle.mesh)
     thin_right_short = pf.nodes.geo.transform(
         geometry=thin_handle_mesh,
-        translation=(0.0, -0.08, 0.15),
+        translation=(0.0, -0.032, 0.06),
         rotation=(0.0, 0.0, 0.0855),
         scale=(1.0, 1.0, 1.1),
     )
     thin_right_long = pf.nodes.geo.transform(
         geometry=thin_right_short,
-        translation=(0.0, -0.01, -0.005),
+        translation=(0.0, -0.004, -0.002),
         scale=(4.1, 1.0, 1.0),
     )
     thin_right_length = pf.nodes.func.switch(
@@ -143,7 +144,7 @@ def _tap_geometry(
     )
     thin_left = pf.nodes.geo.transform(
         geometry=thin_handle_mesh,
-        translation=(0.0, 0.08, 0.15),
+        translation=(0.0, 0.032, 0.06),
         scale=(1.0, 1.0, 1.1),
     )
     thin_left = pf.nodes.func.switch(
@@ -156,18 +157,18 @@ def _tap_geometry(
     thick_handle = pf.nodes.geo.mesh_cylinder(
         vertices=41,
         side_segments=39,
-        radius=0.03,
-        depth=0.1,
+        radius=0.012,
+        depth=0.04,
     )
     thick_handle_mesh = metric_box_uv(thick_handle.mesh)
     thick_right = pf.nodes.geo.transform(
         geometry=thick_handle_mesh,
-        translation=(0.0, -0.05, 0.1),
+        translation=(0.0, -0.02, 0.04),
         rotation=(1.5708, 0.0, 0.0),
     )
     thick_left = pf.nodes.geo.transform(
         geometry=thick_handle_mesh,
-        translation=(0.0, 0.05, 0.1),
+        translation=(0.0, 0.02, 0.04),
         rotation=(1.5708, 0.0, 0.0),
     )
     thick_left = pf.nodes.func.switch(
@@ -191,10 +192,10 @@ def _tap_geometry(
         data_type=NodeDataType.GEOMETRY,
     )
 
-    arc = pf.nodes.geo.curve_circle(radius=0.2)
+    arc = pf.nodes.geo.curve_circle(radius=0.08)
     arc = pf.nodes.geo.transform(
         geometry=arc,
-        translation=(0.0, 0.2, 0.0),
+        translation=(0.0, 0.08, 0.0),
     )
     arc = pf.nodes.geo.transform(
         geometry=arc,
@@ -203,9 +204,9 @@ def _tap_geometry(
     )
     curve = pf.nodes.geo.curve_bezier_segment(
         start=(0.0, 0.0, 0.0),
-        start_handle=(0.0, 1.2, 0.0),
-        end_handle=pf.nodes.math.combine_xyz(x=0.2, y=curl),
-        end=(-0.05, 0.1, 0.0),
+        start_handle=(0.0, 0.48, 0.0),
+        end_handle=pf.nodes.math.combine_xyz(x=0.08, y=curl),
+        end=(-0.02, 0.04, 0.0),
         resolution=177,
     )
     curve = pf.nodes.geo.trim_curve(curve=curve, end=0.6625)
@@ -214,7 +215,7 @@ def _tap_geometry(
         rotation=(1.5708, 0.0, 2.522),
         scale=(5.2, 0.5, 7.8),
     )
-    profile = pf.nodes.geo.curve_circle(radius=0.03)
+    profile = pf.nodes.geo.curve_circle(radius=0.012)
     arc_spout = curve_to_mesh_with_uv(curve=arc, profile=profile).mesh
     curved_spout = curve_to_mesh_with_uv(
         curve=curve,
@@ -229,7 +230,7 @@ def _tap_geometry(
     position = pf.nodes.geo.input_position()
     selection = pf.nodes.func.switch(
         switch=switch,
-        a=position.z > -0.01,
+        a=position.z > -0.004,
         b=1.0,
         data_type=NodeDataType.FLOAT,
     )
@@ -246,12 +247,12 @@ def _tap_geometry(
     )
     spout_curve = pf.nodes.geo.transform(
         geometry=spout_curve.selection,
-        translation=(0.0, 0.0, 0.6),
+        translation=(0.0, 0.0, 0.24),
         scale=spout_scale,
     )
     stem = pf.nodes.geo.curve_line(
         start=(0.0, 0.0, 0.0),
-        end=(0.0, 0.0, 0.6),
+        end=(0.0, 0.0, 0.24),
     )
     stem = curve_to_mesh_with_uv(curve=stem, profile=profile).mesh
     spout = pf.nodes.geo.join_geometry([spout_curve, stem])
@@ -262,20 +263,20 @@ def _tap_geometry(
     )
     standard = pf.nodes.geo.join_geometry([stem_cap_mesh, handles, spout])
 
-    vessel_tip = pf.nodes.geo.mesh_cylinder(vertices=318, radius=0.02, depth=0.03)
+    vessel_tip = pf.nodes.geo.mesh_cylinder(vertices=318, radius=0.008, depth=0.012)
     vessel_tip = pf.nodes.geo.transform(
         geometry=vessel_tip.mesh,
-        translation=(0.595, 0.0, 0.38),
+        translation=(0.238, 0.0, 0.152),
     )
     vessel_tip = metric_box_uv(vessel_tip)
-    vessel_tube = pf.nodes.geo.mesh_cylinder(vertices=100, radius=0.01, depth=0.7)
+    vessel_tube = pf.nodes.geo.mesh_cylinder(vertices=100, radius=0.004, depth=0.28)
     vessel_tube = pf.nodes.geo.set_position(
         geometry=vessel_tube.mesh,
         offset=(0.0, 0.0, 0.0),
     )
     vessel_tube = pf.nodes.geo.transform(
         geometry=vessel_tube,
-        translation=(0.3, 0.0, 0.25),
+        translation=(0.12, 0.0, 0.1),
         rotation=(0.0, -2.042, 0.0),
         scale=(1.7, 3.1, 1.0),
     )
@@ -286,15 +287,15 @@ def _tap_geometry(
         scale=(0.9, 1.0, 1.0),
     )
 
-    vessel_base_curve = pf.nodes.geo.curve_circle(resolution=307, radius=0.055)
+    vessel_base_curve = pf.nodes.geo.curve_circle(resolution=307, radius=0.022)
     vessel_base = pf.nodes.geo.fill_curve(vessel_base_curve)
-    vessel_base = pf.nodes.geo.extrude_mesh(mesh=vessel_base, offset_scale=0.15)
+    vessel_base = pf.nodes.geo.extrude_mesh(mesh=vessel_base, offset_scale=0.06)
     vessel_base_mesh = metric_box_uv(vessel_base.mesh)
     vessel_handle_curve = pf.nodes.geo.curve_bezier_segment(
         start=(0.0, 0.0, 0.0),
-        start_handle=(0.0, 0.0, 0.7),
-        end_handle=(0.2, 0.0, 0.7),
-        end=(1.0, 0.0, 0.9),
+        start_handle=(0.0, 0.0, 0.28),
+        end_handle=(0.08, 0.0, 0.28),
+        end=(0.4, 0.0, 0.36),
         resolution=54,
     )
     spline_parameter = pf.nodes.geo.spline_parameter()
@@ -310,7 +311,7 @@ def _tap_geometry(
         curve=vessel_handle_curve,
         radius=vessel_radius * 1.3,
     )
-    vessel_profile = pf.nodes.geo.curve_circle(radius=0.1)
+    vessel_profile = pf.nodes.geo.curve_circle(radius=0.04)
     vessel_handle = curve_to_mesh_with_uv(
         curve=vessel_handle_curve,
         profile=vessel_profile,
@@ -319,7 +320,8 @@ def _tap_geometry(
     position = pf.nodes.geo.input_position()
     vessel_y_scale = pf.nodes.math.map_range(
         value=position.x,
-        from_min=0.2,
+        from_min=0.08,
+        from_max=0.4,
         to_max=2.5,
         to_min=1.0,
         data_type=NodeDataType.FLOAT,
@@ -338,7 +340,7 @@ def _tap_geometry(
     vessel_handle = pf.nodes.geo.set_shade_smooth(vessel_handle)
     vessel_handle = pf.nodes.geo.transform(
         geometry=vessel_handle,
-        translation=(0.0, 0.0, 0.1),
+        translation=(0.0, 0.0, 0.04),
         rotation=(0.0, 0.0, 0.6807),
         scale=(0.4, 0.4, 0.3),
     )
@@ -358,37 +360,36 @@ def _tap_geometry(
     return pf.nodes.geo.set_material(geometry=body, material=material)
 
 
-def _finish(geometry: pf.ProcNode, scale: float) -> TapResult:
+def _finish(geometry: pf.ProcNode) -> TapResult:
     geometry = pf.nodes.geo.transform(
         geometry=geometry,
         rotation=(0.0, 0.0, 3.14159265),
-        scale=(scale, scale, scale),
     )
     bounds = pf.nodes.geo.bound_box(geometry)
     geometry = pf.nodes.geo.transform(
         geometry=geometry,
         translation=pf.nodes.math.combine_xyz(z=bounds.min.z * -1.0),
     )
+    geometry = metric_box_uv(geometry)
     obj = pf.nodes.to_mesh_object(pf.nodes.geo.realize_instances(geometry))
     return TapResult(mesh=obj)
 
 
 def tap(
     material: pf.Material | None = None,
-    base_width: float = 0.25,
+    base_width: float = 0.1,
     tap_head: float = 0.9,
     rotation_z: float = 6.25,
     tap_height: float = 0.75,
-    base_radius: float = 0.05,
+    base_radius: float = 0.02,
     switch: bool = False,
-    curl: float = -0.28,
+    curl: float = -0.112,
     hand_type: bool = True,
     hands_length_x: float = 1.0,
     hands_length_y: float = 1.25,
     one_side: bool = False,
     different_type: bool = False,
     length_one_side: bool = False,
-    scale: float = 0.4,
 ) -> TapResult:
     if material is None:
         material = pf.Material(surface=pf.nodes.shader.principled_bsdf(metallic=1.0))
@@ -408,7 +409,7 @@ def tap(
         different_type=different_type,
         length_one_side=length_one_side,
     )
-    return _finish(geometry, scale)
+    return _finish(geometry)
 
 
 def tap_rand(
@@ -448,7 +449,7 @@ def tap_rand(
     if material is None:
         material = decorative_material_rand(rng_material, vector)
     if base_width is None:
-        base_width = pf.random.uniform(rng_base_width, 0.2, 0.3)
+        base_width = pf.random.uniform(rng_base_width, 0.08, 0.12)
     if tap_head is None:
         tap_head = pf.random.uniform(rng_tap_head, 0.7, 1.1)
     if rotation_z is None:
@@ -456,11 +457,11 @@ def tap_rand(
     if tap_height is None:
         tap_height = pf.random.uniform(rng_height, 0.5, 1.0)
     if base_radius is None:
-        base_radius = pf.random.uniform(rng_base_radius, 0.0, 0.1)
+        base_radius = pf.random.uniform(rng_base_radius, 0.0, 0.04)
     if switch is None:
         switch = pf.control.choice(rng_switch, [(True, 1.0), (False, 1.0)])
     if curl is None:
-        curl = pf.random.uniform(rng_curl, -0.5, -0.06)
+        curl = pf.random.uniform(rng_curl, -0.2, -0.024)
     if hand_type is None:
         hand_type = pf.control.choice(rng_hand_type, [(True, 4.0), (False, 1.0)])
     if hands_length_x is None:
@@ -494,5 +495,4 @@ def tap_rand(
         one_side=one_side,
         different_type=different_type,
         length_one_side=length_one_side,
-        scale=0.4,
     )
