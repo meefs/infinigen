@@ -79,13 +79,19 @@ def _name_materials(obj: pf.MeshObject, base: str) -> None:
             slot.material.name = f"{base}_{j}"
 
 
-def _rename(objs: list[pf.MeshObject], name: str) -> list[pf.MeshObject]:
+def _rename(
+    objs: list[pf.MeshObject], name: str, keep_source_name: bool = False
+) -> list[pf.MeshObject]:
     """Name each object (and its materials) `{name}.NN` and return them as a list, so
     a scene's objects can be gathered by concatenating single-category _rename calls."""
     named = list(objs)
     for i, obj in enumerate(named):
-        obj.item().name = f"{name}.{i:02d}"
-        _name_materials(obj, f"{name}.{i:02d}")
+        object_name = name
+        if keep_source_name:
+            object_name = f"{name}_{obj.item().name}"
+        object_name = f"{object_name}.{i:02d}"
+        obj.item().name = object_name
+        _name_materials(obj, object_name)
     return named
 
 
@@ -432,8 +438,10 @@ def _furnished_room_rand(
         _rename(list(getattr(setup, "rugs", [])), "rug")
         + _rename([r.mesh for r in sofas], "sofa")
         + _rename([r.mesh for r in storage_objects], "storage")
-        + _rename([r.mesh for r in coffee_tables], "coffee_table")
-        + _rename([r.mesh for r in side_tables], "side_table")
+        + _rename(
+            [r.mesh for r in coffee_tables], "coffee_table", keep_source_name=True
+        )
+        + _rename([r.mesh for r in side_tables], "side_table", keep_source_name=True)
         + _rename([r.mesh for r in floor_lamps], "floor_lamp")
         + _rename([r.mesh for r in table_lamps], "table_lamp")
         + _rename([r.mesh for r in decorations], "decoration")

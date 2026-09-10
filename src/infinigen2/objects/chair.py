@@ -5,12 +5,14 @@
 # - Yiming Zuo: original Infinigen v1 nodegroups (office_chair, curvy_seats, round_seats, wheeled leg)
 # - Alexander Raistrick: transpile to procfunc/v2, split into top/bottom part distributions
 
+from functools import cache, partial
 from typing import NamedTuple
 
 import procfunc as pf
 from procfunc.nodes import types as t
 from procfunc.nodes.util.bpy_node_info import NodeDataType
 
+from infinigen2.objects import storage
 from infinigen2.objects.table import (
     base_square_rand,
     base_straight_rand,
@@ -29,6 +31,9 @@ __all__ = [
     "chair_back",
     "chair_back_rand",
     "chair_back_solid",
+    "chair_bench_rand",
+    "base_stable_rand",
+    "bench_dimensions_rand",
     "chair_rand",
     "curvy_seat",
     "curvy_seat_rand",
@@ -1854,6 +1859,41 @@ def _chair_square_base_rand(
     return ChairResult(mesh=result.mesh)
 
 
+def _grid_base_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector,
+    material: pf.Material,
+    close_edges: bool = False,
+) -> ChairResult:
+    footprint = pf.nodes.math.minimum(dimensions[0], dimensions[1])
+    base = storage.grid_legs_rand(
+        rng,
+        dimensions,
+        dimensions[2],
+        close_edges=close_edges,
+        diameter=0.02 + pf.random.uniform(rng, 0.0, 0.15) * footprint,
+    )
+    pf.ops.object.set_transform(
+        base, location=(dimensions[0] * -0.5, dimensions[1] * -0.5, 0.0)
+    )
+    pf.ops.object.set_material(base, material)
+    return ChairResult(mesh=base)
+
+
+def base_stable_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector,
+    material: pf.Material,
+    close_edges: bool = False,
+) -> ChairResult:
+    """Chair base without oversized pedestal or wheeled options."""
+    base_fn = pf.control.choice(
+        rng,
+        [(_grid_base_rand, 0.4), (base_straight_rand, 0.45), (base_square_rand, 0.15)],
+    )
+    return base_fn(rng, dimensions, material, close_edges=close_edges)
+
+
 def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairResult:
     """Wooden dining chair: bezier-outline seat pan + slat or solid back bent to
     follow the seat's rear edge, on straight legs. Real chair dimensions."""
@@ -1881,17 +1921,25 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
     x, y, z = dimensions
 
     vec = pf.nodes.shader.coord().uv
-    material1 = furniture_material_rand(rng_mat1, vec)
-    material2 = furniture_material_rand(rng_mat2, vec)
-    fabric = fabric_sturdy_rand(rng_fabric, vec, translucency=0.0)
-    seat_material = pf.control.choice(rng_seat_sel, [(material1, 2.0), (fabric, 1.0)])
-    backrest_material = pf.control.choice(
+    material1 = cache(partial(furniture_material_rand, rng_mat1, vec))
+    material2 = cache(partial(furniture_material_rand, rng_mat2, vec))
+    fabric = cache(partial(fabric_sturdy_rand, rng_fabric, vec, translucency=0.0))
+    seat_material_fn = pf.control.choice(
+        rng_seat_sel, [(material1, 2.0), (fabric, 1.0)]
+    )
+    seat_material = seat_material_fn()
+    backrest_material_fn = pf.control.choice(
         rng_backrest_sel, [(material1, 2.0), (fabric, 1.0)]
     )
-    leg_material = pf.control.choice(rng_leg_sel, [(material1, 1.0), (material2, 1.0)])
-    slat_material = pf.control.choice(
+    backrest_material = backrest_material_fn()
+    leg_material_fn = pf.control.choice(
+        rng_leg_sel, [(material1, 1.0), (material2, 1.0)]
+    )
+    leg_material = leg_material_fn()
+    slat_material_fn = pf.control.choice(
         rng_slat_sel, [(material1, 1.0), (material2, 1.0)]
     )
+    slat_material = slat_material_fn()
 
     front_bow = pf.random.clip_gaussian(rng, 0.08, 0.1, 0.0, 0.3) * x
     back_bow = pf.random.uniform(rng, 0.0, 0.25) * x
@@ -1958,6 +2006,109 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
     pf.ops.object.join(seat, base)
     seat = pf.nodes.to_mesh_object(mesh.crease_sharp(seat, threshold_degrees=40.0))
     pf.ops.modifier.subdivide_surface(seat, levels=_CHAIR_SUBDIV, _skip_apply=True)
+    return ChairResult(mesh=seat)
+
+
+def bench_dimensions_rand(rng: pf.RNG) -> pf.Vector:
+    """Bench dimensions: seat-depth deep, several seats wide."""
+    return (
+        pf.random.uniform(rng, 0.4, 0.48),
+        pf.random.uniform(rng, 0.9, 2.5),
+        pf.random.uniform(rng, 0.42, 0.5),
+    )
+
+
+def chair_bench_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairResult:
+    """Backed bench: a bezier-outline seat pan several seats wide, on a base
+    chosen for stability under a long span rather than a chair's single seat."""
+    (
+        rng,
+        rng_dims,
+        rng_back_sel,
+        rng_back,
+        rng_base,
+        rng_mat1,
+        rng_mat2,
+        rng_fabric,
+        rng_seat_sel,
+        rng_backrest_sel,
+        rng_leg_sel,
+        rng_slat_sel,
+        rng_dip_sel,
+        rng_dip,
+        rng_back_bend,
+        rng_seat,
+    ) = rng.spawn(16)
+    if dimensions is None:
+        dimensions = bench_dimensions_rand(rng_dims)
+    x, y, z = dimensions
+
+    vec = pf.nodes.shader.coord().uv
+    material1 = cache(partial(furniture_material_rand, rng_mat1, vec))
+    material2 = cache(partial(furniture_material_rand, rng_mat2, vec))
+    fabric = cache(partial(fabric_sturdy_rand, rng_fabric, vec, translucency=0.0))
+    seat_material_fn = pf.control.choice(
+        rng_seat_sel, [(material1, 2.0), (fabric, 1.0)]
+    )
+    seat_material = seat_material_fn()
+    backrest_material_fn = pf.control.choice(
+        rng_backrest_sel, [(material1, 2.0), (fabric, 1.0)]
+    )
+    backrest_material = backrest_material_fn()
+    leg_material_fn = pf.control.choice(
+        rng_leg_sel, [(material1, 1.0), (material2, 1.0)]
+    )
+    leg_material = leg_material_fn()
+    slat_material_fn = pf.control.choice(
+        rng_slat_sel, [(material1, 1.0), (material2, 1.0)]
+    )
+    slat_material = slat_material_fn()
+
+    front_bow = pf.random.clip_gaussian(rng, 0.08, 0.1, 0.0, 0.3) * x
+    back_bow = pf.random.uniform(rng, 0.0, 0.25) * x
+    dip_active = pf.control.choice(rng_dip_sel, [(0.0, 0.5), (1.0, 0.5)])
+    front_dip = dip_active * pf.random.uniform(rng_dip, 0.0, 0.15) * x
+    thickness = pf.random.clip_gaussian(rng, 0.06, 0.04, 0.02, 0.2)
+
+    back_height = pf.random.uniform(rng, 0.35, 0.55)
+    back_fn = pf.control.choice(
+        rng_back_sel, [(_dining_slat_back, 0.6), (_dining_solid_back, 0.4)]
+    )
+    back_sink = thickness * 0.5
+    back_built = back_height + back_sink
+    back_res = back_fn(rng_back, y, back_built, backrest_material, slat_material)
+    back = back_res[0]
+    back_round = back_res[1]
+    slant = pf.random.clip_gaussian(rng, 0.23, 0.067, 0.0, 0.4)
+    bend_frac = pf.random.clip_gaussian(rng_back_bend, 0.15, 0.35, -0.4, 1.2)
+
+    seat = _dining_seat_with_back(
+        rng_seat,
+        dimensions,
+        thickness,
+        front_bow,
+        back_bow,
+        front_dip,
+        seat_material,
+        back,
+        back_round,
+        back_built,
+        back_sink=back_sink,
+        slant=slant,
+        back_bend=bend_frac * 0.15 * back_height * -1.0,
+    )
+
+    # a long span needs its legs near the ends, so spread further than a chair does
+    leg_spread = pf.random.uniform(rng, 0.9, 0.98)
+    seat_bottom = z - thickness * 0.5
+    base = base_stable_rand(
+        rng_base,
+        (x * leg_spread, y * leg_spread, seat_bottom),
+        leg_material,
+        close_edges=True,
+    ).mesh
+
+    pf.ops.object.join(seat, base)
     return ChairResult(mesh=seat)
 
 

@@ -167,7 +167,7 @@ def wall_storage_flush_rand(
         wall_width, width, spacing_x, min_margin, margin_split
     )
 
-    cab = storage.shelves_rand(
+    cab = storage.storage_cell_shelf_rand(
         rng,
         dimensions=pf.Vector((depth, width, height)),
     ).mesh

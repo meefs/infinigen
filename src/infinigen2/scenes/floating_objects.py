@@ -83,7 +83,7 @@ def object_rand(rng: pf.RNG) -> ObjectResult:
         [
             (sofa.sofa_rand, 2.0),
             (chair.chair_rand, 4.0),
-            (storage.shelves_rand, 1.0),
+            (storage.storage_cell_shelf_rand, 1.0),
             (storage.cabinet_with_door_rand, 1.0),
             (table.side_table_rand, 0.25),
             (table.coffee_table_rand, 0.25),

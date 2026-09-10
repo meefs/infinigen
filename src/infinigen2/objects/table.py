@@ -25,7 +25,7 @@ __all__ = [
     "base_straight",
     "base_straight_rand",
     "cocktail_table_rand",
-    "coffee_table_cabinet_rand",
+    "coffee_table_storage_rand",
     "coffee_table_dimensions_rand",
     "coffee_table_rand",
     "dining_table_rand",
@@ -754,6 +754,7 @@ def base_straight_rand(
     leg_diameter_range: tuple[float, float] = (0.02, 0.10),
     leg_inset_range: tuple[float, float] | None = None,
     leg_placement_top_scale: float = 0.8,
+    close_edges: bool = False,
 ) -> TableResult:
     """4-leg base with optional stretchers. leg_placement_bottom_scale > 1 splays
     the legs outward; pass 1.0 for an upright base to sit under a carcass."""
@@ -766,15 +767,15 @@ def base_straight_rand(
         leg_diameter = sampled_diameter
     sampled_bottom_scale = pf.random.uniform(rng, 0.95, 1.25)
     if leg_placement_bottom_scale is None:
-        leg_placement_bottom_scale = sampled_bottom_scale
+        leg_placement_bottom_scale = 1.0 if close_edges else sampled_bottom_scale
     leg_inset = 0.0
-    if leg_inset_range is not None:
+    if leg_inset_range is not None and not close_edges:
         leg_inset = pf.random.uniform(rng_inset, *leg_inset_range)
     geo = _base_straight_geometry(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_inset=leg_inset,
-        leg_placement_top_scale=leg_placement_top_scale,
+        leg_placement_top_scale=1.0 if close_edges else leg_placement_top_scale,
         leg_placement_bottom_scale=leg_placement_bottom_scale,
         stretcher_increment=pf.control.choice(rng, [(0, 1.0), (1, 1.0), (2, 1.0)]),
         stretcher_relative_pos=pf.random.uniform(rng, 0.2, 0.6),
@@ -896,6 +897,7 @@ def base_square_rand(
     leg_placement_bottom_scale: float | None = None,
     leg_diameter_range: tuple[float, float] = (0.03, 0.14),
     leg_placement_top_scale: float = 0.8,
+    close_edges: bool = False,
 ) -> TableResult:
     """2 box-frame legs. leg_placement_bottom_scale > 1 splays the frames outward."""
     rng, rng_dims, rng_mat = rng.spawn(3)
@@ -906,11 +908,11 @@ def base_square_rand(
     if leg_diameter is None:
         leg_diameter = sampled_diameter
     if leg_placement_bottom_scale is None:
-        leg_placement_bottom_scale = 1.0
+        leg_placement_bottom_scale = 0.98 if close_edges else 1.0
     geo = _base_square_geometry(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
-        leg_placement_top_scale=leg_placement_top_scale,
+        leg_placement_top_scale=0.94 if close_edges else leg_placement_top_scale,
         leg_placement_bottom_scale=leg_placement_bottom_scale,
         has_bottom_connector=pf.control.choice(rng, [(True, 2.0), (False, 1.0)]),
     )
@@ -1057,25 +1059,24 @@ def _coffee_table_legged_rand(rng: pf.RNG) -> TableResult:
     return dining_table_rand(rng_table, dimensions, top_thickness=top_thickness)
 
 
-def coffee_table_cabinet_rand(rng: pf.RNG) -> TableResult:
-    """Open-face storage cabinet at coffee table proportions."""
-    rng_dims, rng_cabinet = rng.spawn(2)
-    dimensions = pf.Vector(coffee_table_dimensions_rand(rng_dims))
-    result = storage.shelves_rand(rng_cabinet, dimensions=dimensions)
+def coffee_table_storage_rand(rng: pf.RNG) -> TableResult:
+    result = storage.storage_coffee_table_rand(rng)
     mesh.center_footprint(result.mesh)
     return TableResult(mesh=result.mesh)
 
 
 def coffee_table_rand(rng: pf.RNG) -> TableResult:
-    """Coffee table, either legged or an open-face cabinet of the same footprint."""
+    """Coffee table with a 25% storage-with-legs chance."""
     func = pf.control.choice(
         rng,
         [
             (_coffee_table_legged_rand, 3.0),
-            (coffee_table_cabinet_rand, 1.0),
+            (coffee_table_storage_rand, 1.0),
         ],
     )
-    return func(rng)
+    result = func(rng)
+    result.mesh.item().name = func.__name__
+    return result
 
 
 def cocktail_table_rand(rng: pf.RNG) -> TableResult:

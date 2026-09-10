@@ -530,7 +530,7 @@ def wall_storage_shelf_rand(
     recess_frac = pf.random.uniform(rng, 0.0, 1.0)
     hole_depth = max(0.02, recess_frac**0.5 * depth)
 
-    cab = storage.shelves_rand(
+    cab = storage.storage_cell_shelf_rand(
         rng,
         dimensions=pf.Vector((depth, width, height)),
         back_width=0.0,
@@ -607,7 +607,7 @@ def wall_cubby_rand(
     )
     hole_depth = depth
 
-    cab = storage.shelves_rand(
+    cab = storage.storage_cell_shelf_rand(
         rng,
         dimensions=pf.Vector((depth, width, height)),
         back_width=0.0,

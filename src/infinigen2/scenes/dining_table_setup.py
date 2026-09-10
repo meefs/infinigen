@@ -311,7 +311,11 @@ def dining_setup_rand(
         )
         table_dimensions = table_max - table_min
 
-    chair_dims = chair.dining_chair_dimensions_rand(rng_chair_dims)
+    seat_clearance = pf.random.uniform(rng_chair_dims, 0.27, 0.30)
+    chair_dims = chair.dining_chair_dimensions_rand(
+        rng_chair_dims,
+        seat_elevation=table_dimensions[2] - seat_clearance,
+    )
     chair_res = chair.chair_rand(rng_chair, dimensions=chair_dims)
 
     chairs = arrange_dining_chairs(

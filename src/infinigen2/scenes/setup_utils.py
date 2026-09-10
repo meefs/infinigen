@@ -19,7 +19,6 @@ from infinigen2.objects import (
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.snap import snap_to_plane
-from infinigen2.util import mesh
 
 __all__ = [
     "MeshResult",
@@ -97,18 +96,11 @@ def table_decoration_object_rand(
 
 @pf.tracer.grammar
 def side_table_object_rand(rng: pf.RNG) -> MeshResult:
-    def cabinet_sidetable_rand(rng: pf.RNG) -> storage.StorageResult:
-        rng_dims, rng_cabinet = rng.spawn(2)
-        dimensions = pf.Vector(table.side_table_dimensions_rand(rng_dims))
-        result = storage.shelves_rand(rng_cabinet, dimensions=dimensions)
-        mesh.center_footprint(result.mesh)
-        return result
-
     func = pf.control.choice(
         rng,
         [
             (table.side_table_rand, 1.0),
-            (cabinet_sidetable_rand, 1.0),
+            (storage.storage_side_table_rand, 1.0),
         ],
     )
     result = func(rng)
@@ -132,8 +124,7 @@ def storage_object_rand(rng: pf.RNG) -> MeshResult:
     func = pf.control.choice(
         rng,
         [
-            (storage.cabinet_with_door_rand, 1.0),
-            (storage.shelves_rand, 1.0),
+            (storage.storage_rand, 1.0),
         ],
     )
     result = func(rng)

@@ -724,7 +724,7 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.coffee_table_cabinet_rand"
+    "name": "infinigen2.objects.table.coffee_table_storage_rand"
   },
   {
     "category": "Object",
@@ -844,7 +844,7 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.storage.shelves_rand"
+    "name": "infinigen2.objects.storage.storage_cell_shelf_rand"
   },
   {
     "category": "Object",
