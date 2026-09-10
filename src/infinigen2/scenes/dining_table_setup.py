@@ -18,8 +18,6 @@ from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instan
 from infinigen2.scenes.setup_utils import (
     MeshResult,
     retry_place,
-    snap_to_wall,
-    standalone_wall_planes,
 )
 
 __all__ = [
@@ -344,52 +342,26 @@ def dining_table_setup_rand(
     room_dimensions: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
 ) -> DiningTableSetupResult:
-    """Place a dining table (3/4 in clear floor space, 1/4 snapped to a wall), then
-    arrange chairs around the posed table, plus an optional rug. Chairs are culled
-    against `colliders` and dropped when a wall separates them from the table (a
-    wall-snapped table's wall-side chairs land outside the room), retrying the
+    """Place a dining table in clear floor space, arrange chairs around it, and
+    optionally add a rug. Chairs are culled against `colliders`, retrying the
     arrangement with a fresh chair design and margins when too few survive."""
-    standalone_walls: list[pf.MeshObject] = []
-    if wall_planes is None:
-        wall_planes = standalone_wall_planes()
-        standalone_walls = wall_planes
+    del wall_planes
     if room_dimensions is None:
         room_dimensions = pf.Vector((5.0, 15.0, 3.0))
     if colliders is None:
-        colliders = ccol.collision_set(wall_planes)
-    elif standalone_walls:
-        colliders = ccol.collision_set(
-            colliders.objs + standalone_walls,
-            cache=colliders,
-        )
+        colliders = ccol.collision_set([])
     rng_table, rng_place, rng_setup, rng_rug = rng.spawn(4)
 
     dims = table.table_dimensions_rand(rng_table)
     table_res = table.dining_table_rand(rng_table, dimensions=dims)
     dining_table = _BareMeshResult(mesh=table_res.mesh)
 
-    def in_free_floorspace():
-        return _place_in_free_floorspace(
-            rng_place, dining_table, room_dimensions, colliders
-        )
-
-    def against_wall():
-        return retry_place(
-            rng_place,
-            dining_table,
-            colliders,
-            snap_to_wall,
-            parents=wall_planes,
-            margin=pf.random.uniform(rng_place, 0.03, 0.10),
-        )
-
-    placed = pf.control.choice(
+    placed = _place_in_free_floorspace(
         rng_place,
-        [
-            (in_free_floorspace, 3.0),
-            (against_wall, 1.0),
-        ],
-    )()
+        dining_table,
+        room_dimensions,
+        colliders,
+    )
     diningtable_objs = [placed] if placed is not None else []
     logger.info(f"Placed {len(diningtable_objs)} dining tables")
 
@@ -413,7 +385,5 @@ def dining_table_setup_rand(
         ],
     )
     rug_objs = rug_func(rng_rug, room_dimensions=room_dimensions)
-    all_objects = (
-        standalone_walls + [r.mesh for r in diningtable_objs + chair_objs] + rug_objs
-    )
+    all_objects = [r.mesh for r in diningtable_objs + chair_objs] + rug_objs
     return DiningTableSetupResult(diningtable_objs, chair_objs, rug_objs, all_objects)
