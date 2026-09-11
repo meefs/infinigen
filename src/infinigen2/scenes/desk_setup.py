@@ -8,13 +8,13 @@ from typing import NamedTuple
 import numpy as np
 import procfunc as pf
 
-from infinigen2.objects import chair, lamp, table
+from infinigen2.objects import chair, lamp
+from infinigen2.objects import desk as desk_object
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.snap import snap_to_plane
 
 __all__ = [
     "DeskSetupResult",
-    "desk_dimensions_rand",
     "desk_setup_in_room_rand",
     "desk_setup_rand",
 ]
@@ -26,16 +26,6 @@ class DeskSetupResult(NamedTuple):
     lamps: list[pf.MeshObject]
     all_objects: list[pf.MeshObject]
     lights: list[pf.LightObject]
-
-
-def desk_dimensions_rand(rng: pf.RNG) -> pf.Vector:
-    return pf.Vector(
-        (
-            pf.random.uniform(rng, 0.55, 0.90),
-            pf.random.uniform(rng, 0.90, 2.40),
-            pf.random.uniform(rng, 0.70, 0.78),
-        )
-    )
 
 
 def _chair_pose_rand(rng: pf.RNG) -> tuple[float, float, float]:
@@ -112,28 +102,32 @@ def desk_setup_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     include_lamp: bool | None = None,
+    base_style: str | None = None,
+    surface_style: str | None = None,
 ) -> DeskSetupResult:
-    """A desk-sized dining table, one dining chair, and an optional desk lamp."""
+    """A compositional desk, one loosely centered chair, and optional lamp."""
     (
-        rng_dims,
-        rng_top,
-        rng_table,
+        rng_desk,
         rng_chair,
         rng_chair_pose,
         rng_lamp_active,
         rng_lamp,
         rng_lamp_pose,
-    ) = rng.spawn(8)
-    if dimensions is None:
-        dimensions = desk_dimensions_rand(rng_dims)
-    top_thickness = pf.random.uniform(rng_top, 0.025, 0.055)
+    ) = rng.spawn(6)
 
-    desk = table.dining_table_rand(
-        rng_table, dimensions=dimensions, top_thickness=top_thickness
+    desk = desk_object.desk_rand(
+        rng_desk,
+        dimensions=dimensions,
+        base_style=base_style,
+        surface_style=surface_style,
     ).mesh
-    desk.item().name = "desk"
 
-    chair_obj = chair.dining_chair_rand(rng_chair).mesh
+    rng_chair_choice, rng_chair_gen = rng_chair.spawn(2)
+    chair_func = pf.control.choice(
+        rng_chair_choice,
+        [(chair.office_chair_rand, 2.0), (chair.chair_rand, 1.0)],
+    )
+    chair_obj = chair_func(rng_chair_gen).mesh
     chair_obj.item().name = "desk_chair"
     _place_chair_rand(rng_chair_pose, chair_obj, desk)
 
@@ -193,7 +187,8 @@ def _place_desk_freestanding_rand(
             (3 * np.pi / 2, 1.0),
         ],
     )
-    pf.ops.object.set_transform(desk, location=location, rotation_euler=(0.0, 0.0, yaw))
+    rotation = (0.0, 0.0, yaw)
+    pf.ops.object.set_transform(desk, location=location, rotation_euler=rotation)
 
 
 def _desk_placement_mode_rand(rng: pf.RNG) -> str:

@@ -5,6 +5,7 @@
 # - Yiming Zuo: original Infinigen v1 nodegroups (office_chair, curvy_seats, round_seats, wheeled leg)
 # - Alexander Raistrick: transpile to procfunc/v2, split into top/bottom part distributions
 
+from collections.abc import Callable
 from functools import cache, partial
 from typing import NamedTuple
 
@@ -14,6 +15,7 @@ from procfunc.nodes.util.bpy_node_info import NodeDataType
 
 from infinigen2.objects import storage
 from infinigen2.objects.table import (
+    TableResult,
     base_square_rand,
     base_straight_rand,
 )
@@ -21,6 +23,7 @@ from infinigen2.shaders.functionality_lists import (
     castor_wheel_material_rand,
     fabric_sturdy_rand,
     furniture_material_rand,
+    furniture_surface_material_rand,
 )
 from infinigen2.util import mesh
 from infinigen2.util.curve import curve_to_mesh_with_uv
@@ -1321,6 +1324,10 @@ def round_seat_rand(
     return ChairResult(mesh=obj)
 
 
+def _wheeled_base_post_diameter_rand(rng: pf.RNG) -> float:
+    return pf.random.uniform(rng, 0.03, 0.065)
+
+
 def wheeled_base_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
@@ -1340,7 +1347,7 @@ def wheeled_base_rand(
     geo = _wheeled_base_geometry(
         top_height=z,
         joint_height=pf.random.uniform(rng, 0.5, 0.8) * z,
-        leg_diameter=pf.random.uniform(rng, 0.015, 0.065),
+        leg_diameter=_wheeled_base_post_diameter_rand(rng),
         arc_sweep_angle=pf.random.uniform(rng, 120.0, 240.0),
         wheel_width=pf.random.uniform(rng, 0.11, 0.15),
         wheel_rotation=pf.random.uniform(rng, 0.0, 360.0),
@@ -2122,6 +2129,20 @@ def chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairResult:
     return chair_fn(rng=rng_gen, dimensions=dimensions)
 
 
+def _office_chair_base_rand(
+    rng: pf.RNG,
+    wheeled_fn: Callable[..., ChairResult] = wheeled_base_rand,
+) -> Callable[..., ChairResult | TableResult]:
+    return pf.control.choice(
+        rng,
+        [
+            (_chair_straight_base_rand, 3.0),
+            (wheeled_fn, 4.0),
+            (_chair_square_base_rand, 1.0),
+        ],
+    )
+
+
 def office_chair_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
@@ -2148,8 +2169,6 @@ def office_chair_rand(
             (round_seat_rand, 1.0),
         ],
     )
-    top = top_fn(rng=rng_top, dimensions=dimensions).mesh
-
     x, y, z = dimensions
     leg_spread = pf.random.uniform(rng, 0.5, 0.7)
     leg_inset_fraction = pf.random.uniform(rng, 0.05, 0.10)
@@ -2165,23 +2184,14 @@ def office_chair_rand(
 
     vec = pf.nodes.shader.coord().uv
     if seat_material is None:
-        seat_material = fabric_sturdy_rand(rng_seat_mat, vec, translucency=0.0)
+        seat_material = furniture_surface_material_rand(rng_seat_mat, vec)
     if base_material is None:
         base_material = furniture_material_rand(rng_base_mat, vec)
 
-    base_fn = pf.control.choice(
-        rng_base_sel,
-        [
-            (_chair_straight_base_rand, 3.0),
-            (wheeled_fn, 1.0),
-            (_chair_square_base_rand, 1.0),
-        ],
-    )
-    base = base_fn(rng_base, base_dimensions, base_material).mesh
+    top = top_fn(rng=rng_top, dimensions=dimensions, material=seat_material).mesh
 
-    pf.ops.object.set_material(
-        top, surface=seat_material.surface, displacement=seat_material.displacement
-    )
+    base_fn = _office_chair_base_rand(rng_base_sel, wheeled_fn)
+    base = base_fn(rng_base, base_dimensions, base_material).mesh
 
     # join keeps only the target's stack, so the seat's _CHAIR_SUBDIV covers the base too
     pf.ops.object.join(top, base)

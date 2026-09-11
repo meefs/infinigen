@@ -845,7 +845,9 @@ def pedestal_base_rand(
     rng, rng_dims, rng_mat, rng_profile = rng.spawn(4)
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
-    x, y, z = dimensions
+    x = dimensions[0]
+    y = dimensions[1]
+    z = dimensions[2]
     footprint = min(x, y)
     if top_radius_range is None:
         top_radius_range = (0.015 * x, 0.06 * x)
@@ -962,6 +964,7 @@ def dining_table_rand(
     dimensions: tuple[float, float, float] | None = None,
     base: pf.MeshObject | None = None,
     top_thickness: float | None = None,
+    top_support_loop_offset: pf.Vector | None = None,
     top_material: pf.Material | None = None,
     leg_material: pf.Material | None = None,
 ) -> TableResult:
@@ -969,7 +972,9 @@ def dining_table_rand(
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
 
-    x, y, z = dimensions
+    x = dimensions[0]
+    y = dimensions[1]
+    z = dimensions[2]
 
     if top_thickness is None:
         top_thickness = pf.random.uniform(rng, 0.03, 0.08)
@@ -982,18 +987,21 @@ def dining_table_rand(
     if leg_material is None:
         leg_material = furniture_material_rand(rng_leg_mat, vec)
 
-    corner_frac_x = pf.random.uniform(rng, 0.1, 0.5)
-    corner_frac_y = pf.random.uniform(rng, 0.1, 0.5)
-    edge_frac = pf.random.uniform(rng, 0.1, 0.5)
-    # square biases the x/y corner support loops tight to the edge -> sharper corners
-    corner_shrink = pf.random.uniform(rng, 0.0, 1.0) ** 2
+    if top_support_loop_offset is None:
+        corner_frac_x = pf.random.uniform(rng, 0.1, 0.5)
+        corner_frac_y = pf.random.uniform(rng, 0.1, 0.5)
+        edge_frac = pf.random.uniform(rng, 0.1, 0.5)
+        corner_shrink = pf.random.uniform(rng, 0.0, 1.0) ** 2
+        top_support_loop_offset = pf.Vector(
+            (
+                corner_frac_x * corner_shrink * x,
+                corner_frac_y * corner_shrink * y,
+                edge_frac * top_thickness * (1.0 - corner_shrink),
+            )
+        )
     top = table_top(
         size=(x, y, top_thickness),
-        support_loop_offset=(
-            corner_frac_x * corner_shrink * x,
-            corner_frac_y * corner_shrink * y,
-            edge_frac * top_thickness * (1.0 - corner_shrink),
-        ),
+        support_loop_offset=top_support_loop_offset,
     )
     top = pf.nodes.geo.transform(
         top,

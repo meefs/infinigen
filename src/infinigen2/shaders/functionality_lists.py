@@ -4,6 +4,7 @@
 # Authors: Alexander Raistrick
 
 import math
+from collections.abc import Callable
 from functools import partial
 
 import procfunc as pf
@@ -58,6 +59,7 @@ __all__ = [
     "fabric_sturdy_rand",
     "floor_material_rand",
     "furniture_material_rand",
+    "furniture_surface_material_rand",
     "glass_material_rand",
     "mirror_material_rand",
     "paint_flaked_rand",
@@ -190,18 +192,22 @@ def decorative_material_rand(rng: pf.RNG, vec) -> pf.Material:
     return material_func(rng_mat, vec)
 
 
-def furniture_material_rand(rng: pf.RNG, vec) -> pf.Material:
-    rng_uv, rng_choice, rng_mat, rng_wear_choice, rng_wear = rng.spawn(5)
-    vec = uv_maybe_rotate_90(rng_uv, vec)
-    material_func = pf.control.choice(
-        rng_choice,
+def _furniture_material_func_rand(rng: pf.RNG) -> Callable[..., pf.Material]:
+    return pf.control.choice(
+        rng,
         [
             (wood_grain.wood_grain_rand, 1.0),
             (wood_planks.wood_planks_rand, 1.0),
             (metal_brushed.metal_brushed_linear_rand, 0.3),
-            (plastic.plastic_grayscale_rand, 0.5),
+            (plastic.plastic_grayscale_rand, 1.0),
         ],
     )
+
+
+def furniture_material_rand(rng: pf.RNG, vec) -> pf.Material:
+    rng_uv, rng_choice, rng_mat, rng_wear_choice, rng_wear = rng.spawn(5)
+    vec = uv_maybe_rotate_90(rng_uv, vec)
+    material_func = _furniture_material_func_rand(rng_choice)
     material = material_func(rng_mat, vec)
     wear = pf.control.choice(
         rng_wear_choice,
@@ -213,6 +219,25 @@ def furniture_material_rand(rng: pf.RNG, vec) -> pf.Material:
         ],
     )
     return wear(rng_wear, vec, material)
+
+
+def _furniture_surface_material_func_rand(
+    rng: pf.RNG,
+) -> Callable[..., pf.Material]:
+    fabric_opaque = partial(fabric_sturdy_rand, translucency=0.0)
+    return pf.control.choice(
+        rng,
+        [
+            (furniture_material_rand, 2.0),
+            (fabric_opaque, 1.0),
+        ],
+    )
+
+
+def furniture_surface_material_rand(rng: pf.RNG, vec) -> pf.Material:
+    rng_choice, rng_mat = rng.spawn(2)
+    material_func = _furniture_surface_material_func_rand(rng_choice)
+    return material_func(rng_mat, vec)
 
 
 def castor_wheel_material_rand(

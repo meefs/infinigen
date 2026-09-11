@@ -720,6 +720,10 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.desk.desk_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.table.coffee_table_rand"
   },
   {
