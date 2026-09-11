@@ -580,6 +580,11 @@
   },
   {
     "category": "Scene",
+    "name": "infinigen2.scenes.cocktail_table_setup.cocktail_table_setup_rand",
+    "integration_test_string": "cocktail_table_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
     "name": "infinigen2.scenes.dining_table_setup.dining_table_setup_rand",
     "integration_test_string": "dining_table_setup_rand object_demo render_cycles"
   },

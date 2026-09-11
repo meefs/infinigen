@@ -1087,19 +1087,37 @@ def coffee_table_rand(rng: pf.RNG) -> TableResult:
     return result
 
 
-def cocktail_table_rand(rng: pf.RNG) -> TableResult:
-    """Tall square cocktail/bar table with single pedestal base."""
-    rng, rng_base, rng_table = rng.spawn(3)
-    x = pf.random.uniform(rng, 0.5, 0.8)
-    height = pf.random.uniform(rng, 1.0, 1.5)
-    top_height = height - 0.04  # approximate top_thickness
-    base = pedestal_base_rand(
-        rng_base,
-        (x, x, top_height),
+def _cocktail_table_pedestal_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult:
+    x = dimensions[0]
+    return pedestal_base_rand(
+        rng,
+        dimensions,
         top_radius_range=(0.012 * x, 0.05 * x),
-        bottom_radius_range=(0.25 * x, 0.4 * x),
+        bottom_radius_range=(0.325 * x, 0.52 * x),
     )
-    return dining_table_rand(rng_table, (x, x, height), base=base.mesh)
+
+
+def cocktail_table_rand(rng: pf.RNG) -> TableResult:
+    """Square cocktail/bar table, usually with a wide pedestal base."""
+    rng_dims, rng_thickness, rng_base_choice, rng_base, rng_table = rng.spawn(5)
+    x = pf.random.uniform(rng_dims, 0.5, 0.8)
+    height = pf.random.uniform(rng_dims, 1.0, 1.1)
+    top_thickness = pf.random.uniform(rng_thickness, 0.03, 0.08)
+    base_fn = pf.control.choice(
+        rng_base_choice,
+        [
+            (_cocktail_table_pedestal_rand, 2.0),
+            (_table_straight_base_rand, 1.0),
+            (_table_square_base_rand, 1.0),
+        ],
+    )
+    base = base_fn(rng_base, (x, x, height - top_thickness))
+    return dining_table_rand(
+        rng_table,
+        (x, x, height),
+        base=base.mesh,
+        top_thickness=top_thickness,
+    )
 
 
 if __name__ == "__main__":

@@ -2003,7 +2003,6 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
         rng_base_sel,
         [
             (_chair_straight_base_rand, 3.0),
-            (_chair_square_base_rand, 1.0),
             (wheeled_fn, 1.0),
         ],
     )
@@ -2138,7 +2137,6 @@ def _office_chair_base_rand(
         [
             (_chair_straight_base_rand, 3.0),
             (wheeled_fn, 4.0),
-            (_chair_square_base_rand, 1.0),
         ],
     )
 
