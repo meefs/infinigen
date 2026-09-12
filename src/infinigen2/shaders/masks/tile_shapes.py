@@ -57,6 +57,8 @@ class TileShapeResult(NamedTuple):
     tile_color: pf.ProcNode[pf.Color]
     tile_type_1: pf.ProcNode[float]
     tile_type_2: pf.ProcNode[float]
+    cell_center_pos: pf.ProcNode[pf.Vector]
+    cell_center_idx: pf.ProcNode[pf.Vector]
 
 
 @pf.nodes.node_function
@@ -135,10 +137,24 @@ def _mix(
     ) + pf.nodes.math.vector_scale(vector_1, mask)
 
 
+@pf.nodes.node_function
+def _pack_cell_idx(
+    cell_idx: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
+    variant: t.SocketOrVal[float] = 0.0,
+    variant_count: t.SocketOrVal[float] = 1.0,
+) -> pf.ProcNode[pf.Vector]:
+    return pf.nodes.math.combine_xyz(
+        x=cell_idx.x * variant_count + variant,
+        y=cell_idx.y,
+    )
+
+
 class DiamondSingle002Result(NamedTuple):
     uv: pf.ProcNode[pf.Vector]
     color: pf.ProcNode[pf.Color]
     value: pf.ProcNode[float]
+    cell_center_pos: pf.ProcNode[pf.Vector]
+    cell_center_idx: pf.ProcNode[pf.Vector]
 
 
 @pf.nodes.node_function
@@ -183,6 +199,15 @@ def diamond_single(
 
     color = pf.nodes.texture.white_noise(color_1)
 
+    cell_center_pos = pf.nodes.math.combine_xyz(
+        x=color_x + uv_vector_1.x * 0.5 - color_x_value,
+        y=color_2 + width * 0.5,
+    )
+    cell_center_idx = pf.nodes.math.combine_xyz(
+        x=color_x / color_x_increment.x,
+        y=color_2 / (width * 1.5),
+    )
+
     scalar_positive_modulo_result = _scalar_positive_modulo(
         input_1=color_2 / (width * 1.5), input_2=2.0
     )
@@ -197,6 +222,8 @@ def diamond_single(
         uv=uv,
         color=color.color,
         value=value,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -204,6 +231,8 @@ class TriangleSingleResult(NamedTuple):
     uv: pf.ProcNode[pf.Vector]
     color: pf.ProcNode[pf.Color]
     value: pf.ProcNode[float]
+    cell_center_pos: pf.ProcNode[pf.Vector]
+    cell_center_idx: pf.ProcNode[pf.Vector]
 
 
 @pf.nodes.node_function
@@ -255,6 +284,15 @@ def triangle_single(
     color_vector = pf.nodes.math.combine_xyz(x=color_vector_x, y=color_vector_y)
     color = pf.nodes.texture.white_noise(color_vector)
 
+    cell_center_pos = pf.nodes.math.combine_xyz(
+        x=color_vector_y + uv_x_1.x - color_value,
+        y=color_vector_x + uv_x_1.y,
+    )
+    cell_center_idx = pf.nodes.math.combine_xyz(
+        x=color_vector_y / input_1_denominator.x,
+        y=color_vector_x / input_1_denominator.y,
+    )
+
     scalar_positive_modulo_result_2 = _scalar_positive_modulo(
         input_1=color_vector_y / input_1_denominator.x, input_2=2.0
     )
@@ -264,12 +302,16 @@ def triangle_single(
         uv=uv,
         color=color.color,
         value=value,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
 class StarSingleResult(NamedTuple):
     result: pf.ProcNode[pf.Color]
     color: pf.ProcNode[pf.Color]
+    cell_center_pos: pf.ProcNode[pf.Vector]
+    cell_center_idx: pf.ProcNode[pf.Vector]
 
 
 @pf.nodes.node_function
@@ -315,12 +357,19 @@ def star_single(
     return StarSingleResult(
         result=result,
         color=color.color,
+        cell_center_pos=color_1,
+        cell_center_idx=pf.nodes.math.combine_xyz(
+            x=color_x / (radius * 2.0),
+            y=color_y / (radius * 2.0),
+        ),
     )
 
 
 class MoonSingleResult(NamedTuple):
     result: pf.ProcNode[pf.Color]
     color: pf.ProcNode[pf.Color]
+    cell_center_pos: pf.ProcNode[pf.Vector]
+    cell_center_idx: pf.ProcNode[pf.Vector]
 
 
 @pf.nodes.node_function
@@ -373,9 +422,16 @@ def moon_single(
     color_vector_y = pf.nodes.math.snap(value=color_value.y, increment=radius)
     color_vector = pf.nodes.math.combine_xyz(x=color_vector_x, y=color_vector_y)
     color = pf.nodes.texture.white_noise(color_vector)
+    cell_center_pos = pf.nodes.math.combine_xyz(
+        x=color_vector_x + radius * 0.5,
+        y=color_vector_y + radius * 0.5,
+    )
+    cell_center_idx = color_vector / radius.astype(dtype=pf.Vector)
     return MoonSingleResult(
         result=result,
         color=color.color,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -383,6 +439,8 @@ class HalfShellResult(NamedTuple):
     result: pf.ProcNode[pf.Color]
     color: pf.ProcNode[pf.Color]
     even: pf.ProcNode[float]
+    cell_center_pos: pf.ProcNode[pf.Vector]
+    cell_center_idx: pf.ProcNode[pf.Vector]
 
 
 @pf.nodes.node_function
@@ -450,6 +508,11 @@ def half_shell(
         result=result,
         color=color.color,
         even=even,
+        cell_center_pos=result_vector,
+        cell_center_idx=pf.nodes.math.combine_xyz(
+            x=color_vector_2 / (radius * 2.0),
+            y=color_vector_1 / (radius * 2.0),
+        ),
     )
 
 
@@ -457,6 +520,8 @@ class HexSingleResult(NamedTuple):
     uv: pf.ProcNode[pf.Vector]
     color: pf.ProcNode[pf.Color]
     value: pf.ProcNode[float]
+    cell_center_pos: pf.ProcNode[pf.Vector]
+    cell_center_idx: pf.ProcNode[pf.Vector]
 
 
 @pf.nodes.node_function
@@ -518,6 +583,15 @@ def hex_single(
     color_vector = pf.nodes.math.combine_xyz(x=color_vector_x, y=color_vector_y)
     color = pf.nodes.texture.white_noise(color_vector)
 
+    cell_center_pos = pf.nodes.math.combine_xyz(
+        x=color_vector_y + uv_x_vector.x - color_value,
+        y=color_vector_x + uv_x_vector.y,
+    )
+    cell_center_idx = pf.nodes.math.combine_xyz(
+        x=color_vector_y / input_1_denominator.x,
+        y=color_vector_x / input_1_denominator.y,
+    )
+
     scalar_positive_modulo_result_2 = _scalar_positive_modulo(
         input_1=color_vector_y / input_1_denominator.x, input_2=2.0
     )
@@ -527,6 +601,8 @@ def hex_single(
         uv=uv,
         color=color.color,
         value=value,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -626,11 +702,38 @@ def triangle(
     tile_type_3 = result_7.astype(dtype=float) * triangle_single_result.value
     tile_type_2 = result_1.astype(dtype=float) * triangle_single_result_1.value
     tile_type_1 = (tile_type_3 + tile_type_2) > 0.0
+    cell_center_pos_1 = pf.nodes.math.vector_rotate_axis_angle(
+        vector=triangle_single_result_1.cell_center_pos,
+        angle=np.pi,
+        center=(0, 0, 0),
+        axis=(0, 0, 1),
+    )
+    cell_center_pos = _mix(
+        mask=tile_type,
+        vector_1=triangle_single_result.cell_center_pos
+        / color_vector_scale.astype(dtype=pf.Vector),
+        vector_2=cell_center_pos_1 / color_vector_scale.astype(dtype=pf.Vector),
+    )
+    cell_center_idx = _mix(
+        mask=tile_type,
+        vector_1=_pack_cell_idx(
+            triangle_single_result.cell_center_idx,
+            variant=0.0,
+            variant_count=2.0,
+        ),
+        vector_2=_pack_cell_idx(
+            triangle_single_result_1.cell_center_idx,
+            variant=1.0,
+            variant_count=2.0,
+        ),
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color,
         tile_type_1=tile_type,
         tile_type_2=tile_type_1,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -707,11 +810,47 @@ def star(
         factor=1.0, a=tile_color_2, b=tile_color_1, blend_type="ADD"
     )
     tile_type = moon_single_result.result.astype(dtype=float) > 0.0
+    star_type = star_single_result.result.astype(dtype=float) > 0.0
+    star_type_1 = star_single_result_1.result.astype(dtype=float) > 0.0
+    moon_type = tile_type * (1.0 - (star_type + star_type_1 > 0.0))
+    moon_pos = moon_single_result.cell_center_pos - result_vector_1
+    star_pos_1 = star_single_result_1.cell_center_pos - result_vector
+    star_pos = _mix(
+        mask=star_type,
+        vector_1=star_single_result.cell_center_pos,
+        vector_2=star_pos_1,
+    )
+    cell_center_pos = _mix(
+        mask=moon_type,
+        vector_1=moon_pos,
+        vector_2=star_pos,
+    )
+    star_idx_1 = pf.nodes.math.combine_xyz(
+        x=(star_single_result.cell_center_pos.x - result_2) / (result_2 * 2.0),
+        y=(star_single_result.cell_center_pos.y - result_2) / (result_2 * 2.0),
+    )
+    star_idx_2 = star_pos_1 / (result_2 * 2.0).astype(dtype=pf.Vector)
+    star_idx = _mix(
+        mask=star_type,
+        vector_1=_pack_cell_idx(star_idx_1, variant=1.0, variant_count=3.0),
+        vector_2=_pack_cell_idx(star_idx_2, variant=2.0, variant_count=3.0),
+    )
+    moon_idx = pf.nodes.math.combine_xyz(
+        x=(moon_pos.x - result_2 * 0.5) / result_2,
+        y=(moon_pos.y - result_2 * 0.5) / result_2,
+    )
+    cell_center_idx = _mix(
+        mask=moon_type,
+        vector_1=_pack_cell_idx(moon_idx, variant=0.0, variant_count=3.0),
+        vector_2=star_idx,
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color,
-        tile_type_1=tile_type,
-        tile_type_2=tile_type,
+        tile_type_1=moon_type,
+        tile_type_2=moon_type,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -886,11 +1025,72 @@ def spanish_bound(
     tile_color_vector = pf.nodes.math.vector_scale(color_vector_1, 1 - tile_type_1)
     tile_color = pf.nodes.texture.white_noise(color_vector_2 + tile_color_vector)
     tile_type = (1.0 - tile_type_1) > 0.0
+    first_tile = (tile_type_6 * tile_type_7) > 0.0
+    long_half = aspect_ratio * 0.5
+    short_size = color_value_1 / subtiles_number
+    first_center = pf.nodes.math.combine_xyz(
+        x=vector_y_2 + tile_type_9 + long_half,
+        y=vector_x_2 + short_size * 0.5,
+    )
+    second_center = pf.nodes.math.combine_xyz(
+        x=vector_y_1 + short_size * 0.5,
+        y=vector_x_1 - tile_type_5 + long_half,
+    )
+    filler_size = vector_numerator / vector_denominator
+    filler_center = pf.nodes.math.combine_xyz(
+        x=color_vector_y + filler_size * 0.5,
+        y=color_vector_x + color_value_1 + filler_size * 0.5,
+    )
+    cell_center_pos = _mix(
+        mask=tile_type_1 > 0.0,
+        vector_1=_mix(
+            mask=first_tile,
+            vector_1=first_center,
+            vector_2=second_center,
+        ),
+        vector_2=filler_center,
+    )
+    period = aspect_ratio + color_value_1
+    first_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=vector_y_2 / period,
+            y=vector_x_2 / short_size,
+        ),
+        variant=0.0,
+        variant_count=3.0,
+    )
+    second_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=vector_y_1 / short_size,
+            y=vector_x_1 / period,
+        ),
+        variant=1.0,
+        variant_count=3.0,
+    )
+    filler_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=color_vector_y / period,
+            y=color_vector_x / period,
+        ),
+        variant=2.0,
+        variant_count=3.0,
+    )
+    cell_center_idx = _mix(
+        mask=tile_type_1 > 0.0,
+        vector_1=_mix(
+            mask=first_tile,
+            vector_1=first_idx,
+            vector_2=second_idx,
+        ),
+        vector_2=filler_idx,
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color.color,
         tile_type_1=tile_type,
         tile_type_2=tile_type,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -951,11 +1151,31 @@ def shell(
     tile_type_1 = (tile_type_2 * half_shell_result_1.even) + (
         half_shell_result.even * tile_type
     )
+    cell_center_pos = _mix(
+        mask=tile_type,
+        vector_1=half_shell_result.cell_center_pos,
+        vector_2=half_shell_result_1.cell_center_pos - result_vector,
+    )
+    cell_center_idx = _mix(
+        mask=tile_type,
+        vector_1=_pack_cell_idx(
+            half_shell_result.cell_center_idx,
+            variant=0.0,
+            variant_count=2.0,
+        ),
+        vector_2=_pack_cell_idx(
+            half_shell_result_1.cell_center_idx,
+            variant=1.0,
+            variant_count=2.0,
+        ),
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color,
         tile_type_1=tile_type,
         tile_type_2=tile_type_1,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -1053,11 +1273,33 @@ def hexagon(
     )
     tile_type = result_7.astype(dtype=float) > 0.0
     tile_type_1 = (result_7.astype(dtype=float) * hex_single_result.value) > 0.0
+    cell_center_pos = _mix(
+        mask=tile_type,
+        vector_1=hex_single_result.cell_center_pos
+        / color_vector_scale.astype(dtype=pf.Vector),
+        vector_2=(hex_single_result_1.cell_center_pos - tile_color_vector)
+        / color_vector_scale.astype(dtype=pf.Vector),
+    )
+    cell_center_idx = _mix(
+        mask=tile_type,
+        vector_1=_pack_cell_idx(
+            hex_single_result.cell_center_idx,
+            variant=0.0,
+            variant_count=2.0,
+        ),
+        vector_2=_pack_cell_idx(
+            hex_single_result_1.cell_center_idx,
+            variant=1.0,
+            variant_count=2.0,
+        ),
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color,
         tile_type_1=tile_type,
         tile_type_2=tile_type_1,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -1186,11 +1428,48 @@ def herringbone(
         scalar_positive_modulo_result_6 * (1.0 - tile_type)
         + scalar_positive_modulo_result_5 * tile_type
     )
+    short_size = type_1_increment / subtiles_number
+    first_center = pf.nodes.math.combine_xyz(
+        x=vector_1_x + type_1_input_1_value + aspect_ratio * 0.5,
+        y=type_2_vector_1_input + short_size * 0.5,
+    )
+    second_center = pf.nodes.math.combine_xyz(
+        x=type_2_vector_2_input + short_size * 0.5,
+        y=vector_2_x + value + aspect_ratio * 0.5,
+    )
+    cell_center_pos = _mix(
+        mask=tile_type,
+        vector_1=first_center,
+        vector_2=second_center,
+    )
+    first_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=vector_1_x / aspect_ratio,
+            y=type_2_vector_1_input / short_size,
+        ),
+        variant=0.0,
+        variant_count=2.0,
+    )
+    second_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=type_2_vector_2_input / short_size,
+            y=vector_2_x / aspect_ratio,
+        ),
+        variant=1.0,
+        variant_count=2.0,
+    )
+    cell_center_idx = _mix(
+        mask=tile_type,
+        vector_1=first_idx,
+        vector_2=second_idx,
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color.color,
         tile_type_1=tile_type,
         tile_type_2=mix_result,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -1327,11 +1606,60 @@ def diamond(
         result_6.astype(dtype=float) * diamond_single_result_1.value
     )
     tile_type_1 = (tile_type_3 + tile_type_2) > 0.0
+    cell_center_pos_1 = pf.nodes.math.vector_rotate_axis_angle(
+        vector=diamond_single_result_1.cell_center_pos,
+        center=color_vector_center,
+        angle=np.pi * 2 / 3,
+        axis=(0, 0, 1),
+    )
+    cell_center_pos_2 = pf.nodes.math.vector_rotate_axis_angle(
+        vector=diamond_single_result_2.cell_center_pos,
+        center=color_vector_center,
+        angle=-np.pi * 2 / 3,
+        axis=(0, 0, 1),
+    )
+    first_tile = result_10.astype(dtype=float) > 0.0
+    second_tile = result_6.astype(dtype=float) > 0.0
+    first_or_second = (
+        result_10.astype(dtype=float) + result_6.astype(dtype=float)
+    ) > 0.0
+    cell_center_pos = _mix(
+        mask=first_or_second,
+        vector_1=_mix(
+            mask=first_tile,
+            vector_1=diamond_single_result.cell_center_pos,
+            vector_2=cell_center_pos_1,
+        ),
+        vector_2=cell_center_pos_2,
+    ) / color_vector_scale.astype(dtype=pf.Vector)
+    cell_center_idx = _mix(
+        mask=first_or_second,
+        vector_1=_mix(
+            mask=first_tile,
+            vector_1=_pack_cell_idx(
+                diamond_single_result.cell_center_idx,
+                variant=0.0,
+                variant_count=3.0,
+            ),
+            vector_2=_pack_cell_idx(
+                diamond_single_result_1.cell_center_idx,
+                variant=1.0,
+                variant_count=3.0,
+            ),
+        ),
+        vector_2=_pack_cell_idx(
+            diamond_single_result_2.cell_center_idx,
+            variant=2.0,
+            variant_count=3.0,
+        ),
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color,
         tile_type_1=tile_type,
         tile_type_2=tile_type_1,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -1422,11 +1750,21 @@ def chevron(
     scalar_positive_modulo_result = _scalar_positive_modulo(
         input_1=type_2_input, input_2=type_2_input_1_increment * 2.0
     )
+    cell_center_pos = pf.nodes.math.combine_xyz(
+        x=color_vector_y + aspect_ratio * 0.5,
+        y=color_vector_x - aspect_ratio * 0.5 + type_2_input_1_increment * 0.5,
+    )
+    cell_center_idx = pf.nodes.math.combine_xyz(
+        x=color_vector_y / aspect_ratio,
+        y=color_vector_x / type_2_input_1_increment,
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color.color,
         tile_type_1=tile_type,
         tile_type_2=scalar_positive_modulo_result,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -1530,11 +1868,22 @@ def brick(
     tile_type_1 = (scalar_positive_modulo_result_2 > tile_type_2) * (
         scalar_positive_modulo_result < tile_type_4
     )
+    adjusted_center = tile_color_vector + result_vector_1
+    cell_center_pos = pf.nodes.math.combine_xyz(
+        x=adjusted_center.x - tile_type * aspect_ratio * vector_x_1,
+        y=adjusted_center.y,
+    )
+    cell_center_idx = pf.nodes.math.combine_xyz(
+        x=tile_color_vector.x / color_vector_2.x,
+        y=tile_color_vector.y / color_vector_2.y,
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color.color,
         tile_type_1=tile_type,
         tile_type_2=tile_type_1,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -1716,18 +2065,88 @@ def basket_weave(
     tile_color_vector = color_vector_1 - tile_type_1.astype(dtype=pf.Vector)
     tile_color = pf.nodes.texture.white_noise(color_vector_2 + tile_color_vector)
     tile_type = (1.0 - tile_type_1) > 0.0
+    first_tile = (tile_type_5 * tile_type_4) > 0.0
+    short_size = tile_type_6 / subtiles_number
+    first_subtile = pf.nodes.math.snap(
+        value=scalar_positive_modulo_result_1, increment=short_size
+    )
+    second_subtile = pf.nodes.math.snap(
+        value=scalar_positive_modulo_result_4, increment=short_size
+    )
+    first_center = pf.nodes.math.combine_xyz(
+        x=vector_x_1 + color_value_3 + aspect_ratio * 0.5,
+        y=color_value_3 + first_subtile + short_size * 0.5,
+    )
+    second_center = pf.nodes.math.combine_xyz(
+        x=color_value_2 - tile_type_6 + second_subtile + short_size * 0.5,
+        y=vector_x_2 - color_value_2 - tile_color_increment + aspect_ratio * 0.5,
+    )
+    filler_center = pf.nodes.math.combine_xyz(
+        x=color_vector_x + tile_color_increment * 0.5,
+        y=color_vector_y + tile_type_6 + tile_color_increment * 0.5,
+    )
+    cell_center_pos = _mix(
+        mask=tile_type_1 > 0.0,
+        vector_1=_mix(
+            mask=first_tile,
+            vector_1=first_center,
+            vector_2=second_center,
+        ),
+        vector_2=filler_center,
+    )
+    period = aspect_ratio + tile_type_6
+    filler_period = tile_color_increment + tile_type_6
+    first_short_idx = color_value_3 / filler_period * subtiles_number
+    first_short_idx += first_subtile / short_size
+    second_short_idx = color_value_2 / filler_period * subtiles_number
+    second_short_idx += second_subtile / short_size
+    first_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=vector_x_1 / period,
+            y=first_short_idx,
+        ),
+        variant=0.0,
+        variant_count=3.0,
+    )
+    second_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=second_short_idx,
+            y=vector_x_2 / period,
+        ),
+        variant=1.0,
+        variant_count=3.0,
+    )
+    filler_idx = _pack_cell_idx(
+        pf.nodes.math.combine_xyz(
+            x=color_vector_x / filler_period,
+            y=color_vector_y / filler_period,
+        ),
+        variant=2.0,
+        variant_count=3.0,
+    )
+    cell_center_idx = _mix(
+        mask=tile_type_1 > 0.0,
+        vector_1=_mix(
+            mask=first_tile,
+            vector_1=first_idx,
+            vector_2=second_idx,
+        ),
+        vector_2=filler_idx,
+    )
     return TileShapeResult(
         mask=result,
         tile_color=tile_color.color,
         tile_type_1=tile_type,
         tile_type_2=tile_type,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
 @pf.nodes.node_function
 def square(
     vector: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
-    subtiles_number: t.SocketOrVal[float] = 0.0,
+    subtiles_number: t.SocketOrVal[float] = 1.0,
     aspect_ratio: t.SocketOrVal[float] = 0.0,
     border: t.SocketOrVal[float] = 0.0,
     flatness: t.SocketOrVal[float] = 0.0,
@@ -1759,11 +2178,18 @@ def square(
         b=pf.Color((1.0, 1.0, 1.0)),
         blend_type="DODGE",
     )
+    cell_center_pos = pf.nodes.math.combine_xyz(
+        x=vector_x + 0.5,
+        y=(vector_y + 0.5) / subtiles_number,
+    )
+    cell_center_idx = pf.nodes.math.combine_xyz(x=vector_x, y=vector_y)
     return TileShapeResult(
         mask=result,
         tile_color=checker_texture.color,
         tile_type_1=checker_texture.fac,
         tile_type_2=checker_texture.fac,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=cell_center_idx,
     )
 
 
@@ -1837,8 +2263,20 @@ def _tile_shape_rand(
         rngs[2], subtiles_number, aspect_ratio, border, flatness
     )
     scale = pf.random.uniform(rngs[0], 4.0, 10.0) / params["subtiles_number"]
-    vector = tile_coord_transform_rand(rngs[1], vector=vector, scale=scale)
-    return shape(vector=vector, **params)
+    rotation_deg, scale, flip = _resolve_tile_coord_transform(rngs[1], scale=scale)
+    vector = _tile_coord_transform(vector, rotation_deg, scale, flip)
+    result = shape(vector=vector, **params)
+    cell_center_pos = _inverse_tile_coord_transform(
+        result.cell_center_pos, rotation_deg, scale, flip
+    )
+    return TileShapeResult(
+        mask=result.mask,
+        tile_color=result.tile_color,
+        tile_type_1=result.tile_type_1,
+        tile_type_2=result.tile_type_2,
+        cell_center_pos=cell_center_pos,
+        cell_center_idx=result.cell_center_idx,
+    )
 
 
 def triangle_rand(
@@ -1984,6 +2422,58 @@ def square_rand(
     )
 
 
+def _resolve_tile_coord_transform(
+    rng: pf.RNG,
+    rotation_deg: t.SocketOrVal[float] | None = None,
+    scale: t.SocketOrVal[float] | None = None,
+    flip: t.SocketOrVal[float] | None = None,
+) -> tuple:
+    rngs = rng.spawn(3)
+    if rotation_deg is None:
+        rotation_deg = pf.random.randint(rngs[0], 0, 8 + 1) * 45.0
+    if scale is None:
+        scale = pf.random.uniform(rngs[1], 15, 25)
+    if flip is None:
+        flip = pf.random.randint(rngs[2], 0, 2) * 2 - 1
+    return rotation_deg, scale, flip
+
+
+def _tile_coord_transform(
+    vector: pf.ProcNode[pf.Vector] | None = None,
+    rotation_deg: t.SocketOrVal[float] = 0.0,
+    scale: t.SocketOrVal[float] = 1.0,
+    flip: t.SocketOrVal[float] = 1.0,
+) -> pf.ProcNode[pf.Vector]:
+    if vector is None:
+        vector = pf.nodes.shader.coord().uv
+    vector = vector * (1.0, 1.0, 0.0)
+    mask_vector_scale = pf.nodes.math.combine_xyz(x=scale, y=scale * flip, z=scale)
+    rotation_z = pf.nodes.math.deg_to_rad(rotation_deg)
+    rotation = pf.nodes.math.combine_xyz(z=rotation_z)
+    return pf.nodes.shader.mapping(
+        vector=vector,
+        rotation=rotation,
+        scale=mask_vector_scale,
+    )
+
+
+def _inverse_tile_coord_transform(
+    vector: pf.ProcNode[pf.Vector],
+    rotation_deg: t.SocketOrVal[float],
+    scale: t.SocketOrVal[float],
+    flip: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.Vector]:
+    rotation = -pf.nodes.math.deg_to_rad(rotation_deg)
+    vector = pf.nodes.math.vector_rotate_axis_angle(
+        vector=vector,
+        axis=(0.0, 0.0, 1.0),
+        angle=rotation,
+        center=(0.0, 0.0, 0.0),
+    )
+    scale_vector = pf.nodes.math.combine_xyz(x=scale, y=scale * flip, z=scale)
+    return vector / scale_vector
+
+
 def tile_coord_transform_rand(
     rng: pf.RNG,
     vector: pf.ProcNode[pf.Vector] | None = None,
@@ -1992,25 +2482,7 @@ def tile_coord_transform_rand(
     flip: t.SocketOrVal[float] | None = None,
 ) -> pf.ProcNode[pf.Vector]:
     # Code generated by procfunc v0.2.0
-    rngs = rng.spawn(3)
-    if vector is None:
-        vector = pf.nodes.shader.coord().uv
-    vector = vector * (1.0, 1.0, 0.0)
-    if rotation_deg is None:
-        rotation_deg = pf.random.randint(rngs[0], 0, 8 + 1) * 45.0
-    if scale is None:
-        scale = pf.random.uniform(rngs[1], 15, 25)
-    if flip is None:
-        flip = pf.random.randint(rngs[2], 0, 2) * 2 - 1
-
-    mask_vector_scale = pf.nodes.math.combine_xyz(x=scale, y=scale * flip, z=scale)
-
-    rotation_z = pf.nodes.math.deg_to_rad(rotation_deg)
-    rotation = pf.nodes.math.combine_xyz(z=rotation_z)
-    mask_vector = pf.nodes.shader.mapping(
-        vector=vector,
-        rotation=rotation,
-        scale=mask_vector_scale,
+    rotation_deg, scale, flip = _resolve_tile_coord_transform(
+        rng, rotation_deg, scale, flip
     )
-
-    return mask_vector
+    return _tile_coord_transform(vector, rotation_deg, scale, flip)
