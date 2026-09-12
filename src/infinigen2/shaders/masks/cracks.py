@@ -315,11 +315,13 @@ def cracks_worn_preset(
     vector: pf.ProcNode[pf.Vector],
     displacement_a: pf.ProcNode[pf.Vector] | None = None,
     displacement_b: pf.ProcNode[pf.Vector] | None = None,
+    height_threshold: t.SocketOrVal[float] = 0.0,
 ) -> pf.ProcNode[float]:
     return cracks_mask(
         vector=vector,
         displacement_a=displacement_a,
         displacement_b=displacement_b,
+        height_threshold=height_threshold,
         blend_distance=0.001,
         warp_size=0.03,
         warp_strength=2.0,

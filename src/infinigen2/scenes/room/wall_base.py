@@ -12,8 +12,19 @@ from infinigen2.shaders.functionality_lists import wall_material_rand
 from infinigen2.util import mesh as mesh_util
 
 __all__ = [
+    "ROOM_SUBSURF_LEVELS",
     "WallResult",
+    "extrude_for_thickness",
+    "fit_grid_margins",
+    "overlap_wall_plane_edges",
+    "plain_wall",
+    "plane_to_posed_canonical_mesh",
+    "resolve_wall_inputs",
+    "seat_upright_cabinet",
+    "subdivide_wall_plane",
     "upright_cabinet_footprint",
+    "wall_storage_width_rand",
+    "wall_uv_dimensions",
     "wall_plain_rand",
 ]
 
@@ -63,7 +74,7 @@ def _standalone_wall_rand(
     return wall
 
 
-def _resolve_wall_inputs(
+def resolve_wall_inputs(
     rng: pf.RNG,
     wall: pf.MeshObject | None,
     wall_material: pf.Material | None,
@@ -79,7 +90,7 @@ def _resolve_wall_inputs(
     return rng_feature, wall, wall_material
 
 
-def _extrude_for_thickness(obj: pf.MeshObject, thickness: float) -> pf.MeshObject:
+def extrude_for_thickness(obj: pf.MeshObject, thickness: float) -> pf.MeshObject:
     """Solidify a flat surface into a back-thickness slab (the lightblocker body)."""
     geo = pf.nodes.geo.object_info(obj).geometry
     extruded = mesh_util.extrude_mesh_seamless_uvs(
@@ -93,7 +104,7 @@ def _extrude_for_thickness(obj: pf.MeshObject, thickness: float) -> pf.MeshObjec
     return result
 
 
-def _plane_to_posed_canonical_mesh(
+def plane_to_posed_canonical_mesh(
     obj: pf.MeshObject,
     up_axis: str = "Z",
 ) -> pf.MeshObject:
@@ -120,47 +131,56 @@ def _plane_to_posed_canonical_mesh(
     return obj
 
 
-def _subdivide_wall_plane(obj: pf.MeshObject) -> None:
+def subdivide_wall_plane(obj: pf.MeshObject) -> None:
     mesh_util.crease_all_edges(obj)
     pf.ops.modifier.subdivide_surface(obj, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True)
 
 
-def _finish_cutout_mesh(
-    obj: pf.MeshObject,
-    surface: pf.MeshObject,
-    material: pf.Material,
-) -> pf.MeshObject:
-    """Pose a cut surface piece on its source, material it, and crease-subdivide for displacement."""
-    pf.ops.object.set_transform(
-        obj, surface.item().location, surface.item().rotation_euler
-    )
-    pf.ops.object.set_material(
-        obj, surface=material.surface, displacement=material.displacement
-    )
-    _subdivide_wall_plane(obj)
-    return obj
-
-
-def _wall_uv_dimensions(wall: pf.MeshObject) -> tuple[float, float]:
+def wall_uv_dimensions(wall: pf.MeshObject) -> tuple[float, float]:
     uvs = pf.ops.attr.uv_coords(wall)
     width = uvs[:, 0].max() - uvs[:, 0].min()
     height = uvs[:, 1].max() - uvs[:, 1].min()
     return width, height
 
 
-def _plain_wall(
+def overlap_wall_plane_edges(wall: pf.MeshObject, overlap: float) -> None:
+    positions = pf.ops.attr.vertex_positions(wall)
+    y_min = positions[:, 1].min()
+    y_max = positions[:, 1].max()
+    at_min = np.isclose(positions[:, 1], y_min, rtol=0.0, atol=1e-6)
+    at_max = np.isclose(positions[:, 1], y_max, rtol=0.0, atol=1e-6)
+
+    loop_vertices = np.empty(len(wall.item().data.loops), dtype=int)
+    wall.item().data.loops.foreach_get("vertex_index", loop_vertices)
+    loops_at_min = at_min[loop_vertices]
+    loops_at_max = at_max[loop_vertices]
+    uvs = pf.ops.attr.uv_coords(wall)
+    u_min_edge = np.median(uvs[loops_at_min, 0])
+    u_max_edge = np.median(uvs[loops_at_max, 0])
+    u_per_meter = (u_max_edge - u_min_edge) / (y_max - y_min)
+
+    positions[at_min, 1] -= overlap
+    positions[at_max, 1] += overlap
+    uvs[loops_at_min, 0] -= u_per_meter * overlap
+    uvs[loops_at_max, 0] += u_per_meter * overlap
+    pf.ops.attr.write_vertex_positions(wall, positions)
+    pf.ops.attr.write_uv_coords(wall, uvs)
+    wall.item().data.update()
+
+
+def plain_wall(
     wall: pf.MeshObject, wall_material: pf.Material, wall_thickness: float
 ) -> tuple[pf.MeshObject, pf.MeshObject]:
     """Materialise, thicken and canonicalise a bare wall (no cutouts)."""
-    wall_thick = _extrude_for_thickness(wall, wall_thickness)
+    wall_thick = extrude_for_thickness(wall, wall_thickness)
     wall_thick.item().name = "room_wall_back"
     pf.ops.object.set_material(
         wall,
         surface=wall_material.surface,
         displacement=wall_material.displacement,
     )
-    _subdivide_wall_plane(wall)
-    wall = _plane_to_posed_canonical_mesh(wall)
+    subdivide_wall_plane(wall)
+    wall = plane_to_posed_canonical_mesh(wall)
     return wall, wall_thick
 
 
@@ -171,8 +191,8 @@ def wall_plain_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall, wall_thick = _plain_wall(wall, wall_material, wall_thickness)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall, wall_thick = plain_wall(wall, wall_material, wall_thickness)
     return WallResult(
         all_objects=[wall, wall_thick],
         wall_planes=[wall],
@@ -191,7 +211,7 @@ def upright_cabinet_footprint(width: float, height: float) -> pf.MeshObject:
     )
 
 
-def _seat_upright_cabinet(
+def seat_upright_cabinet(
     cab: pf.MeshObject, width: float, height: float, back_depth: float
 ) -> pf.MeshObject:
     """Center an upright cabinet in the wall frame (X=depth out, Y=width, Z=height).
@@ -212,7 +232,7 @@ def _seat_upright_cabinet(
     return cab
 
 
-def _fit_grid_margins(
+def fit_grid_margins(
     extent: float,
     item_size: float,
     spacing: float,
@@ -231,9 +251,7 @@ def _fit_grid_margins(
     return min_margin + slack * split, min_margin + slack * (1 - split), n
 
 
-def _wall_storage_width_rand(
-    rng: pf.RNG, wall_width: float, min_margin: float
-) -> float:
+def wall_storage_width_rand(rng: pf.RNG, wall_width: float, min_margin: float) -> float:
     usable_width = max(0.8, wall_width - 2 * min_margin)
     max_width = 0.9 * usable_width
     return pf.random.uniform(rng, min(1.0, max_width), max_width)

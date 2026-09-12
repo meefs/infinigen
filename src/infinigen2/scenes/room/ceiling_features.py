@@ -17,8 +17,8 @@ from infinigen2.scenes.placement.distribute import (
 from infinigen2.scenes.room.room_shape import RoomShapeResult
 from infinigen2.scenes.room.wall_base import (
     ROOM_SUBSURF_LEVELS,
-    _extrude_for_thickness,
-    _fit_grid_margins,
+    extrude_for_thickness,
+    fit_grid_margins,
 )
 from infinigen2.scenes.room.wall_cutouts import (
     _arrange_window_portals,
@@ -209,7 +209,7 @@ def ceiling_skylights_rand(
         max_margin = max(floor_margin, (extent - win_dims[axis]) / 2)
         min_margin = floor_margin + (max_margin - floor_margin) * margin_frac
         split = pf.random.uniform(rng, 0.4, 0.6)
-        low, high, _ = _fit_grid_margins(
+        low, high, _ = fit_grid_margins(
             extent, win_dims[axis], spacing, min_margin, split, n_cap
         )
         margins.append((low, high))
@@ -283,11 +283,11 @@ def ceiling_light_bars_rand(
 
     # rows across y, single centered span along x
     split_y = pf.random.uniform(rng, 0.4, 0.6)
-    margin_y_low, margin_y_high, _ = _fit_grid_margins(
+    margin_y_low, margin_y_high, _ = fit_grid_margins(
         extent_y, bar_width, spacing, min_margin_y, split_y, n_cap=4
     )
     split_x = pf.random.uniform(rng, 0.4, 0.6)
-    margin_x_low, margin_x_high, _ = _fit_grid_margins(
+    margin_x_low, margin_x_high, _ = fit_grid_margins(
         extent_x, bar_length, spacing, min_margin_x, split_x, n_cap=1
     )
 
@@ -377,7 +377,7 @@ def ceiling_feature_rand(
     )
 
     def ceiling_plain_with_lights(rng: pf.RNG):
-        ceiling_back = _extrude_for_thickness(shape.ceiling, wall_thickness)
+        ceiling_back = extrude_for_thickness(shape.ceiling, wall_thickness)
         ceiling_back.item().name = "room_wall_back"
         lamp_meshes, lamp_lights = ceiling_light_placement_rand(
             rng, shape.ceiling, dimensions=shape.dimensions

@@ -19,17 +19,17 @@ from infinigen2.scenes.placement.distribute import (
 )
 from infinigen2.scenes.room.wall_base import (
     WallResult,
-    _extrude_for_thickness,
-    _finish_cutout_mesh,
-    _fit_grid_margins,
-    _plain_wall,
-    _plane_to_posed_canonical_mesh,
-    _resolve_wall_inputs,
-    _seat_upright_cabinet,
-    _wall_storage_width_rand,
-    _wall_uv_dimensions,
+    extrude_for_thickness,
+    fit_grid_margins,
+    plain_wall,
+    plane_to_posed_canonical_mesh,
+    resolve_wall_inputs,
+    seat_upright_cabinet,
+    subdivide_wall_plane,
     upright_cabinet_footprint,
     wall_plain_rand,
+    wall_storage_width_rand,
+    wall_uv_dimensions,
 )
 from infinigen2.shaders.functionality_lists import skirt_material_rand
 from infinigen2.util import mesh as mesh_util
@@ -151,9 +151,16 @@ def cutout_spaced_instances(
             chamfer=cutout_chamfer,
         )
 
-        sill = _finish_cutout_mesh(
-            pf.nodes.to_mesh_object(split.sill), surface, surface_material
+        sill = pf.nodes.to_mesh_object(split.sill)
+        pf.ops.object.set_transform(
+            sill, surface.item().location, surface.item().rotation_euler
         )
+        pf.ops.object.set_material(
+            sill,
+            surface=surface_material.surface,
+            displacement=surface_material.displacement,
+        )
+        subdivide_wall_plane(sill)
         sill.item().name = "room_wall_sill"
 
         lightblocker = pf.nodes.to_mesh_object(split.lightblocker)
@@ -170,7 +177,16 @@ def cutout_spaced_instances(
         ).inverted
     # weld coincident verts so boundary slivers don't break canonicalization
     geom = pf.nodes.geo.merge_by_distance(cut, distance=0.001)
-    geom = _finish_cutout_mesh(pf.nodes.to_mesh_object(geom), surface, surface_material)
+    geom = pf.nodes.to_mesh_object(geom)
+    pf.ops.object.set_transform(
+        geom, surface.item().location, surface.item().rotation_euler
+    )
+    pf.ops.object.set_material(
+        geom,
+        surface=surface_material.surface,
+        displacement=surface_material.displacement,
+    )
+    subdivide_wall_plane(geom)
 
     recess_depth = wall_thickness * recess_pct if recess else 0.0
     instances = grid_placement.place_instances_on_uv_grid(
@@ -186,7 +202,7 @@ def cutout_spaced_instances(
     aliases = pf.nodes.to_aliases(instances)
     propagate_modifiers_to_instances([instance], aliases)
 
-    geom = _plane_to_posed_canonical_mesh(geom, up_axis=canonical_up_axis)
+    geom = plane_to_posed_canonical_mesh(geom, up_axis=canonical_up_axis)
     return CutoutResult(geom, sill, lightblocker, aliases, trim_edges)
 
 
@@ -263,7 +279,7 @@ def _resolve_window_inputs(
         return rng, window_obj, window_portal, window_spacing, window_bottom
 
     rng_defaults, rng_feature = rng.spawn(2)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    wall_width, wall_height = wall_uv_dimensions(wall)
     if window_obj is None:
         width = max(1.0, min(2.0, 0.5 * wall_width))
         height = max(1.0, min(2.0, 0.7 * wall_height))
@@ -308,7 +324,7 @@ def window_spaced_rand(
     width = window_obj.item().dimensions.y
     wmin, _ = pf.ops.attr.bbox_min_max(window_obj)
 
-    wall_uv_width, _ = _wall_uv_dimensions(wall)
+    wall_uv_width, _ = wall_uv_dimensions(wall)
 
     slack = max(0.0, wall_uv_width - width - 0.01)
     max_margin = min(0.3 * wall_uv_width, 2.0 * width, slack)
@@ -327,7 +343,7 @@ def window_spaced_rand(
             margin_low_x,
             margin_high_x,
         )
-        wall, wall_thick = _plain_wall(wall, wall_material, wall_thickness)
+        wall, wall_thick = plain_wall(wall, wall_material, wall_thickness)
         return CutoutResult(wall, None, wall_thick, [], None)
 
     reveal_depth = pf.random.uniform(rng, 0.1, 0.7)
@@ -366,7 +382,7 @@ def wall_windows_rand(
     window_bottom: float | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
     rng, window_obj, window_portal, window_spacing, window_bottom = (
         _resolve_window_inputs(
             rng,
@@ -427,8 +443,8 @@ def wall_painting_grid_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = wall_uv_dimensions(wall)
 
     # margins first, then size each painting against the remaining wall region
     top_gap = max(0.12, 0.10 * wall_height)
@@ -445,7 +461,7 @@ def wall_painting_grid_rand(
         rng, dimensions=pf.Vector((art_depth, art_width, art_height))
     ).mesh
 
-    wall_thick = _extrude_for_thickness(wall, wall_thickness)
+    wall_thick = extrude_for_thickness(wall, wall_thickness)
     wall_thick.item().name = "room_wall_back"
 
     spacing_x = pf.random.uniform(rng, 0.1, 0.5)
@@ -503,8 +519,8 @@ def wall_storage_shelf_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = wall_uv_dimensions(wall)
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
 
@@ -520,11 +536,11 @@ def wall_storage_shelf_rand(
 
     height = pf.control.choice(rng, [(_short_band, 1.0), (_tall_band, 1.0)])()
 
-    width = _wall_storage_width_rand(rng, wall_width, min_margin)
+    width = wall_storage_width_rand(rng, wall_width, min_margin)
     spacing_x = pf.random.uniform(rng, 0.1, 0.5)
 
     margin_split = pf.random.uniform(rng, 0.375, 0.625)
-    margin_low_x, margin_high_x, _ = _fit_grid_margins(
+    margin_low_x, margin_high_x, _ = fit_grid_margins(
         wall_width, width, spacing_x, min_margin, margin_split
     )
     recess_frac = pf.random.uniform(rng, 0.0, 1.0)
@@ -535,7 +551,7 @@ def wall_storage_shelf_rand(
         dimensions=pf.Vector((depth, width, height)),
         back_width=0.0,
     ).mesh
-    cab = _seat_upright_cabinet(cab, width, height, back_depth=depth)
+    cab = seat_upright_cabinet(cab, width, height, back_depth=depth)
     footprint = upright_cabinet_footprint(width, height)
 
     geom, sill, lightblocker, cabinet_aliases, _trim_edges = cutout_spaced_instances(
@@ -583,12 +599,12 @@ def wall_cubby_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = wall_uv_dimensions(wall)
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
     min_margin = depth * 0.5
-    width = _wall_storage_width_rand(rng, wall_width, min_margin)
+    width = wall_storage_width_rand(rng, wall_width, min_margin)
 
     bottom = pf.random.uniform(rng, 0.25, 0.45) * wall_height
     top = (0.02 + 0.18 * pf.random.uniform(rng, 0.0, 1.0) ** 2) * wall_height
@@ -602,7 +618,7 @@ def wall_cubby_rand(
     spacing_y = pf.random.uniform(rng, 0.05, 0.6) * height
 
     margin_split = pf.random.uniform(rng, 0.375, 0.625)
-    margin_low_x, margin_high_x, _ = _fit_grid_margins(
+    margin_low_x, margin_high_x, _ = fit_grid_margins(
         wall_width, width, spacing_x, min_margin, margin_split
     )
     hole_depth = depth
@@ -612,7 +628,7 @@ def wall_cubby_rand(
         dimensions=pf.Vector((depth, width, height)),
         back_width=0.0,
     ).mesh
-    cab = _seat_upright_cabinet(cab, width, height, back_depth=hole_depth)
+    cab = seat_upright_cabinet(cab, width, height, back_depth=hole_depth)
     footprint = upright_cabinet_footprint(width, height)
 
     geom, sill, lightblocker, cabinet_aliases, _trim_edges = cutout_spaced_instances(
@@ -677,8 +693,8 @@ def wall_doors_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = wall_uv_dimensions(wall)
 
     door_width = pf.random.uniform(rng, 0.85, 1.2)
     door_height = min(pf.random.uniform(rng, 2.0, 2.2), wall_height * 0.9)
@@ -756,8 +772,8 @@ def wall_full_window_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = wall_uv_dimensions(wall)
 
     eps = 0.02
     gap_x = 0.10 * wall_width
@@ -820,7 +836,7 @@ def wall_full_window_rand(
             target_h,
         )
 
-    wall_back = _extrude_for_thickness(geom, wall_thickness)
+    wall_back = extrude_for_thickness(geom, wall_thickness)
     pf.ops.object.set_transform(
         wall_back, geom.item().location, geom.item().rotation_euler
     )

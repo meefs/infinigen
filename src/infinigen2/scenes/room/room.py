@@ -28,8 +28,9 @@ from infinigen2.scenes.room.skirting import skirting_rand
 from infinigen2.scenes.room.wall_base import (
     ROOM_SUBSURF_LEVELS,
     WallResult,
-    _extrude_for_thickness,
-    _resolve_wall_inputs,
+    extrude_for_thickness,
+    overlap_wall_plane_edges,
+    resolve_wall_inputs,
     wall_plain_rand,
 )
 from infinigen2.scenes.room.wall_cutouts import (
@@ -106,7 +107,7 @@ def wall_arrangement_rand(
     window_bottom: float | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
 
     def plain(rng, wall, wall_material):
         return wall_plain_rand(rng, wall, wall_material, wall_thickness=wall_thickness)
@@ -179,7 +180,7 @@ def room_walls_rand(
     wall_material_1 = wall_material_rand(rng_mat_1, vec_wall)
     wall_material_2 = wall_material_rand(rng_mat_2, vec_wall)
 
-    wall_back = _extrude_for_thickness(shape.walls, wall_thickness)
+    wall_back = extrude_for_thickness(shape.walls, wall_thickness)
     wall_back.item().name = "room_wall_back"
 
     pf.ops.object.set_material(
@@ -332,7 +333,8 @@ def _furnished_room_rand(
     rng_shape, rng_walls, rng_ceiling, rng_skirting = rng_room.spawn(4)
     shape = room_shape_rand(rng_shape, dimensions=dimensions)
     logger.info(f"Created room shape with {len(shape.flat_walls)} flat walls")
-    wall_result = room_walls_rand(rng_walls, shape)
+    wall_thickness = 0.1
+    wall_result = room_walls_rand(rng_walls, shape, wall_thickness=wall_thickness)
     logger.info(
         f"Created wall features with {len(wall_result.wall_planes)} wall planes"
     )
@@ -503,11 +505,13 @@ def _furnished_room_rand(
     logger.info(f"Placed {len(placed)} small objects on windowsills")
 
     all_objects = furnished_objects + small_objects
+    for wall_plane in wall_result.wall_planes:
+        overlap_wall_plane_edges(wall_plane, wall_thickness)
 
     return LivingroomResult(
         all_objects=all_objects,
         lights=lights,
-        colliders=ccol.collision_set(all_objects, cache=base_colliders),
+        colliders=ccol.collision_set(all_objects),
         floor=shape.floor,
         dimensions=room_dimensions,
     )

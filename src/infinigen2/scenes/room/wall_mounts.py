@@ -11,16 +11,16 @@ from infinigen2.objects import storage
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
 from infinigen2.scenes.room.wall_base import (
     WallResult,
-    _extrude_for_thickness,
-    _fit_grid_margins,
-    _plain_wall,
-    _plane_to_posed_canonical_mesh,
-    _resolve_wall_inputs,
-    _seat_upright_cabinet,
-    _subdivide_wall_plane,
-    _wall_storage_width_rand,
-    _wall_uv_dimensions,
+    extrude_for_thickness,
+    fit_grid_margins,
+    plain_wall,
+    plane_to_posed_canonical_mesh,
+    resolve_wall_inputs,
+    seat_upright_cabinet,
+    subdivide_wall_plane,
     upright_cabinet_footprint,
+    wall_storage_width_rand,
+    wall_uv_dimensions,
 )
 from infinigen2.shaders.functionality_lists import furniture_material_rand
 from infinigen2.util import mesh as mesh_util
@@ -41,8 +41,8 @@ def wall_board_shelf_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = wall_uv_dimensions(wall)
 
     shelf_depth = pf.random.uniform(rng, 0.27, 0.675)
     shelf_thickness = pf.random.uniform(rng, 0.02, 0.05)
@@ -117,15 +117,15 @@ def wall_board_shelf_rand(
             margin_bottom,
         )
 
-    wall_thick = _extrude_for_thickness(wall, wall_thickness)
+    wall_thick = extrude_for_thickness(wall, wall_thickness)
     wall_thick.item().name = "room_wall_back"
     pf.ops.object.set_material(
         wall,
         surface=wall_material.surface,
         displacement=wall_material.displacement,
     )
-    _subdivide_wall_plane(wall)
-    wall = _plane_to_posed_canonical_mesh(wall)
+    subdivide_wall_plane(wall)
+    wall = plane_to_posed_canonical_mesh(wall)
 
     return WallResult(
         all_objects=[wall, wall_thick, *shelf_aliases],
@@ -145,8 +145,8 @@ def wall_storage_flush_rand(
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
-    rng, wall, wall_material = _resolve_wall_inputs(rng, wall, wall_material)
-    wall_width, wall_height = _wall_uv_dimensions(wall)
+    rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
+    wall_width, wall_height = wall_uv_dimensions(wall)
 
     depth = pf.random.uniform(rng, 0.3, 0.61)
     min_margin = depth * 0.5
@@ -159,11 +159,11 @@ def wall_storage_flush_rand(
 
     height = pf.control.choice(rng, [(_short_band, 1.0), (_tall_band, 1.0)])()
 
-    width = _wall_storage_width_rand(rng, wall_width, min_margin)
+    width = wall_storage_width_rand(rng, wall_width, min_margin)
     spacing_x = pf.random.uniform(rng, 0.1, 0.5)
 
     margin_split = pf.random.uniform(rng, 0.375, 0.625)
-    margin_low_x, margin_high_x, _ = _fit_grid_margins(
+    margin_low_x, margin_high_x, _ = fit_grid_margins(
         wall_width, width, spacing_x, min_margin, margin_split
     )
 
@@ -171,7 +171,7 @@ def wall_storage_flush_rand(
         rng,
         dimensions=pf.Vector((depth, width, height)),
     ).mesh
-    cab = _seat_upright_cabinet(cab, width, height, back_depth=0.0)
+    cab = seat_upright_cabinet(cab, width, height, back_depth=0.0)
     footprint = upright_cabinet_footprint(width, height)
 
     uv_meters = pf.nodes.geo.input_named_attribute(
@@ -207,7 +207,7 @@ def wall_storage_flush_rand(
             margin_high_x,
         )
 
-    wall, wall_thick = _plain_wall(wall, wall_material, wall_thickness)
+    wall, wall_thick = plain_wall(wall, wall_material, wall_thickness)
     return WallResult(
         all_objects=[wall, wall_thick, *aliases],
         wall_planes=[wall],

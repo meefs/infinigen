@@ -1145,6 +1145,7 @@ def bricks_paint_worn_preset(
         vector=vector,
         displacement_a=displacement_1,
         displacement_b=paint_result.displacement,
+        height_threshold=-brick_cutter_result.height_offset,
     )
 
     surface_1 = pf.nodes.shader.mix_shader(
@@ -1570,7 +1571,7 @@ def bricks_paint_rand(
             vector,
             displacement_a=bricks_and_paint_displacement,
             displacement_b=paint_material.displacement,
-            height_threshold=0.02,
+            height_threshold=0.02 - brick_cutter.height_offset,
         ).mask
 
     cracks_mix_surface = pf.nodes.shader.mix_shader(
