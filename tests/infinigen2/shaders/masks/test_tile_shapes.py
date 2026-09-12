@@ -67,6 +67,16 @@ def _material(field: str, shape_names: tuple[str, ...]) -> bpy.types.Material:
                     name, len(shape_names), initial.cell_center_pos
                 )
                 outputs[name] = centered.cell_center_idx - initial.cell_center_idx
+            elif field == "center_vector":
+                centered = _shape_result(
+                    name, len(shape_names), initial.cell_center_pos
+                )
+                outputs[name] = centered.vector
+            elif field == "center_distance":
+                centered = _shape_result(
+                    name, len(shape_names), initial.cell_center_pos
+                )
+                outputs[name] = centered.distance_from_edge
             else:
                 outputs[name] = getattr(initial, field)
         return outputs
@@ -248,6 +258,28 @@ def test_random_shape_centers_round_trip_through_layout_transform() -> None:
         np.testing.assert_allclose(error, 0.0, atol=5e-3, err_msg=name)
 
 
+def test_random_shape_vector_uses_caller_coordinate_space() -> None:
+    def build() -> dict[str, pf.ProcNode]:
+        vector = pf.nodes.math.combine_xyz(x=0.37, y=0.61)
+        result = tile_shapes.square_rand(
+            np.random.default_rng(5),
+            vector,
+            subtiles_number=1.0,
+            aspect_ratio=3.0,
+            border=0.05,
+            flatness=0.9,
+        )
+        return {"square": result.vector - (vector - result.cell_center_pos)}
+
+    errors = _render(
+        "random_vector_error",
+        ("square",),
+        tile_size=4,
+        material=_output_material(build, "random_vector_error"),
+    )["square"]
+    np.testing.assert_allclose(errors, 0.0, atol=5e-3)
+
+
 def test_square_default_has_finite_center() -> None:
     def build() -> dict[str, pf.ProcNode]:
         result = tile_shapes.square(vector=(0.25, 0.25, 0.0))
@@ -313,3 +345,40 @@ def test_basket_weave_coordinates_agree_with_physical_tiles(
             err_msg=name,
         )
         assert np.all(values[..., 2] > 0.5), name
+
+
+def test_tile_vectors_are_centered_in_local_shape_space():
+    vectors = _render("vector")
+    centered_vectors = _render("center_vector")
+
+    for name in SHAPE_NAMES:
+        assert np.all(np.isfinite(vectors[name])), name
+        assert np.ptp(vectors[name][..., :2]) > 0.1, name
+        np.testing.assert_allclose(vectors[name][..., 2], 0.0, atol=5e-3, err_msg=name)
+
+    for name in CENTER_ROUNDTRIP_SHAPES:
+        np.testing.assert_allclose(centered_vectors[name], 0.0, atol=5e-3, err_msg=name)
+
+
+@pytest.mark.parametrize("name", SHAPE_NAMES)
+def test_tile_vectors_ignore_input_z(name: str) -> None:
+    def build() -> dict[str, pf.ProcNode]:
+        result = _shape_result(name, 1, vector=(0.37, 0.61, 7.0))
+        return {name: result.vector}
+
+    material = _output_material(build, "tile_vector_input_z")
+    vector = _render(name, (name,), tile_size=4, material=material)[name]
+    np.testing.assert_allclose(vector[..., 2], 0.0, atol=5e-3, err_msg=name)
+
+
+def test_tile_edge_distances_vary_and_peak_at_centers():
+    distances = _render("distance_from_edge")
+    center_distances = _render("center_distance")
+
+    for name in SHAPE_NAMES:
+        distance = distances[name][..., 0]
+        center_distance = center_distances[name][..., 0]
+        assert np.all(np.isfinite(distance)), name
+        assert np.ptp(distance) > 5e-3, name
+        assert np.min(center_distance) > 5e-3, name
+        assert np.max(distance - center_distance) < 5e-3, name
