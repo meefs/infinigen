@@ -672,6 +672,7 @@ dependencies = [
     { name = "python-fcl" },
     { name = "rtree" },
     { name = "scipy" },
+    { name = "shapely" },
     { name = "trimesh" },
 ]
 
@@ -807,6 +808,7 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'infinigen1'", specifier = "<1.4.0" },
     { name = "scipy", specifier = ">=1.10" },
     { name = "setuptools", marker = "extra == 'terrain'", specifier = "<81" },
+    { name = "shapely", specifier = ">=2,<3" },
     { name = "shapely", marker = "extra == 'infinigen1'", specifier = "<=2.0.5" },
     { name = "sphinx", marker = "extra == 'dev'" },
     { name = "sphinx-argparse", marker = "extra == 'dev'" },

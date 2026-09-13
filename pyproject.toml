@@ -30,6 +30,7 @@ dependencies = [
     "pandas>=1.5",
     "scipy>=1.10", # trimesh collision path
     "trimesh>=3.22",
+    "shapely>=2,<3",
     "OpenEXR>=3.2.3",
     "pillow>=11.3.0",
     # used by trimesh, we could specify "trimesh[easy]" but this brings more packages
