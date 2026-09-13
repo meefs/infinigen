@@ -104,6 +104,10 @@
   },
   {
     "category": "Mask",
+    "name": "infinigen2.shaders.masks.cracks.flake_mask_rand"
+  },
+  {
+    "category": "Mask",
     "name": "infinigen2.shaders.masks.edgewear.edgewear_rand"
   },
   {
@@ -481,6 +485,11 @@
     "category": "Material",
     "name": "infinigen2.shaders.functionality_lists.wall_material_rand",
     "integration_test_string": "wall_material_rand material_plane_uv render_cycles"
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.composites.wall.wall_flaked_tile_rand",
+    "integration_test_string": "wall_flaked_tile_rand material_plane_uv render_cycles"
   },
   {
     "category": "Material",

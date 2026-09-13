@@ -35,6 +35,7 @@ from infinigen2.shaders.composites import (
     fabric_patterned,
     paint_overlay,
     tiles,
+    wall,
     wood_planks,
 )
 from infinigen2.shaders.composites.scratches_overlay import (
@@ -529,6 +530,7 @@ def wall_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Materi
             (_art_patterned_paint_rand, 0.5),
             (wood_planks.wood_planks_rand, 1.5),
             (paint_flaked_rand, 1.0),
+            (wall.wall_flaked_tile_rand, 1.0),
             (concrete.concrete_rand, 1.0),
             (stone_smooth.stone_smooth_rand, 0.5),
             (gravel_concrete.gravel_concrete_rand, 0.5),

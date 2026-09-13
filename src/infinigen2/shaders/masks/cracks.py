@@ -18,6 +18,8 @@ __all__ = [
     "cracks_mask",
     "cracks_rand",
     "cracks_worn_preset",
+    "flake_mask",
+    "flake_mask_rand",
 ]
 
 
@@ -416,3 +418,55 @@ def cracks_rand(
         hole_detail=hole_detail,
     )
     return CracksMaskResult(mask=cracks_mask_result)
+
+
+@pf.nodes.node_function
+def flake_mask(
+    vector: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
+    random_seed: t.SocketOrVal[float] = 0.0,
+    flake_size: t.SocketOrVal[float] = 1.0,
+    flake_spread: t.SocketOrVal[float] = 0.4,
+    edge_size: t.SocketOrVal[float] = 0.1,
+    edge_strength: t.SocketOrVal[float] = 0.2,
+) -> pf.ProcNode[float]:
+    broad_shape = pf.nodes.texture.noise(
+        vector=vector,
+        w=random_seed,
+        scale=1.0 / flake_size,
+        detail=2.0,
+        roughness=0.65,
+        noise_dimensions="4D",
+    )
+    broken_edge = pf.nodes.texture.noise(
+        vector=vector,
+        w=random_seed + 37.0,
+        scale=1.0 / edge_size,
+        detail=3.0,
+        roughness=0.7,
+        noise_dimensions="4D",
+    )
+    edge_offset = (broken_edge.fac - 0.5) * edge_strength
+    return broad_shape.fac + edge_offset > flake_spread
+
+
+def flake_mask_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+    flake_size: t.SocketOrVal[float] | None = None,
+) -> CracksMaskResult:
+    rng_size, rng_shape = rng.spawn(2)
+    if flake_size is None:
+        flake_size = pf.random.uniform(rng_size, 0.15, 2.5)
+    flake_spread = pf.random.uniform(rng_shape, 0.34, 0.46)
+    edge_size = flake_size * pf.random.uniform(rng_shape, 0.06, 0.14)
+    edge_strength = pf.random.uniform(rng_shape, 0.12, 0.28)
+    random_seed = pf.random.uniform(rng_shape, 0.0, 100.0)
+    mask = flake_mask(
+        vector=vector,
+        random_seed=random_seed,
+        flake_size=flake_size,
+        flake_spread=flake_spread,
+        edge_size=edge_size,
+        edge_strength=edge_strength,
+    )
+    return CracksMaskResult(mask=mask)
