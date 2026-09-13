@@ -12,8 +12,8 @@ import procfunc as pf
 from infinigen2.exporters.render_cycles import configure_cycles_devices
 
 __all__ = [
+    "bake_shared_modifier_prefixes",
     "convert_shader_displacement",
-    "evaluate_shared_subdivision_to_shared_data",
     "realize_scene",
 ]
 
@@ -179,70 +179,126 @@ def convert_shader_displacement(obj, scale_val=1.0, apply_geo_modifier=False):
     )
 
 
-def _subsurf_settings(mod: bpy.types.Modifier) -> tuple:
+_SHAREABLE_MODIFIER_TYPES = {
+    "BEVEL",
+    "DECIMATE",
+    "EDGE_SPLIT",
+    "LAPLACIANSMOOTH",
+    "REMESH",
+    "SKIN",
+    "SMOOTH",
+    "SOLIDIFY",
+    "SUBSURF",
+    "TRIANGULATE",
+    "WEIGHTED_NORMAL",
+    "WELD",
+    "WIREFRAME",
+}
+
+
+def _modifier_settings(mod: bpy.types.Modifier) -> tuple:
     skip = ("rna_type", "type", "name", "is_active", "show_expanded")
-    return tuple(
-        (p.identifier, repr(getattr(mod, p.identifier)))
-        for p in mod.bl_rna.properties
-        if not p.is_readonly and p.identifier not in skip
+    settings = tuple(
+        (prop.identifier, repr(getattr(mod, prop.identifier)))
+        for prop in mod.bl_rna.properties
+        if not prop.is_readonly and prop.identifier not in skip
+    )
+    return mod.type, settings
+
+
+def _object_modifier_context(obj: bpy.types.Object) -> tuple:
+    vertex_groups = tuple(group.name for group in obj.vertex_groups)
+    materials = tuple(
+        (slot.link, slot.material.as_pointer() if slot.material is not None else None)
+        for slot in obj.material_slots
+    )
+    return vertex_groups, materials
+
+
+def _modifier_is_shareable(mod: bpy.types.Modifier) -> bool:
+    if mod.type not in _SHAREABLE_MODIFIER_TYPES:
+        return False
+    render = bpy.context.scene.render
+    return not (
+        mod.type == "SUBSURF"
+        and render.use_simplify
+        and render.simplify_subdivision != render.simplify_subdivision_render
     )
 
 
-def _bake_shared_stack(objs: list[bpy.types.Object]) -> None:
+def _bake_shared_first_modifier(objs: list[bpy.types.Object]) -> None:
     lead = objs[0]
-    was_disabled = lead.hide_viewport
-    was_hidden = lead.hide_get()
-    lead.hide_viewport = False
-    lead.hide_set(False)
-    for mod in lead.modifiers:
-        if mod.type == "SUBSURF":
-            mod.levels = mod.render_levels
-        mod.show_viewport = mod.show_render
-    bpy.context.view_layer.update()
-    depsgraph = bpy.context.evaluated_depsgraph_get()
-    baked = bpy.data.meshes.new_from_object(
-        lead.evaluated_get(depsgraph), depsgraph=depsgraph
-    )
-    lead.hide_viewport = was_disabled
-    lead.hide_set(was_hidden)
+    temporary = lead.copy()
+    temporary.data = lead.data
+    bpy.context.scene.collection.objects.link(temporary)
+    for mod in list(temporary.modifiers)[1:]:
+        temporary.modifiers.remove(mod)
+    modifier = temporary.modifiers[0]
+    if modifier.type == "SUBSURF":
+        modifier.levels = modifier.render_levels
+    modifier.show_viewport = modifier.show_render
+    temporary.hide_viewport = False
+    temporary.hide_set(False)
+    try:
+        bpy.context.view_layer.update()
+        depsgraph = bpy.context.evaluated_depsgraph_get()
+        baked = bpy.data.meshes.new_from_object(
+            temporary.evaluated_get(depsgraph),
+            preserve_all_data_layers=True,
+            depsgraph=depsgraph,
+        )
+    finally:
+        bpy.data.objects.remove(temporary, do_unlink=True)
     old = lead.data
     name = old.name
     for obj in objs:
-        obj.modifiers.clear()
+        obj.modifiers.remove(obj.modifiers[0])
         obj.data = baked
     if old.users == 0:
         bpy.data.meshes.remove(old)
-    baked.name = name
+        baked.name = name
+    else:
+        baked.name = f"{name}_evaluated"
 
 
-def evaluate_shared_subdivision_to_shared_data(
+def bake_shared_modifier_prefixes(
     objects: Iterable[pf.MeshObject],
 ) -> None:
-    """Blender evaluates a modifier stack once per object with no reuse across objects
-    sharing a datablock, so N aliases each deferring an identical subsurf pay for N
-    copies of the same result. Bake each such group's stack into one shared mesh;
-    singletons keep their deferred stack."""
+    """Bake shared object-invariant modifier prefixes into shared mesh data."""
     bpy.context.view_layer.update()
-    groups = {}
+    candidates = []
+    seen = set()
     for wrapped in objects:
         obj = wrapped.item()
         if obj is None or obj.type != "MESH" or obj.data is None or not obj.modifiers:
             continue
-        if any(mod.type != "SUBSURF" for mod in obj.modifiers):
+        pointer = obj.as_pointer()
+        if pointer in seen:
             continue
-        key = (
-            obj.data.as_pointer(),
-            tuple(_subsurf_settings(mod) for mod in obj.modifiers),
-        )
-        groups.setdefault(key, []).append(obj)
-    for group in groups.values():
-        if len(group) < 2:
+        seen.add(pointer)
+        if obj.data.shape_keys is not None or obj.animation_data is not None:
             continue
-        _bake_shared_stack(group)
-        logger.info(
-            f"Baked one shared modifier stack for {len(group)} objects "
-            f"sharing {group[0].data.name!r}"
-        )
+        candidates.append(obj)
+    while True:
+        groups = {}
+        for obj in candidates:
+            if not obj.modifiers or not _modifier_is_shareable(obj.modifiers[0]):
+                continue
+            key = (
+                obj.data.as_pointer(),
+                _object_modifier_context(obj),
+                _modifier_settings(obj.modifiers[0]),
+            )
+            groups.setdefault(key, []).append(obj)
+        shared_groups = [group for group in groups.values() if len(group) > 1]
+        if not shared_groups:
+            return
+        for group in shared_groups:
+            modifier_type = group[0].modifiers[0].type
+            _bake_shared_first_modifier(group)
+            logger.info(
+                f"Baked one shared {modifier_type} modifier for {len(group)} objects"
+            )
 
 
 def _apply_subsurf(obj: bpy.types.Object, subdivided: dict) -> None:
@@ -250,7 +306,7 @@ def _apply_subsurf(obj: bpy.types.Object, subdivided: dict) -> None:
     mods = [mod for mod in obj.modifiers if mod.type == "SUBSURF"]
     if not mods:
         return
-    key = (obj.data.as_pointer(), tuple(_subsurf_settings(mod) for mod in mods))
+    key = (obj.data.as_pointer(), tuple(_modifier_settings(mod) for mod in mods))
     shared = subdivided.get(key)
     if shared is not None:
         for mod in mods:

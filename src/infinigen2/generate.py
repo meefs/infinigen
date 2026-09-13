@@ -55,7 +55,7 @@ from infinigen2.exporters.util.blender_render import DisplacementMode
 from infinigen2 import GENERATORS_MANIFEST
 from infinigen2.cameras import camera_with_distance_framing_objects
 from infinigen2.exporters.realize_mesh import (
-    evaluate_shared_subdivision_to_shared_data,
+    bake_shared_modifier_prefixes,
     realize_scene,
 )
 from procfunc.util.manifest import import_item
@@ -585,7 +585,7 @@ def _unpack_by_category(category: str, result, data: dict):
 def _finalize_before_export(
     pipeline_parameters: dict, objects: list[pf.MeshObject]
 ) -> None:
-    evaluate_shared_subdivision_to_shared_data(objects)
+    bake_shared_modifier_prefixes(objects)
     mode = pipeline_parameters.get("displacement_mode")
     if mode == DisplacementMode.REALIZE_MESH:
         realize_scene()
@@ -828,7 +828,7 @@ def _main():  # noqa: C901
     generator_times = results.get("generator_times", {})
 
     if args.save_blend:
-        evaluate_shared_subdivision_to_shared_data(results["objects"])
+        bake_shared_modifier_prefixes(results["objects"])
         for l in [
             bpy.data.objects,
             bpy.data.materials,
