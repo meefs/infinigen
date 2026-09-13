@@ -55,7 +55,7 @@ cp src/infinigen2/manifest.json $OUTPUT_PATH
 # their _rand without importing infinigen2 (the web server runs a minimal env)
 uv run python -c "import json, sys; from infinigen2.list import preset_parents; sys.stdout.write(json.dumps(preset_parents()))" > $OUTPUT_PATH/preset_parents.json
 
-GEN_ARGS="--loglevel WARNING --sampling_noise_threshold 0.02"
+GEN_ARGS="--loglevel WARNING --sampling_noise_threshold 0.02 --cpu_threads 8"
 if [ -n "${RENDER_RUNNER:-}" ]; then
     read -r -a RENDER_RUNNER_ARGS <<< "$RENDER_RUNNER"
     PY_BIN="${RENDER_RUNNER_ARGS[0]}"

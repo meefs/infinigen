@@ -197,6 +197,12 @@ def get_parser():
         help="Number of samples for the rendering",
     )
     parser.add_argument(
+        "--cpu_threads",
+        type=int,
+        default=8,
+        help="Number of CPU threads Blender may use",
+    )
+    parser.add_argument(
         "--focal_length_mm",
         type=float,
         default=15,
@@ -750,6 +756,14 @@ def _main():  # noqa: C901
     rng = np.random.default_rng(seed)
     pf.ops.object.clear_scene()
 
+    if args.cpu_threads > 0:
+        bpy.context.scene.render.threads_mode = "FIXED"
+        bpy.context.scene.render.threads = args.cpu_threads
+    logger.info(
+        "Blender render threads: %s (%s mode)",
+        bpy.context.scene.render.threads,
+        bpy.context.scene.render.threads_mode,
+    )
     bpy.context.scene.render.resolution_x = args.resolution[0]
     bpy.context.scene.render.resolution_y = args.resolution[1]
     if args.fps is not None:
