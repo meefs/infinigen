@@ -734,6 +734,10 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.table.circular_dining_table_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.desk.desk_rand"
   },
   {
@@ -751,6 +755,10 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.table.cocktail_table_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.table.circular_cocktail_table_rand"
   },
   {
     "category": "Object",

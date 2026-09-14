@@ -24,6 +24,8 @@ __all__ = [
     "base_square_rand",
     "base_straight",
     "base_straight_rand",
+    "circular_cocktail_table_rand",
+    "circular_dining_table_rand",
     "cocktail_table_rand",
     "coffee_table_storage_rand",
     "coffee_table_dimensions_rand",
@@ -611,6 +613,25 @@ def table_top(
 
 
 @pf.nodes.node_function
+def _circular_table_top(
+    diameter: t.SocketOrVal[float] = 1.2,
+    thickness: t.SocketOrVal[float] = 0.05,
+) -> t.ProcNode[pf.MeshObject]:
+    top = mesh.quad_cylinder(
+        radius=diameter * 0.5,
+        depth=thickness,
+        resolution=32,
+        insets=3,
+    )
+    top = mesh.crease_sharp(top, threshold_degrees=40.0)
+    top = pf.nodes.geo.set_shade_smooth(geometry=top, shade_smooth=True)
+    return pf.nodes.geo.transform(
+        geometry=top,
+        translation=pf.nodes.math.combine_xyz(z=thickness * 0.5),
+    )
+
+
+@pf.nodes.node_function
 def _base_straight_geometry(
     dimensions: t.SocketOrVal[pf.Vector],
     leg_diameter: t.SocketOrVal[float],
@@ -959,6 +980,48 @@ def _table_pedestal_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult:
     )
 
 
+def _inscribed_base_dimensions(
+    dimensions: tuple[float, float, float],
+) -> tuple[float, float, float]:
+    x, y, z = dimensions
+    return (x / math.sqrt(2.0), y / math.sqrt(2.0), z)
+
+
+def _circular_table_straight_base_rand(
+    rng: pf.RNG, dimensions: tuple[float, float, float]
+) -> TableResult:
+    dimensions = _inscribed_base_dimensions(dimensions)
+    footprint = min(dimensions[0], dimensions[1])
+    return base_straight_rand(
+        rng,
+        dimensions,
+        leg_diameter_range=(0.02, 0.02 + 0.16 * footprint),
+        leg_placement_bottom_scale=1.0,
+        leg_inset_range=(0.0, 0.0),
+        leg_placement_top_scale=1.0,
+    )
+
+
+def _assemble_table(
+    top: pf.ProcNode[pf.MeshObject],
+    base: pf.MeshObject,
+    top_height: float,
+    top_material: pf.Material,
+    leg_material: pf.Material,
+) -> TableResult:
+    top = pf.nodes.geo.transform(top, translation=(0, 0, top_height))
+    top = pf.nodes.to_mesh_object(top)
+    pf.ops.object.set_material(
+        top, surface=top_material.surface, displacement=top_material.displacement
+    )
+    pf.ops.object.set_material(
+        base, surface=leg_material.surface, displacement=leg_material.displacement
+    )
+    pf.ops.object.join(top, base)
+    pf.ops.modifier.subdivide_surface(top, levels=3, _skip_apply=True)
+    return TableResult(mesh=top)
+
+
 def dining_table_rand(
     rng: pf.RNG,
     dimensions: tuple[float, float, float] | None = None,
@@ -1003,16 +1066,6 @@ def dining_table_rand(
         size=(x, y, top_thickness),
         support_loop_offset=top_support_loop_offset,
     )
-    top = pf.nodes.geo.transform(
-        top,
-        translation=(0, 0, top_height),
-        rotation=(0, 0, 0),
-        scale=(1, 1, 1),
-    )
-    top = pf.nodes.to_mesh_object(top)
-    pf.ops.object.set_material(
-        top, surface=top_material.surface, displacement=top_material.displacement
-    )
 
     if base is None:
         base_options = [
@@ -1023,14 +1076,51 @@ def dining_table_rand(
         base_fn = pf.control.choice(rng_base_choice, base_options)
         res = base_fn(rng=rng_base, dimensions=(x, y, top_height))
         base = res.mesh
+    return _assemble_table(top, base, top_height, top_material, leg_material)
 
-    pf.ops.object.set_material(
-        base, surface=leg_material.surface, displacement=leg_material.displacement
-    )
 
-    pf.ops.object.join(top, base)
-    pf.ops.modifier.subdivide_surface(top, levels=3, _skip_apply=True)
-    return TableResult(mesh=top)
+def circular_dining_table_rand(
+    rng: pf.RNG,
+    diameter: float | None = None,
+    height: float | None = None,
+    base: pf.MeshObject | None = None,
+    top_thickness: float | None = None,
+    top_material: pf.Material | None = None,
+    leg_material: pf.Material | None = None,
+) -> TableResult:
+    """Circular dining table sized for four chairs."""
+    (
+        rng_diameter,
+        rng_height,
+        rng_thickness,
+        rng_top_mat,
+        rng_leg_mat,
+        rng_base_choice,
+        rng_base,
+    ) = rng.spawn(7)
+    if diameter is None:
+        diameter = pf.random.clip_gaussian(rng_diameter, 1.15, 0.2, 0.95, 1.5)
+    if height is None:
+        height = pf.random.uniform(rng_height, 0.72, 0.76)
+    if top_thickness is None:
+        top_thickness = pf.random.uniform(rng_thickness, 0.03, 0.08)
+    vec = pf.nodes.shader.coord().uv
+    if top_material is None:
+        top_material = table_top_material_rand(rng_top_mat, vec)
+    if leg_material is None:
+        leg_material = furniture_material_rand(rng_leg_mat, vec)
+    top_height = height - top_thickness
+    if base is None:
+        base_fn = pf.control.choice(
+            rng_base_choice,
+            [
+                (_circular_table_straight_base_rand, 1.0),
+                (_table_pedestal_rand, 1.0),
+            ],
+        )
+        base = base_fn(rng_base, (diameter, diameter, top_height)).mesh
+    top = _circular_table_top(diameter=diameter, thickness=top_thickness)
+    return _assemble_table(top, base, top_height, top_material, leg_material)
 
 
 def side_table_dimensions_rand(rng: pf.RNG) -> pf.Vector:
@@ -1097,10 +1187,32 @@ def _cocktail_table_pedestal_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableRe
     )
 
 
-def cocktail_table_rand(rng: pf.RNG) -> TableResult:
-    """Square cocktail/bar table, usually with a wide pedestal base."""
+def circular_cocktail_table_rand(rng: pf.RNG) -> TableResult:
+    """Circular cocktail/bar table, usually with a wide pedestal base."""
     rng_dims, rng_thickness, rng_base_choice, rng_base, rng_table = rng.spawn(5)
-    x = pf.random.uniform(rng_dims, 0.5, 0.8)
+    diameter = pf.random.uniform(rng_dims, 0.5, 0.8)
+    height = pf.random.uniform(rng_dims, 1.0, 1.1)
+    top_thickness = pf.random.uniform(rng_thickness, 0.03, 0.08)
+    base_fn = pf.control.choice(
+        rng_base_choice,
+        [
+            (_cocktail_table_pedestal_rand, 2.0),
+            (_circular_table_straight_base_rand, 1.0),
+        ],
+    )
+    base = base_fn(rng_base, (diameter, diameter, height - top_thickness)).mesh
+    return circular_dining_table_rand(
+        rng_table,
+        diameter=diameter,
+        height=height,
+        base=base,
+        top_thickness=top_thickness,
+    )
+
+
+def _square_cocktail_table_rand(rng: pf.RNG) -> TableResult:
+    rng_dims, rng_thickness, rng_base_choice, rng_base, rng_table = rng.spawn(5)
+    size = pf.random.uniform(rng_dims, 0.5, 0.8)
     height = pf.random.uniform(rng_dims, 1.0, 1.1)
     top_thickness = pf.random.uniform(rng_thickness, 0.03, 0.08)
     base_fn = pf.control.choice(
@@ -1111,13 +1223,26 @@ def cocktail_table_rand(rng: pf.RNG) -> TableResult:
             (_table_square_base_rand, 1.0),
         ],
     )
-    base = base_fn(rng_base, (x, x, height - top_thickness))
+    base = base_fn(rng_base, (size, size, height - top_thickness)).mesh
     return dining_table_rand(
         rng_table,
-        (x, x, height),
-        base=base.mesh,
+        dimensions=(size, size, height),
+        base=base,
         top_thickness=top_thickness,
     )
+
+
+def cocktail_table_rand(rng: pf.RNG) -> TableResult:
+    """Circular or square cocktail/bar table."""
+    rng_choice, rng_table = rng.spawn(2)
+    table_fn = pf.control.choice(
+        rng_choice,
+        [
+            (circular_cocktail_table_rand, 1.0),
+            (_square_cocktail_table_rand, 1.0),
+        ],
+    )
+    return table_fn(rng_table)
 
 
 if __name__ == "__main__":

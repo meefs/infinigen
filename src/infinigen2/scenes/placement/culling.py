@@ -92,10 +92,10 @@ def place_surrounding(
     """Arrange items around `parent` with `arrange_fn(rng, parent)`, drop any a
     collider separates from the parent (a wall-snapped table's wall-side chairs land
     outside the room, with the wall between them and the table), cull the rest against
-    `colliders`, and re-sample the whole arrangement via repeat_attempts until at least
-    `min_kept` survive. `colliders` must exclude `parent` so the obstruction ray sees
-    the wall behind it, not the parent itself. Suits chairs around a dining table or
-    stools around a kitchen island, where one bulky design can collide every item away."""
+    `colliders`, and re-sample the whole arrangement until it is internally clear and
+    at least `min_kept` survive. `colliders` must exclude `parent` so the obstruction
+    ray sees the wall behind it, not the parent itself. Suits chairs around a dining
+    table or stools around a kitchen island."""
     pmin, pmax = (
         np.array(v) for v in pf.ops.attr.bbox_min_max(parent, global_coords=True)
     )
@@ -104,6 +104,9 @@ def place_surrounding(
     def attempt(r: pf.RNG) -> tuple[list[pf.MeshObject], ccol.CollisionSet] | None:
         items = arrange_fn(r, parent)
         items = keep_unobstructed(items, center, colliders, key=lambda m: m)
+        arrangement = ccol.collision_set([parent, *items])
+        if ccol.any_self_collision(arrangement):
+            return None
         kept, kept_colliders = keep_non_colliding(items, colliders, key=lambda m: m)
         if len(kept) < min_kept:
             return None
