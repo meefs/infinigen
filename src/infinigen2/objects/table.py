@@ -935,7 +935,7 @@ def _table_straight_base_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult
         rng,
         dimensions,
         leg_diameter_range=(0.02, 0.02 + 0.16 * footprint),
-        leg_inset_range=(0.05, 0.15),
+        leg_inset_range=(0.05 * footprint, 0.15 * footprint),
         leg_placement_top_scale=1.0,
     )
 

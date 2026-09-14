@@ -59,7 +59,7 @@ def test_art_color_preserves_image_warping_without_bsdf():
 @pytest.mark.parametrize(
     ("material_rand", "kwargs"),
     [
-        (functionality_lists._art_patterned_fabric_rand, {"translucency": 0.0}),
+        (functionality_lists.fabric_art_rand, {"translucency": 0.0}),
         (functionality_lists._art_patterned_paint_rand, {}),
     ],
 )
@@ -125,11 +125,11 @@ def _choice_options(monkeypatch, call, target):
     [
         (
             functionality_lists.fabric_sturdy_rand,
-            functionality_lists._art_patterned_fabric_rand,
+            functionality_lists.fabric_art_rand,
         ),
         (
             functionality_lists.fabric_light_rand,
-            functionality_lists._art_patterned_fabric_rand,
+            functionality_lists.fabric_art_rand,
         ),
         (
             functionality_lists.wall_material_rand,

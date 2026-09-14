@@ -842,11 +842,19 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.door.door_double_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.handles.lever_handle_rand"
   },
   {
     "category": "Object",
     "name": "infinigen2.objects.handles.bar_pull_handle_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.drawer.drawer_rand"
   },
   {
     "category": "Object",
@@ -954,5 +962,17 @@
   {
     "category": "Material",
     "name": "infinigen2.shaders.base_materials.gravel_concrete.random_gravel_concrete_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bed.bed_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.storage.storage_composite_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bedside_table.bedside_table_composite_rand"
   }
 ]

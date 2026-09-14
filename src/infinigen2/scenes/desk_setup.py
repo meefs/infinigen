@@ -102,8 +102,6 @@ def desk_setup_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     include_lamp: bool | None = None,
-    base_style: str | None = None,
-    surface_style: str | None = None,
 ) -> DeskSetupResult:
     """A compositional desk, one loosely centered chair, and optional lamp."""
     (
@@ -115,12 +113,7 @@ def desk_setup_rand(
         rng_lamp_pose,
     ) = rng.spawn(6)
 
-    desk = desk_object.desk_rand(
-        rng_desk,
-        dimensions=dimensions,
-        base_style=base_style,
-        surface_style=surface_style,
-    ).mesh
+    desk = desk_object.desk_rand(rng_desk, dimensions=dimensions).mesh
 
     rng_chair_choice, rng_chair_gen = rng_chair.spawn(2)
     chair_func = pf.control.choice(

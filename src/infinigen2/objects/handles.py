@@ -439,11 +439,15 @@ def bar_pull_handle(material: pf.Material | None = None) -> HandleResult:
 
 
 def bar_pull_handle_rand(
-    rng: pf.RNG, material: pf.Material | None = None
+    rng: pf.RNG,
+    material: pf.Material | None = None,
+    grip_length: float | None = None,
 ) -> HandleResult:
     rng, rng_mat = rng.spawn(2)
+    if grip_length is None:
+        grip_length = pf.random.uniform(rng, 0.1, 0.25)
     geo = _bar_pull_handle_geometry(
-        grip_length=pf.random.uniform(rng, 0.1, 0.25),
+        grip_length=grip_length,
         grip_radius=pf.random.uniform(rng, 0.006, 0.012),
         standoff_length=pf.random.uniform(rng, 0.025, 0.045),
         standoff_radius=pf.random.uniform(rng, 0.004, 0.008),

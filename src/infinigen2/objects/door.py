@@ -16,6 +16,7 @@ from infinigen2.util.mesh import metric_box_uv
 __all__ = [
     "DoorResult",
     "door_composite_rand",
+    "door_double_rand",
     "door_body",
     "door_body_rand",
     "door_with_handle",
@@ -260,6 +261,36 @@ def door_with_handle_rand(
     edge_offset = pf.random.uniform(rng_place, 0.04, 0.08)
     handle_z_frac = pf.random.uniform(rng_place, 0.42, 0.5)
     _place_handle(door, handle, dimensions, edge_offset, handle_z_frac)
+    return DoorResult(mesh=door)
+
+
+def door_double_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    material: pf.Material | None = None,
+    handle: pf.MeshObject | None = None,
+    inner_material: pf.Material | None = None,
+) -> DoorResult:
+    """Mirror one sampled door; dimensions specify the full pair's slab bounds."""
+    if dimensions is None:
+        rng, rng_dimensions = rng.spawn(2)
+        width = pf.random.uniform(rng_dimensions, 1.4, 1.9)
+        height = pf.random.uniform(rng_dimensions, 1.9, 2.1)
+        thickness = pf.random.uniform(rng_dimensions, 0.035, 0.045)
+        dimensions = pf.Vector((thickness, width, height))
+
+    leaf_width = dimensions.y * 0.5
+    leaf_dimensions = pf.Vector((dimensions.x, leaf_width, dimensions.z))
+    door = door_composite_rand(
+        rng,
+        dimensions=leaf_dimensions,
+        material=material,
+        handle=handle,
+        inner_material=inner_material,
+    ).mesh
+    pf.ops.mesh.transform(door, location=(0.0, -leaf_width, 0.0))
+    pf.ops.modifier.mirror(door, use_axis=(False, True, False))
+    pf.ops.mesh.transform(door, location=(0.0, leaf_width, 0.0))
     return DoorResult(mesh=door)
 
 

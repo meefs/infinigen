@@ -6,7 +6,7 @@
 # - Alexander Raistrick: refactor to procfunc/infinigen v2
 
 import math
-from typing import NamedTuple
+from typing import NamedTuple, cast
 
 import numpy as np
 import procfunc as pf
@@ -678,13 +678,19 @@ def _window_geometry(
 
     join = pf.nodes.geo.join_geometry([set_position_1, window_panel_result_1])
 
-    realized = pf.nodes.geo.realize_instances(join)
+    realized = cast(pf.ProcNode[pf.MeshObject], pf.nodes.geo.realize_instances(join))
+    creased = pf.nodes.geo.store_named_attribute(
+        domain="EDGE",
+        geometry=realized,
+        name="crease_edge",
+        value=1.0,
+    )
 
     # built in the XY plane (X=width, Y=height, Z=depth); reorient into the
     # shared wall frame (X=depth out of wall, Y=width, Z=height up)
-    reoriented = pf.nodes.geo.transform(geometry=realized, rotation=_WALL_REORIENT)
+    reoriented = pf.nodes.geo.transform(geometry=creased, rotation=_WALL_REORIENT)
 
-    bound_box = pf.nodes.geo.bound_box(reoriented)
+    bound_box = pf.nodes.geo.bound_box(cast(t.ProcNode[t.Geometry], reoriented))
 
     return _WindowGeometryResult(
         geometry=reoriented,

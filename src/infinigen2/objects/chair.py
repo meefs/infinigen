@@ -1481,6 +1481,7 @@ def chair_back_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
+    slat_count_rand: Callable[[pf.RNG, float, float], int] | None = None,
 ) -> ChairResult:
     """Slatted wooden back. `aspect` runs the slat cross-section from flat (wide
     in Y) to near-square; the support-loop offset then rounds it toward a spindle
@@ -1502,16 +1503,20 @@ def chair_back_rand(
     corner_r = pf.random.uniform(rng, 0.0, 0.49) * crest_height
     depth_r = pf.random.uniform(rng, 0.2, 0.49) * depth
 
-    two_span = pf.random.clip_gaussian(rng, 0.85, 0.2, 0.4, 1.0)
-    slats_choice = pf.control.choice(
-        rng,
-        [
-            ((pf.random.randint(rng, 4, 10), 1.0), 3.0),
-            ((2, two_span), 1.0),
-        ],
-    )
-    n_slats = slats_choice[0]
-    slat_span = slats_choice[1]
+    if slat_count_rand is None:
+        two_span = pf.random.clip_gaussian(rng, 0.85, 0.2, 0.4, 1.0)
+        slats_choice = pf.control.choice(
+            rng,
+            [
+                ((pf.random.randint(rng, 4, 10), 1.0), 3.0),
+                ((2, two_span), 1.0),
+            ],
+        )
+        n_slats = slats_choice[0]
+        slat_span = slats_choice[1]
+    else:
+        n_slats = slat_count_rand(rng, dimensions[1], slat_width)
+        slat_span = 1.0
     obj = chair_back(
         dimensions=dimensions,
         n_slats=n_slats,

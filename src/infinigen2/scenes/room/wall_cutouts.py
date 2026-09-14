@@ -12,7 +12,7 @@ from mathutils import Euler
 
 from infinigen2.curves.skirting_board_profile import trim_profile_rand
 from infinigen2.objects import storage, wall_art, window
-from infinigen2.objects.door import door_composite_rand
+from infinigen2.objects.door import door_composite_rand, door_double_rand
 from infinigen2.scenes.placement.distribute import (
     duplicates,
     propagate_modifiers_to_instances,
@@ -699,6 +699,9 @@ def wall_doors_rand(
     door_width = pf.random.uniform(rng, 0.85, 1.2)
     door_height = min(pf.random.uniform(rng, 2.0, 2.2), wall_height * 0.9)
     door_thickness = pf.random.clip_gaussian(rng, 0.0318, 0.0127, 0.0254, 0.0762)
+    door_func = pf.control.choice(
+        rng, [(door_composite_rand, 2.0), (door_double_rand, 1.0)]
+    )
 
     spacing_x = pf.random.uniform(rng, 2.0, 6.0)
     max_margin = wall_width - door_width - 0.2
@@ -717,7 +720,7 @@ def wall_doors_rand(
     reveal_depth = pf.random.uniform(rng, 0.1, 0.3)
     recess_pct = 0.9 + 0.1 * pf.random.uniform(rng, 0.0, 1.0)
 
-    door = door_composite_rand(
+    door = door_func(
         rng,
         dimensions=pf.Vector((door_thickness, door_width, door_height)),
     ).mesh

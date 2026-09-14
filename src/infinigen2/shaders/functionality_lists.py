@@ -56,6 +56,7 @@ __all__ = [
     "castor_wheel_material_rand",
     "ceiling_material_rand",
     "decorative_material_rand",
+    "fabric_art_rand",
     "fabric_light_rand",
     "fabric_sturdy_rand",
     "floor_material_rand",
@@ -268,10 +269,10 @@ def _dark_scratches_overlay(rng: pf.RNG, vector, material: pf.Material) -> pf.Ma
     )
 
 
-def _art_patterned_fabric_rand(
+def fabric_art_rand(
     rng: pf.RNG,
     vector: t.SocketOrVal[pf.Vector],
-    translucency: float,
+    translucency: float = 0.0,
 ) -> pf.Material:
     rng_color, rng_fabric = rng.spawn(2)
     color = graphicdesign.art_rand(rng_color, vector)
@@ -318,7 +319,7 @@ def fabric_sturdy_rand(
         fabric_patterned.fabric_patterned_translucent_rand,
         translucency=translucency,
     )
-    art_patterned = partial(_art_patterned_fabric_rand, translucency=translucency)
+    art_patterned = partial(fabric_art_rand, translucency=translucency)
     opaque = partial(fabric.fabric_rand, base_color=color)
     material_func = pf.control.choice(
         rng_choice,
@@ -358,7 +359,7 @@ def fabric_light_rand(
         fabric_patterned.fabric_patterned_translucent_rand,
         translucency=translucency,
     )
-    art_patterned = partial(_art_patterned_fabric_rand, translucency=translucency)
+    art_patterned = partial(fabric_art_rand, translucency=translucency)
     opaque = partial(fabric.fabric_rand, base_color=color)
     material_func = pf.control.choice(
         rng_choice,
