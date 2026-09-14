@@ -5,6 +5,7 @@
 
 from typing import NamedTuple
 
+import bpy
 import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
@@ -22,6 +23,7 @@ __all__ = [
     "crease_all_edges",
     "crease_by_angle",
     "crease_sharp",
+    "evaluated_world_bbox",
     "extrude_mesh_seamless_uvs",
     "extrude_mesh_seamless_uvs_along",
     "face_selection_boundary_curve",
@@ -36,6 +38,23 @@ __all__ = [
     "uv_winding_sign",
     "wall_cutout_split",
 ]
+
+
+def evaluated_world_bbox(obj: pf.MeshObject) -> tuple[np.ndarray, np.ndarray]:
+    item = obj.item()
+    evaluated = item.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+    count = len(mesh.vertices)
+    matrix = np.asarray(item.matrix_world)
+    if count == 0:
+        local = np.asarray(item.bound_box)
+    else:
+        local = np.empty(count * 3)
+        mesh.vertices.foreach_get("co", local)
+        local = local.reshape(-1, 3)
+    evaluated.to_mesh_clear()
+    world = (matrix[:3, :3] @ local.T).T + matrix[:3, 3]
+    return world.min(axis=0), world.max(axis=0)
 
 
 def quad_cap(

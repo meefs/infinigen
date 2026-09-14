@@ -8,6 +8,7 @@ from typing import NamedTuple
 
 import procfunc as pf
 
+from infinigen2.cameras import framing
 from infinigen2.lighting import sky_lighting
 from infinigen2.objects import window
 from infinigen2.scenes.desk_setup import desk_setup_in_room_rand
@@ -68,6 +69,7 @@ logger = logging.getLogger(__name__)
 
 class LivingroomResult(NamedTuple):
     all_objects: list[pf.MeshObject]
+    cameras: list[pf.CameraObject]
     lights: list[pf.LightObject]
     colliders: ccol.CollisionSet
     floor: pf.MeshObject
@@ -510,6 +512,7 @@ def _furnished_room_rand(
 
     return LivingroomResult(
         all_objects=all_objects,
+        cameras=[framing.camera_in_room_corner(shape.floor, float(room_dimensions.z))],
         lights=lights,
         colliders=ccol.collision_set(all_objects),
         floor=shape.floor,

@@ -9,7 +9,6 @@ import numpy as np
 import procfunc as pf
 import pytest
 
-from infinigen2 import generate
 from infinigen2.curves import skirting_board_profile
 from infinigen2.scenes.room import (
     room,
@@ -41,7 +40,7 @@ def _evaluated_world_extent(obj: pf.MeshObject) -> np.ndarray:
         modifier.show_viewport = True
         if modifier.type == "SUBSURF":
             modifier.levels = modifier.render_levels
-    lo, hi = generate._tight_world_bbox(obj)
+    lo, hi = mesh_util.evaluated_world_bbox(obj)
     return hi - lo
 
 

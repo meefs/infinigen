@@ -9,8 +9,39 @@ import procfunc as pf
 from infinigen2.util import camera_projection
 
 __all__ = [
+    "camera_in_room_corner",
     "camera_with_distance_framing_objects",
 ]
+
+
+@pf.tracer.generator
+def camera_in_room_corner(
+    floor: pf.MeshObject,
+    room_height: float,
+    focal_length_mm: float = 20.0,
+) -> pf.CameraObject:
+    item = floor.item()
+    centers = np.asarray(
+        [item.matrix_world @ polygon.center for polygon in item.data.polygons]
+    )
+    if not len(centers):
+        raise ValueError("room floor has no faces")
+
+    average = centers[:, :2].mean(axis=0)
+    target_index = np.argmin(np.linalg.norm(centers[:, :2] - average, axis=1))
+    target_xy = centers[target_index, :2]
+    corner_index = np.argmax(np.linalg.norm(centers[:, :2] - target_xy, axis=1))
+    corner_xy = centers[corner_index, :2]
+
+    camera_height = min(1.6, room_height * 0.65)
+    target_height = min(1.2, camera_height * 0.75)
+    location = pf.Vector((*corner_xy, camera_height))
+    target = pf.Vector((*target_xy, target_height))
+    rotation = (target - location).to_track_quat("-Z", "Y").to_euler()
+    camera = pf.ops.primitives.perspective_camera(focal_length_mm=focal_length_mm)
+    pf.ops.object.set_transform(camera, location=location, rotation_euler=rotation)
+    camera.item().name = "Camera"
+    return camera
 
 
 @pf.tracer.generator

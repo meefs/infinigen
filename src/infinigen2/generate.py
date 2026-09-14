@@ -351,56 +351,7 @@ def _cleanup_except_returnvals(return_data: dict) -> list[str]:
     return cleaned
 
 
-def _tight_world_bbox(obj: pf.MeshObject) -> tuple[np.ndarray, np.ndarray]:
-    """Tight world-space bbox from evaluated vertices. bbox_min_max(global_coords=True)
-    is the local AABB transformed by matrix_world, which inflates rotated objects."""
-    item = obj.item()
-    eval_obj = item.evaluated_get(bpy.context.evaluated_depsgraph_get())
-    mesh = eval_obj.to_mesh()
-    n = len(mesh.vertices)
-    mat = np.array(item.matrix_world)
-    if n == 0:
-        eval_obj.to_mesh_clear()
-        local = np.array(item.bound_box)
-    else:
-        local = np.empty(n * 3)
-        mesh.vertices.foreach_get("co", local)
-        eval_obj.to_mesh_clear()
-        local = local.reshape(-1, 3)
-    world = (mat[:3, :3] @ local.T).T + mat[:3, 3]
-    return world.min(0), world.max(0)
-
-
-def _bounds(objects: list[pf.MeshObject]) -> tuple[np.ndarray, np.ndarray]:
-    mins, maxs = zip(*[_tight_world_bbox(o) for o in objects], strict=True)
-    return np.minimum.reduce(mins), np.maximum.reduce(maxs)
-
-
-def _centroid_camera(
-    objects: list[pf.MeshObject],
-    frac: pf.Vector,
-    footprint: pf.MeshObject | None = None,
-) -> pf.CameraObject:
-    z_min, z_max = _bounds(objects)
-    xy_min, xy_max = _bounds([footprint]) if footprint is not None else (z_min, z_max)
-    lo = np.array([xy_min[0], xy_min[1], z_min[2]])
-    hi = np.array([xy_max[0], xy_max[1], z_max[2]])
-    extent = hi - lo
-    loc = pf.Vector(lo + extent * np.array(frac))
-    # Aim at the scene centroid, biased low so the floor and furniture stay in frame
-    target = pf.Vector(lo + extent * np.array((0.5, 0.5, 0.35)))
-    rotation_euler = (target - loc).to_track_quat("-Z", "Y").to_euler()
-    camera = pf.ops.primitives.perspective_camera()
-    pf.ops.object.set_transform(camera, loc, rotation_euler)
-    camera.item().name = "Camera"
-    camera.item().data.lens = 20
-    return camera
-
-
 def _dummy_camera(data: dict) -> pf.CameraObject:
-    floor = data.get("floor")
-    if floor is not None:
-        return _centroid_camera(data["objects"], (0.2, 0.2, 0.5), footprint=floor)
     camera = camera_with_distance_framing_objects(
         data["objects"], pf.Vector((1, 1, 0.4)), margin_pct=0.05, use_bbox=True
     )
@@ -543,8 +494,6 @@ def _unpack_scene(result, data: dict):
         data["curve"] = curves[0]
     if hasattr(result, "colliders"):
         data["colliders"] = result.colliders
-    if getattr(result, "floor", None) is not None:
-        data["floor"] = result.floor
     if getattr(result, "dimensions", None) is not None:
         data["dimensions"] = result.dimensions
         dims = result.dimensions
