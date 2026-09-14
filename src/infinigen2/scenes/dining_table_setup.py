@@ -15,8 +15,10 @@ from infinigen2.objects import chair, rug, table
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import place_surrounding
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
+from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.scenes.setup_utils import (
     MeshResult,
+    jitter_object_rotation_rand,
     retry_place,
 )
 
@@ -125,12 +127,11 @@ def _chair_row(
     span: t.SocketOrVal[float],
     theta: t.SocketOrVal[float] = 0.0,
     seed: t.SocketOrVal[int] = 0,
-    rot_jitter: t.SocketOrVal[float] = 0.0,
     facing_rotation: t.SocketOrVal[float] = math.pi,
+    backward_offset: t.SocketOrVal[float] = 0.0,
+    lateral_offset: t.SocketOrVal[float] = 0.0,
 ) -> pf.ProcNode[t.Instances]:
-    """One row of `count` chairs centered over `span` along +Y at local +X=dist,
-    each facing -X (toward the origin) with a small random z jitter, then the whole
-    row rotated by `theta` about Z to reach any of the table's four sides."""
+    """One row of `count` inward-facing chairs centered along one table side."""
     count_f = count.astype(dtype=float)
     is_multi = pf.nodes.func.greater_than(a=count_f, b=1.0).astype(dtype=float)
     start = span * -0.5 * is_multi
@@ -140,13 +141,23 @@ def _chair_row(
         start_location=pf.nodes.math.combine_xyz(x=dist, y=start),
         offset=pf.nodes.math.combine_xyz(y=step),
     )
-    jitter = pf.nodes.func.random_value(min=-1.0, max=1.0, seed=seed) * rot_jitter
+    backward = pf.nodes.func.random_value(
+        min=0.0, max=1.0, seed=pf.nodes.math.add(seed, 4).astype(dtype=int)
+    )
+    lateral = pf.nodes.func.random_value(
+        min=-1.0, max=1.0, seed=pf.nodes.math.add(seed, 8).astype(dtype=int)
+    )
+    line = pf.nodes.geo.set_position(
+        geometry=line,
+        offset=pf.nodes.math.combine_xyz(
+            x=backward * backward_offset,
+            y=lateral * lateral_offset,
+        ),
+    )
     row = pf.nodes.geo.instance_on_points(
         points=line,
         instance=chair_geo,
-        rotation=pf.nodes.math.combine_xyz(z=facing_rotation + jitter).astype(
-            dtype=pf.Euler
-        ),
+        rotation=pf.nodes.math.combine_xyz(z=facing_rotation).astype(dtype=pf.Euler),
     )
     return pf.nodes.geo.transform(
         row, rotation=pf.nodes.math.combine_xyz(z=theta).astype(dtype=pf.Euler)
@@ -159,12 +170,14 @@ def arrange_dining_chairs(
     chair_spacing: float,
     tuck: float,
     edge_margin: float,
-    rot_jitter: float,
     include_ends: bool = True,
     long_chair_objs: tuple[pf.MeshObject, pf.MeshObject] | None = None,
     long_chair_tucks: tuple[float, float] | None = None,
     long_chair_face_outward: tuple[bool, bool] | None = None,
-    long_chair_rot_jitters: tuple[float, float] | None = None,
+    backward_offset: float = 0.0,
+    lateral_offset: float = 0.0,
+    disorder: float = 1.0,
+    offset_seed: int = 0,
 ) -> list[pf.MeshObject]:
     """Instance `chair_obj` around the sides of `dining_table`, facing inward, posed
     by the table's current transform, and realize the instances into one object per
@@ -172,8 +185,8 @@ def arrange_dining_chairs(
     nodegraph. `chair_spacing` is the gap between adjacent chairs, `tuck` the meters
     the chair front is pulled in past the table edge (negative leaves a gap),
     `edge_margin` the clearance kept at each table corner so chairs never overhang
-    the ends, `rot_jitter` the random per-chair z rotation (radians). `include_ends`
-    toggles the chairs on the +/-Y ends."""
+    the ends. `include_ends` toggles the chairs on the +/-Y ends. Backward and
+    lateral offsets are in meters relative to each table edge."""
     # TODO replace the four per-side rows with one geonode pass: split the table bbox
     # into disconnected edge curves, resample each by length for spacing/count, then
     # instance chairs facing inward -- drops most of these args. Needs visual iteration.
@@ -185,8 +198,6 @@ def arrange_dining_chairs(
         long_chair_tucks = (tuck, tuck)
     if long_chair_face_outward is None:
         long_chair_face_outward = (False, False)
-    if long_chair_rot_jitters is None:
-        long_chair_rot_jitters = (rot_jitter, rot_jitter)
     long_chair_geos = []
     for i, long_chair_obj in enumerate(long_chair_objs):
         collection = pf.types.Collection([long_chair_obj], name=f"dining_long_side_{i}")
@@ -211,15 +222,16 @@ def arrange_dining_chairs(
     ).astype(dtype=int)
     span_x = pf.nodes.math.maximum(avail_x - chair_width, 0.0)
 
-    def make_row(geo, count, dist, span, theta, seed, row_jitter, face_outward=False):
+    def make_row(geo, count, dist, span, theta, seed, face_outward=False):
         return _chair_row(
             chair_geo=geo,
             count=count,
             dist=dist,
             span=span,
             theta=theta,
-            seed=seed,
-            rot_jitter=row_jitter,
+            seed=offset_seed + seed,
+            backward_offset=backward_offset * disorder,
+            lateral_offset=lateral_offset * disorder,
             facing_rotation=0.0 if face_outward else math.pi,
         )
 
@@ -245,18 +257,13 @@ def arrange_dining_chairs(
                 span_y,
                 math.pi * i,
                 i + 1,
-                long_chair_rot_jitters[i],
                 long_chair_face_outward[i],
             )
         )
         long_bottom = pf.nodes.math.minimum(long_bottom, long_box.min.z)
     if include_ends:
-        rows.append(
-            make_row(chair_geo, n_x, dist_y, span_x, math.pi * 0.5, 3, rot_jitter)
-        )
-        rows.append(
-            make_row(chair_geo, n_x, dist_y, span_x, math.pi * 1.5, 4, rot_jitter)
-        )
+        rows.append(make_row(chair_geo, n_x, dist_y, span_x, math.pi * 0.5, 3))
+        rows.append(make_row(chair_geo, n_x, dist_y, span_x, math.pi * 1.5, 4))
     # chairs stand on the floor (z=0.001 like _place_on_floor), not at the table's z
     table_loc = pf.nodes.math.separate_xyz(table_info.location)
     posed = pf.nodes.geo.transform(
@@ -276,25 +283,19 @@ def dining_setup_rand(
     chair_spacing: float | None = None,
     tuck: float | None = None,
     edge_margin: float | None = None,
-    rot_jitter: float | None = None,
     include_ends: bool | None = None,
     dining_table: pf.MeshObject | None = None,
+    colliders: ccol.CollisionSet | None = None,
+    backward_offset: float = 0.30,
+    lateral_offset: float = 0.30,
 ) -> DiningSetupResult:
     """A dining table with a single dining chair design instanced around all four
     sides facing inward. Builds the table, one chair, then arranges copies of the
     chair around it; chairs follow the table's pose. Pass `dining_table` to arrange
     chairs around an existing (already posed) table instead of sampling one."""
-    rng, rng_dims, rng_table, rng_chair_dims, rng_chair = rng.spawn(5)
-    if chair_spacing is None:
-        chair_spacing = pf.random.uniform(rng, 0.0625, 0.1875)
-    if tuck is None:
-        tuck = pf.random.clip_gaussian(rng, 0.1, 0.12, -0.08, 0.3)
-    if edge_margin is None:
-        edge_margin = pf.random.uniform(rng, 0.08, 0.20)
-    if rot_jitter is None:
-        rot_jitter = pf.random.uniform(rng, 0.05, 0.10)
-    if include_ends is None:
-        include_ends = pf.control.choice(rng, [(True, 1.0), (False, 1.0)])
+    if colliders is None:
+        colliders = ccol.collision_set([])
+    rng_dims, rng_table, rng_attempts, rng_jitter_objects = rng.spawn(4)
 
     if dining_table is None:
         table_dimensions = table.table_dimensions_rand(rng_dims)
@@ -309,31 +310,67 @@ def dining_setup_rand(
         )
         table_dimensions = table_max - table_min
 
-    seat_clearance = pf.random.uniform(rng_chair_dims, 0.27, 0.30)
-    chair_dims = chair.dining_chair_dimensions_rand(
-        rng_chair_dims,
-        seat_elevation=table_dimensions[2] - seat_clearance,
-    )
-    chair_res = chair.chair_rand(rng_chair, dimensions=chair_dims)
+    def attempt(rng: pf.RNG) -> tuple[list[pf.MeshObject], float] | None:
+        rng_params, rng_chair_dims, rng_chair, rng_disorder = rng.spawn(4)
+        spacing = chair_spacing
+        if spacing is None:
+            spacing = pf.random.uniform(rng_params, 0.0625, 0.1875)
+        chair_tuck = tuck
+        if chair_tuck is None:
+            chair_tuck = pf.random.clip_gaussian(rng_params, 0.1, 0.12, -0.08, 0.3)
+        margin = edge_margin
+        if margin is None:
+            margin = pf.random.uniform(rng_params, 0.08, 0.20)
+        ends = include_ends
+        if ends is None:
+            ends = pf.control.choice(rng_params, [(True, 1.0), (False, 1.0)])
 
-    chairs = arrange_dining_chairs(
-        chair_res.mesh,
-        dining_table,
-        chair_spacing,
-        tuck,
-        edge_margin,
-        rot_jitter,
-        include_ends,
+        seat_clearance = pf.random.uniform(rng_chair_dims, 0.27, 0.30)
+        chair_dims = chair.dining_chair_dimensions_rand(
+            rng_chair_dims,
+            seat_elevation=table_dimensions[2] - seat_clearance,
+        )
+        chair_res = chair.chair_rand(rng_chair, dimensions=chair_dims)
+        disorder = pf.random.uniform(rng_disorder, 0.0, 1.0) ** 2
+        chairs = arrange_dining_chairs(
+            chair_res.mesh,
+            dining_table,
+            spacing,
+            chair_tuck,
+            margin,
+            ends,
+            backward_offset=backward_offset,
+            lateral_offset=lateral_offset,
+            disorder=disorder,
+            offset_seed=pf.random.randint(rng_params, 0, 2**20),
+        )
+        max_angle = (
+            pf.random.uniform(rng_disorder, math.radians(30), math.radians(52.5))
+            * disorder
+        )
+        arrangement_colliders = ccol.collision_set([dining_table, *chairs])
+        if ccol.any_self_collision(arrangement_colliders):
+            return None
+        if any(ccol.intersection_test(colliders, chair_obj) for chair_obj in chairs):
+            return None
+        return chairs, max_angle
+
+    arrangement = repeat_attempts(attempt, rng_attempts, attempts=12)
+    if arrangement is None:
+        raise RuntimeError("Could not generate a collision-free dining arrangement")
+    chairs, max_angle = arrangement
+
+    rotation_colliders = ccol.collision_set(
+        [*colliders.objs, dining_table, *chairs], cache=colliders
     )
+    chair_rngs = rng_jitter_objects.spawn(len(chairs))
+    for chair_obj, chair_rng in zip(chairs, chair_rngs, strict=True):
+        jitter_object_rotation_rand(chair_rng, chair_obj, max_angle, rotation_colliders)
 
     all_objects = [dining_table, *chairs]
     return DiningSetupResult(
         dining_table=dining_table, chairs=chairs, all_objects=all_objects
     )
-
-
-def _arrange_chairs_around(rng: pf.RNG, dining_table: pf.MeshObject) -> list:
-    return dining_setup_rand(rng, dining_table=dining_table).chairs
 
 
 def dining_table_setup_rand(
@@ -367,9 +404,15 @@ def dining_table_setup_rand(
 
     chair_objs: list[MeshResult] = []
     if diningtable_objs:
+
+        def arrange_chairs(rng: pf.RNG, parent: pf.MeshObject) -> list[pf.MeshObject]:
+            return dining_setup_rand(
+                rng, dining_table=parent, colliders=colliders
+            ).chairs
+
         # colliders here excludes the table so the obstruction ray hits the wall behind it
         chair_meshes, colliders = place_surrounding(
-            rng_setup, diningtable_objs[0].mesh, _arrange_chairs_around, colliders
+            rng_setup, diningtable_objs[0].mesh, arrange_chairs, colliders
         )
         chair_objs = [_BareMeshResult(mesh=c) for c in chair_meshes]
         logger.info(f"Kept {len(chair_objs)} dining chairs after obstruction/collision")

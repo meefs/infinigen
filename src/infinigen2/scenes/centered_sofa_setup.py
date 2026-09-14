@@ -4,6 +4,7 @@
 # Authors: Alexander Raistrick
 
 import logging
+import math
 from typing import NamedTuple
 
 import numpy as np
@@ -13,7 +14,12 @@ from infinigen2.objects import rug, table
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding, keep_unobstructed
 from infinigen2.scenes.placement.snap import snap_to_plane
-from infinigen2.scenes.setup_utils import MeshResult, retry_place, sofa_object_rand
+from infinigen2.scenes.setup_utils import (
+    MeshResult,
+    jitter_object_rotation_rand,
+    retry_place,
+    sofa_object_rand,
+)
 
 __all__ = ["CenteredSofaSetupResult", "centered_sofa_setup_rand"]
 
@@ -82,7 +88,16 @@ def centered_sofa_setup_rand(
         room_dimensions = pf.Vector((5.0, 5.0, 3.0))
     if colliders is None:
         colliders = ccol.collision_set([])
-    rug_objs = _rug_rand(rng, room_dimensions=room_dimensions)
+    (
+        rng_rug,
+        rng_arrange,
+        rng_sofas,
+        rng_jitter_amount,
+        rng_jitter_objects,
+        rng_coffee,
+        rng_output,
+    ) = rng.spawn(7)
+    rug_objs = _rug_rand(rng_rug, room_dimensions=room_dimensions)
     rug_obj = rug_objs[0]
     cmin, cmax = (
         np.array(bound)
@@ -90,33 +105,36 @@ def centered_sofa_setup_rand(
     )
     center = (cmin + cmax) / 2
 
-    # one sofa per chosen rug side, snapped to that side facing inward
     side_names = ["right", "left", "front", "back"]
-    n_sides = pf.random.randint(rng, 2, 5)
+    n_sides = pf.random.randint(rng_arrange, 2, 4)
     sides = [
         side_names[int(i)]
-        for i in rng.choice(len(side_names), size=n_sides, replace=False)
+        for i in rng_arrange.choice(len(side_names), size=n_sides, replace=False)
     ]
-    n = len(sides)
-    rngs = rng.spawn(n)
+    sofa_rngs = rng_sofas.spawn(n_sides)
     sofas = []
-    for i in range(n):
-        sofas.append(sofa_object_rand(rngs[i]))
+    for sofa_rng in sofa_rngs:
+        sofas.append(sofa_object_rand(sofa_rng))
     placed_sofas = []
-    for i in range(n):
-        sofa_obj = retry_place(
-            rngs[i],
-            sofas[i],
-            colliders,
-            _snap_facing_rug,
-            rug_obj=rug_obj,
-            parent_side=sides[i],
+    for side, sofa_rng, sofa_obj in zip(sides, sofa_rngs, sofas, strict=True):
+        placed_sofas.append(
+            retry_place(
+                sofa_rng,
+                sofa_obj,
+                colliders,
+                _snap_facing_rug,
+                rug_obj=rug_obj,
+                parent_side=side,
+            )
         )
-        placed_sofas.append(sofa_obj)
-    sofas = placed_sofas
-    sofas = keep_unobstructed(sofas, center, colliders)
-    sofa_objs, colliders = keep_non_colliding(sofas, colliders)
-    logger.info(f"Placed {len(sofa_objs)} carpet sofas out of {n} attempts")
+    placed_sofas = keep_unobstructed(placed_sofas, center, colliders)
+    sofa_objs, colliders = keep_non_colliding(placed_sofas, colliders)
+    logger.info(f"Placed {len(sofa_objs)} carpet sofas out of {n_sides} attempts")
+
+    max_angle = math.radians(5) * pf.random.uniform(rng_jitter_amount, 0.0, 1.0) ** 3
+    sofa_rngs = rng_jitter_objects.spawn(len(sofa_objs))
+    for sofa_obj, sofa_rng in zip(sofa_objs, sofa_rngs, strict=True):
+        jitter_object_rotation_rand(sofa_rng, sofa_obj.mesh, max_angle, colliders)
 
     def _place_coffee(rng: pf.RNG) -> list[MeshResult]:
         child = table.coffee_table_rand(rng)
@@ -127,11 +145,11 @@ def centered_sofa_setup_rand(
         )
         return [child]
 
-    center_coffee = _place_coffee(rng)
+    center_coffee = _place_coffee(rng_coffee)
     center_coffee, colliders = keep_non_colliding(center_coffee, colliders)
 
     # sofas already ringed the carpet above; drop the rug ~1/3 of the time
-    out_rugs = pf.control.choice(rng, [(rug_objs, 2.0), ([], 1.0)])
+    out_rugs = pf.control.choice(rng_output, [(rug_objs, 2.0), ([], 1.0)])
 
     all_objects = [r.mesh for r in sofa_objs + center_coffee] + out_rugs
     return CenteredSofaSetupResult(sofa_objs, center_coffee, out_rugs, all_objects)

@@ -23,6 +23,7 @@ from infinigen2.scenes.placement.snap import snap_to_plane
 __all__ = [
     "MeshResult",
     "back_face_grounded",
+    "jitter_object_rotation_rand",
     "random_bbox_poses_animation_rand",
     "retry_place",
     "side_table_object_rand",
@@ -46,6 +47,44 @@ MR = TypeVar("MR", bound="MeshResult")
 class MeshResult(Protocol):
     @property
     def mesh(self) -> pf.MeshObject: ...
+
+
+def _yaw_about_point(
+    location: tuple[float, float, float],
+    center: np.ndarray,
+    yaw: float,
+) -> tuple[float, float, float]:
+    """Rotate `location` by `yaw` about the vertical axis through `center`."""
+    rot = np.array([[np.cos(yaw), -np.sin(yaw)], [np.sin(yaw), np.cos(yaw)]])
+    x, y = rot @ (np.asarray(location[:2]) - center[:2]) + center[:2]
+    return (x, y, location[2])
+
+
+def jitter_object_rotation_rand(
+    rng: pf.RNG,
+    obj: pf.MeshObject,
+    max_angle: float,
+    colliders: ccol.CollisionSet,
+    attempts: int = 12,
+) -> None:
+    """Retry yaw against every other object in `colliders`."""
+    item = obj.item()
+    location = tuple(item.location)
+    rotation = tuple(item.rotation_euler)
+    bbox_min, bbox_max = pf.ops.attr.bbox_min_max(obj, global_coords=True)
+    center = (np.asarray(bbox_min) + np.asarray(bbox_max)) / 2
+    other_objs = [other for other in colliders.objs if other.item() is not item]
+    other_colliders = ccol.collision_set(other_objs, cache=colliders)
+    for attempt_rng in rng.spawn(attempts):
+        yaw = pf.random.uniform(attempt_rng, -max_angle, max_angle)
+        pf.ops.object.set_transform(
+            obj,
+            location=_yaw_about_point(location, center, yaw),
+            rotation_euler=(rotation[0], rotation[1], rotation[2] + yaw),
+        )
+        if not ccol.intersection_test(other_colliders, obj):
+            return
+    pf.ops.object.set_transform(obj, location=location, rotation_euler=rotation)
 
 
 @pf.tracer.grammar
