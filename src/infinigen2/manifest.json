@@ -498,6 +498,11 @@
   },
   {
     "category": "Material",
+    "name": "infinigen2.shaders.base_materials.leaf.leaf_rand",
+    "integration_test_string": "leaf_rand material_banana render_cycles"
+  },
+  {
+    "category": "Material",
     "name": "infinigen2.shaders.functionality_lists.floor_material_rand"
   },
   {
@@ -982,5 +987,37 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.bedside_table.bedside_table_composite_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.phyllo_plant.plant_phyllo_basal_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.phyllo_plant.plant_phyllo_ascending_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.leaf.leaf_simple_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.leaf_broadleaf.leaf_broadleaf_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.leaf_ginko.leaf_ginko_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.leaf_maple.leaf_maple_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.plant_pot.plant_pot_large_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.plant_pot.plant_pot_small_rand"
   }
 ]
