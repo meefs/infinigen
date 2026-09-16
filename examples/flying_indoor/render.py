@@ -267,11 +267,12 @@ def main():
         pf.ops.file.save_blend(output_path=args.save_blend)
         return
 
-    render_tris = sum(estimated_eval_tricount(obj) for obj in objects)
+    render_tris, object_tris = estimated_eval_tricount(objects)
     logger.info("Render-level triangles: %d", render_tris)
     if args.max_render_tris and render_tris > args.max_render_tris:
         raise RejectedScene(
-            f"{render_tris} render-level triangles exceeds bound {args.max_render_tris}"
+            f"Scene exceeded triangle limit: {render_tris=} "
+            f"limit={args.max_render_tris} highest_objects={object_tris[-10:]}"
         )
 
     render_kwargs = dict(
