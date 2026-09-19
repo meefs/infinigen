@@ -56,18 +56,25 @@ def _nishita_sky(
     strength: float = 0.4,
     sun_disc: bool = True,
 ) -> pf.World:
-    sky_texture = pf.nodes.texture.sky(
-        sky_type="NISHITA",
-        sun_size=np.deg2rad(sun_size_deg),
-        sun_intensity=sun_intensity,
-        sun_elevation=np.deg2rad(sun_elevation_deg),
-        sun_rotation=np.deg2rad(sun_rotation_deg),
-        altitude=altitude,
-        air_density=air_density,
-        dust_density=dust_density,
-        ozone_density=ozone_density,
-        sun_disc=sun_disc,
-    )
+    if sun_disc:
+        sky_texture = pf.nodes.texture.sky_texture_nishita(
+            sun_size=np.deg2rad(sun_size_deg),
+            sun_intensity=sun_intensity,
+            sun_elevation=np.deg2rad(sun_elevation_deg),
+            sun_rotation=np.deg2rad(sun_rotation_deg),
+            altitude=altitude,
+            air_density=air_density,
+            dust_density=dust_density,
+            ozone_density=ozone_density,
+        )
+    else:
+        sky_texture = pf.nodes.texture.sky_texture_nishita(
+            altitude=altitude,
+            air_density=air_density,
+            dust_density=dust_density,
+            ozone_density=ozone_density,
+            sun_disc=False,
+        )
 
     shader = pf.nodes.shader.background(sky_texture, strength=strength)
     return pf.nodes.to_environment(surface=shader)
@@ -145,8 +152,7 @@ def _hosek_wilkie_sky(
     )
     sun_direction = euler.to_matrix() @ pf.Vector((0, 0, 1))
 
-    sky_texture = pf.nodes.texture.sky(
-        sky_type="HOSEK_WILKIE",
+    sky_texture = pf.nodes.texture.sky_texture_hosek_wilkie(
         sun_direction=sun_direction,
         turbidity=turbidity,
         ground_albedo=ground_albedo,

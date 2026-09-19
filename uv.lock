@@ -789,7 +789,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=1.5" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "procfunc", specifier = ">=0.35,<0.36" },
+    { name = "procfunc", specifier = ">=0.36,<0.37" },
     { name = "psutil", marker = "extra == 'infinigen1'" },
     { name = "pyglet", marker = "extra == 'vis'", specifier = "<2" },
     { name = "pyrender", marker = "extra == 'terrain'", specifier = "<0.2.0" },
@@ -1298,16 +1298,16 @@ wheels = [
 
 [[package]]
 name = "procfunc"
-version = "0.35.1"
+version = "0.36.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bpy" },
     { name = "numpy" },
     { name = "pandas" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7d/ee/b680ddc47829f496491cd94c2c9fd695e8481769abfe9450bd9ddddd2911/procfunc-0.35.1.tar.gz", hash = "sha256:71d0f779c07ab72156d8b3aa8a9316ec37da61ed84cc718b393961fa6d493fa3", size = 304331, upload-time = "2026-08-25T03:06:01.231Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/48/08/d74bfd12967bd08cdaf635b4da3974cade3ba037b63617a30d9b23346a72/procfunc-0.36.0.tar.gz", hash = "sha256:8e20f83c38e7e8c872861be842b3e895aef0fe9b1200966723a3c421f0f9216d", size = 315994, upload-time = "2026-09-18T19:41:54.655Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/74/943e84fff18067eab7cdb578f93b07c9935ee0a50045a6d6c5cad28b1108/procfunc-0.35.1-py3-none-any.whl", hash = "sha256:98fb670b7113c6d3053f45482fa9a30efe8157ae39dcafb3a39d5d159bec14dd", size = 319776, upload-time = "2026-08-25T03:06:00.024Z" },
+    { url = "https://files.pythonhosted.org/packages/db/53/b179fd5d064c334b1915f81a8a3beff7d06a27f281e057e2d5b9a6751bb6/procfunc-0.36.0-py3-none-any.whl", hash = "sha256:2012d290c70792a953ab51f9c5b9eeec43a176891ae52c5ca7b00fadf09bb4ad", size = 330249, upload-time = "2026-09-18T19:41:53.372Z" },
 ]
 
 [[package]]
