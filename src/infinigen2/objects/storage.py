@@ -874,9 +874,9 @@ def grid_legs_rand(
     spacing_frac = pf.random.clip_gaussian(rng, 0.5, 0.3, 0.25, max_spacing)
     if diameter is None:
         diameter = pf.random.uniform(rng, 0.025, 0.14)
-    return pf.nodes.to_mesh_object(
-        _grid_legs(depth, width, leg_height, margin_frac, spacing_frac, diameter)
-    )
+    geo = _grid_legs(depth, width, leg_height, margin_frac, spacing_frac, diameter)
+    geo = crease_sharp(geo, threshold_degrees=30.0)
+    return pf.nodes.to_mesh_object(geo)
 
 
 def _table_base_rand(
