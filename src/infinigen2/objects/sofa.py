@@ -18,6 +18,7 @@ from infinigen2.shaders.functionality_lists import (
     decorative_material_rand,
     fabric_sturdy_rand,
 )
+from infinigen2.util import mesh as mesh_util
 
 __all__ = [
     "SofaResult",
@@ -59,48 +60,6 @@ def _array_fill_line(
 
     realize_instances = pf.nodes.geo.realize_instances(instance_on_points)
     return realize_instances
-
-
-@pf.nodes.node_function
-def _corner_cube(
-    dimensions: t.SocketOrVal[pf.Vector],
-    location: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
-    centering_loc: t.SocketOrVal[pf.Vector] = (0.1, 0.5, 1.0),
-    supporting_edge_fac: t.SocketOrVal[float] = 0.0,
-    vertices_x: t.SocketOrVal[int] = 2,
-    vertices_y: t.SocketOrVal[int] = 2,
-    vertices_z: t.SocketOrVal[int] = 2,
-    crease: t.SocketOrVal[float] = 0.0,
-) -> pf.ProcNode[pf.MeshObject]:
-    cube = pf.nodes.geo.mesh_cube(
-        size=dimensions,
-        vertices_x=vertices_x,
-        vertices_y=vertices_y,
-        vertices_z=vertices_z,
-    )
-
-    transform_translation_a = pf.nodes.math.map_range(
-        value=centering_loc,
-        from_min=(0.0, 0.0, 0.0),
-        from_max=(1.0, 1.0, 1.0),
-        to_min=(0.5, 0.5, 0.5),
-        to_max=(-0.5, -0.5, -0.5),
-    )
-    transform_translation = pf.nodes.math.vector_multiply_add(
-        a=transform_translation_a,
-        b=dimensions,
-        addend=location,
-    )
-    transform = pf.nodes.geo.transform(
-        geometry=cube.mesh,
-        translation=transform_translation,
-        rotation=(0, 0, 0),
-        scale=(1, 1, 1),
-    )
-
-    return pf.nodes.geo.store_named_attribute(
-        geometry=transform, domain="EDGE", name="crease_edge", value=crease
-    )
 
 
 ARM_TYPE_SQUARE = 0
@@ -168,11 +127,10 @@ def _sofa_geometry(
     seat_cushion_dimensions = pf.nodes.math.combine_xyz(
         x=seat_a - baseboard_height, y=join_y, z=backrest_width
     )
-    seat_cushion = _corner_cube(
+    seat_cushion = mesh_util.box(
         location=(0.0, 0.0, 0.0),
-        centering_loc=(0.1, 0.5, 1.0),
-        dimensions=seat_cushion_dimensions,
-        supporting_edge_fac=0.0,
+        anchor=(0.1, 0.5, 1.0),
+        size=seat_cushion_dimensions,
         vertices_x=2,
         vertices_y=2,
         vertices_z=2,
@@ -210,11 +168,10 @@ def _sofa_geometry(
         instance=transform,
     )
 
-    seat_cushion_1 = _corner_cube(
+    seat_cushion_1 = mesh_util.box(
         location=(0.0, 0.0, 0.0),
-        centering_loc=(0.0, 0.5, 0.0),
-        dimensions=join_1_geometries_0_instance_dimensions * (1.0, 1.03, 1.0),
-        supporting_edge_fac=0.0,
+        anchor=(0.0, 0.5, 0.0),
+        size=join_1_geometries_0_instance_dimensions * (1.0, 1.03, 1.0),
         vertices_x=2,
         vertices_y=2,
         vertices_z=2,
@@ -329,11 +286,10 @@ def _sofa_geometry(
         scale=transform_5_scale,
     )
 
-    foot_cube = _corner_cube(
+    foot_cube = mesh_util.box(
         location=(0.0, 0.0, 0.0),
-        centering_loc=(0.5, 0.5, 0.9),
-        dimensions=foot_dimensions,
-        supporting_edge_fac=0.0,
+        anchor=(0.5, 0.5, 0.9),
+        size=foot_dimensions,
         vertices_x=4,
         vertices_y=4,
         vertices_z=4,
@@ -400,11 +356,10 @@ def _sofa_geometry(
         x=back_dimensions.x, y=base_a_y, z=back_dimensions.z
     )
     base_board_2_location = base_a * (1.0, 0.0, 0.0)
-    base_board = _corner_cube(
+    base_board = mesh_util.box(
         location=base_board_2_location,
-        centering_loc=(0.0, 0.5, -1.0),
-        dimensions=base_board_dimensions,
-        supporting_edge_fac=0.0,
+        anchor=(0.0, 0.5, -1.0),
+        size=base_board_dimensions,
         vertices_x=2,
         vertices_y=2,
         vertices_z=2,
@@ -427,11 +382,10 @@ def _sofa_geometry(
 
     join_7_geometries_0_a = pf.nodes.func.switch(switch=footrest, a=transform_9)
 
-    base_board_1 = _corner_cube(
+    base_board_1 = mesh_util.box(
         location=base_board_2_location,
-        centering_loc=(0.0, 0.5, -1.0),
-        dimensions=base_board_2_dimensions,
-        supporting_edge_fac=0.0,
+        anchor=(0.0, 0.5, -1.0),
+        size=base_board_2_dimensions,
         vertices_x=3,
         vertices_y=3,
         vertices_z=3,
@@ -460,22 +414,20 @@ def _sofa_geometry(
         b=join_7_geometries_0_b,
     )
 
-    base_board_2 = _corner_cube(
+    base_board_2 = mesh_util.box(
         location=base_board_2_location,
-        centering_loc=(0.0, 0.5, -1.0),
-        dimensions=base_board_2_dimensions,
-        supporting_edge_fac=0.0,
+        anchor=(0.0, 0.5, -1.0),
+        size=base_board_2_dimensions,
         vertices_x=5,
         vertices_y=5,
         vertices_z=2,
         crease=body_crease,
     )
 
-    back_board = _corner_cube(
+    back_board = mesh_util.box(
         location=(0.0, 0.0, 0.0),
-        centering_loc=(0.0, 0.5, -1.0),
-        dimensions=base_a,
-        supporting_edge_fac=0.0,
+        anchor=(0.0, 0.5, -1.0),
+        size=base_a,
         vertices_x=2,
         vertices_y=5,
         vertices_z=5,
@@ -521,11 +473,10 @@ def _sofa_geometry(
         scale=(1, 1, 1),
     )
 
-    arm_cube = _corner_cube(
+    arm_cube = mesh_util.box(
         location=join_b_location,
-        centering_loc=(0.0, 1.0, 0.0),
-        dimensions=join_b_dimensions,
-        supporting_edge_fac=0.0,
+        anchor=(0.0, 1.0, 0.0),
+        size=join_b_dimensions,
         vertices_x=4,
         vertices_y=4,
         vertices_z=4,
@@ -535,11 +486,10 @@ def _sofa_geometry(
     arm_round = pf.nodes.geo.join_geometry([transform_12, arm_cube])
 
     arm_cube_1_location = dimensions * (0.0, 0.5, 0.0)
-    arm_cube_1 = _corner_cube(
+    arm_cube_1 = mesh_util.box(
         location=arm_cube_1_location,
-        centering_loc=(0.0, 1.0, 0.0),
-        dimensions=arm_dimensions,
-        supporting_edge_fac=0.0,
+        anchor=(0.0, 1.0, 0.0),
+        size=arm_dimensions,
         vertices_x=4,
         vertices_y=4,
         vertices_z=10,

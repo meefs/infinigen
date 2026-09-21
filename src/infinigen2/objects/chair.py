@@ -1419,11 +1419,13 @@ def _chair_back_geometry(
     slats = pf.nodes.geo.realize_instances(slats)
 
     crest_width = dimensions.y + crest_margin * 2.0
-    crest = mesh.corner_box(
+    crest = mesh.box_with_support_loops(
         size=pf.nodes.math.combine_xyz(x=dimensions.x, y=crest_width, z=crest_height),
-        loops_y=crest_loops,
+        vertices_x=4,
+        vertices_y=pf.nodes.math.add(crest_loops, 4),
+        vertices_z=4,
         support_loop_offset=crest_offset,
-    ).mesh
+    )
     # 0 sits the rail flush with the slat fronts, 1 with their backs, 0.5 centered
     crest_shift = crest_align * (dimensions.x - slat_depth)
     crest = pf.nodes.geo.transform(

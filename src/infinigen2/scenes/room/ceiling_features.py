@@ -28,6 +28,7 @@ from infinigen2.shaders.functionality_lists import (
     ceiling_material_rand,
     floor_material_rand,
 )
+from infinigen2.util import mesh as mesh_util
 from infinigen2.uv_surface import grid_placement
 
 __all__ = [
@@ -268,8 +269,8 @@ def ceiling_light_bars_rand(
     bar_depth = pf.random.uniform(rng, 0.03, 0.06)
 
     # thin box housing, x/y-centered (symmetric -> flip-invariant)
-    cube = pf.nodes.geo.mesh_cube(size=(bar_length, bar_width, bar_depth))
-    housing = pf.nodes.to_mesh_object(cube.mesh)
+    cube = mesh_util.box(size=(bar_length, bar_width, bar_depth))
+    housing = pf.nodes.to_mesh_object(cube)
     pf.ops.uv.cube_project(housing, uv_name="UVMap")
     pf.ops.object.set_material(
         housing,

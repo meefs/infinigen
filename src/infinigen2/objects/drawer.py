@@ -27,8 +27,8 @@ class DrawerResult(NamedTuple):
 def _panel(
     dimensions: t.SocketOrVal[pf.Vector], origin: t.SocketOrVal[pf.Vector]
 ) -> pf.ProcNode:
-    box = pf.nodes.geo.mesh_cube(size=dimensions)
-    geo = pf.nodes.geo.transform(box.mesh, translation=origin + dimensions * 0.5)
+    box = mesh.box(size=dimensions)
+    geo = pf.nodes.geo.transform(box, translation=origin + dimensions * 0.5)
     return mesh.metric_box_uv(geo)
 
 
@@ -52,7 +52,7 @@ def _front_panel(
     ring_widths: t.SocketOrVal[pf.Vector],
     bevel: t.SocketOrVal[float],
 ) -> pf.ProcNode:
-    box = pf.nodes.geo.mesh_cube(size=(2, 2, 2), vertices_y=4, vertices_z=4)
+    box = mesh.box(size=(2, 2, 2), vertices_y=4, vertices_z=4)
     position = pf.nodes.geo.input_position()
     y = _front_coordinate(position.y, dimensions.y, ring_widths.y)
     z = _front_coordinate(position.z, dimensions.z, ring_widths.z)
@@ -66,7 +66,7 @@ def _front_panel(
     coords = pf.nodes.math.combine_xyz(
         x, y + dimensions.y * 0.5, z + dimensions.z * 0.5
     )
-    geo = pf.nodes.geo.set_position(box.mesh, position=origin + coords)
+    geo = pf.nodes.geo.set_position(box, position=origin + coords)
     return mesh.metric_box_uv(geo)
 
 

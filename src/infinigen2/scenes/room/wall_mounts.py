@@ -60,10 +60,8 @@ def wall_board_shelf_rand(
     )
 
     # canonical wall frame: X=depth out of wall, Y=width, Z=thickness up
-    cube = pf.nodes.geo.mesh_cube(size=(shelf_depth, shelf_width, shelf_thickness))
-    slab_geo = pf.nodes.geo.transform(
-        cube.mesh, translation=(shelf_depth * 0.5, 0.0, 0.0)
-    )
+    cube = mesh_util.box(size=(shelf_depth, shelf_width, shelf_thickness))
+    slab_geo = pf.nodes.geo.transform(cube, translation=(shelf_depth * 0.5, 0.0, 0.0))
     slab_geo = mesh_util.metric_box_uv(slab_geo)
     slab = pf.nodes.to_mesh_object(slab_geo)
 

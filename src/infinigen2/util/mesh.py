@@ -14,12 +14,12 @@ from procfunc.nodes.util.bpy_node_info import NodeDataType
 from infinigen2.util.curve import curve_to_mesh_with_uv
 
 __all__ = [
-    "CubeWithVertexIndicesResult",
     "ExtrudeSeamlessResult",
     "LoftingResult",
     "WallCutoutResult",
+    "box",
+    "box_with_support_loops",
     "center_footprint",
-    "corner_box",
     "crease_all_edges",
     "crease_by_angle",
     "crease_sharp",
@@ -694,20 +694,49 @@ def _store_metric_box_uvs(mesh: pf.ProcNode) -> pf.ProcNode:
     )
 
 
-class CubeWithVertexIndicesResult(NamedTuple):
-    mesh: pf.ProcNode[pf.MeshObject]
-    index_x: pf.ProcNode[int]
-    index_y: pf.ProcNode[int]
-    index_z: pf.ProcNode[int]
-
-
-@pf.nodes.node_function
-def _cube_with_vertex_indices(
+def box(
     size: t.SocketOrVal[pf.Vector] = (1, 1, 1),
+    location: t.SocketOrVal[pf.Vector] = (0, 0, 0),
+    anchor: t.SocketOrVal[pf.Vector] = (0.5, 0.5, 0.5),
     vertices_x: t.SocketOrVal[int] = 2,
     vertices_y: t.SocketOrVal[int] = 2,
     vertices_z: t.SocketOrVal[int] = 2,
-) -> CubeWithVertexIndicesResult:
+    crease: t.SocketOrVal[float] = 0.0,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Create a box with ``location`` at its normalized ``anchor`` point."""
+    cube = pf.nodes.geo.mesh_cube(
+        size=size,
+        vertices_x=vertices_x,
+        vertices_y=vertices_y,
+        vertices_z=vertices_z,
+    )
+    center_factor = pf.nodes.math.map_range(
+        value=anchor,
+        from_min=(0.0, 0.0, 0.0),
+        from_max=(1.0, 1.0, 1.0),
+        to_min=(0.5, 0.5, 0.5),
+        to_max=(-0.5, -0.5, -0.5),
+    )
+    center = pf.nodes.math.vector_multiply_add(a=center_factor, b=size, addend=location)
+    placed = pf.nodes.geo.transform(geometry=cube.mesh, translation=center)
+    creased = pf.nodes.geo.store_named_attribute(
+        geometry=placed, domain="EDGE", name="crease_edge", value=crease
+    )
+    return _store_metric_box_uvs(creased)
+
+
+@pf.nodes.node_function
+def box_with_support_loops(
+    size: t.SocketOrVal[pf.Vector] = (1, 1, 1),
+    location: t.SocketOrVal[pf.Vector] = (0, 0, 0),
+    anchor: t.SocketOrVal[pf.Vector] = (0.5, 0.5, 0.5),
+    vertices_x: t.SocketOrVal[int] = 4,
+    vertices_y: t.SocketOrVal[int] = 4,
+    vertices_z: t.SocketOrVal[int] = 4,
+    support_loop_offset: t.SocketOrVal[pf.Vector] = (0.05, 0.05, 0.05),
+    crease: t.SocketOrVal[float] = 0.0,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Create a support-loop box with the same placement contract as ``box``."""
     cube = pf.nodes.geo.mesh_cube(
         size=size,
         vertices_x=vertices_x,
@@ -732,48 +761,27 @@ def _cube_with_vertex_indices(
 
     capture = pf.nodes.geo.capture_attribute(
         geometry=cube.mesh,
-        index_x=pf.nodes.math.round(index_xyz.x).astype(dtype=int),
-        index_y=pf.nodes.math.round(index_xyz.y).astype(dtype=int),
-        index_z=pf.nodes.math.round(index_xyz.z).astype(dtype=int),
-    )
-    return CubeWithVertexIndicesResult(
-        mesh=_store_metric_box_uvs(capture.geometry),
-        index_x=capture.index_x,
-        index_y=capture.index_y,
-        index_z=capture.index_z,
+        index=pf.nodes.math.combine_xyz(
+            pf.nodes.math.round(index_xyz.x),
+            pf.nodes.math.round(index_xyz.y),
+            pf.nodes.math.round(index_xyz.z),
+        ),
     )
 
-
-@pf.nodes.node_function
-def corner_box(
-    size: t.SocketOrVal[pf.Vector] = (1, 1, 1),
-    loops_x: t.SocketOrVal[int] = 0,
-    loops_y: t.SocketOrVal[int] = 0,
-    loops_z: t.SocketOrVal[int] = 0,
-    support_loop_offset: t.SocketOrVal[pf.Vector] = (0.05, 0.05, 0.05),
-) -> CubeWithVertexIndicesResult:
-    cube = _cube_with_vertex_indices(
-        size=size,
-        vertices_x=pf.nodes.math.add(loops_x, 4),
-        vertices_y=pf.nodes.math.add(loops_y, 4),
-        vertices_z=pf.nodes.math.add(loops_z, 4),
-    )
-    index = pf.nodes.math.combine_xyz(cube.index_x, cube.index_y, cube.index_z)
-
+    index = capture.index
     half = pf.nodes.math.vector_scale(vector=size, scale=0.5)
     neg_half = pf.nodes.math.vector_scale(vector=size, scale=-0.5)
     ones = (1.0, 1.0, 1.0)
-
-    even_index_max = pf.nodes.math.combine_xyz(
-        pf.nodes.math.add(loops_x, 2),
-        pf.nodes.math.add(loops_y, 2),
-        pf.nodes.math.add(loops_z, 2),
+    interior_index_max = pf.nodes.math.combine_xyz(
+        pf.nodes.math.subtract(vertices_x, 2),
+        pf.nodes.math.subtract(vertices_y, 2),
+        pf.nodes.math.subtract(vertices_z, 2),
     )
     even = pf.nodes.math.map_range(
         clamp=False,
         value=index,
         from_min=ones,
-        from_max=even_index_max,
+        from_max=interior_index_max,
         to_min=neg_half,
         to_max=half,
     )
@@ -781,30 +789,48 @@ def corner_box(
         pf.nodes.math.vector_minimum(even, half - support_loop_offset),
         neg_half + support_loop_offset,
     )
-
     mask_first = pf.nodes.math.vector_subtract(
         ones, pf.nodes.math.vector_minimum(index, ones)
     )
-    index_last = pf.nodes.math.vector_add(even_index_max, ones)
+    index_last = pf.nodes.math.vector_add(interior_index_max, ones)
     mask_last = pf.nodes.math.vector_subtract(
         ones,
         pf.nodes.math.vector_minimum(
             pf.nodes.math.vector_subtract(index_last, index), ones
         ),
     )
-    corner_correction = pf.nodes.math.vector_multiply(
+    corrected = clamped + pf.nodes.math.vector_multiply(
         mask_last - mask_first, support_loop_offset
     )
-
-    repositioned = pf.nodes.geo.set_position(
-        geometry=cube.mesh, position=clamped + corner_correction
+    position = pf.nodes.math.separate_xyz(pf.nodes.geo.input_position())
+    corrected_xyz = pf.nodes.math.separate_xyz(corrected)
+    offset = pf.nodes.math.separate_xyz(support_loop_offset)
+    supported_position = pf.nodes.math.combine_xyz(
+        x=pf.nodes.func.switch(switch=offset.x > 0.0, a=position.x, b=corrected_xyz.x),
+        y=pf.nodes.func.switch(switch=offset.y > 0.0, a=position.y, b=corrected_xyz.y),
+        z=pf.nodes.func.switch(switch=offset.z > 0.0, a=position.z, b=corrected_xyz.z),
     )
-    return CubeWithVertexIndicesResult(
-        mesh=_store_metric_box_uvs(repositioned),
-        index_x=cube.index_x,
-        index_y=cube.index_y,
-        index_z=cube.index_z,
+    supported = pf.nodes.geo.set_position(
+        geometry=capture.geometry, position=supported_position
     )
+    center_factor = pf.nodes.math.map_range(
+        value=anchor,
+        from_min=(0.0, 0.0, 0.0),
+        from_max=(1.0, 1.0, 1.0),
+        to_min=(0.5, 0.5, 0.5),
+        to_max=(-0.5, -0.5, -0.5),
+    )
+    center = pf.nodes.math.vector_multiply_add(a=center_factor, b=size, addend=location)
+    placed = pf.nodes.geo.transform(
+        geometry=supported,
+        translation=center,
+        rotation=(0, 0, 0),
+        scale=(1, 1, 1),
+    )
+    creased = pf.nodes.geo.store_named_attribute(
+        geometry=placed, domain="EDGE", name="crease_edge", value=crease
+    )
+    return _store_metric_box_uvs(creased)
 
 
 @pf.nodes.node_function

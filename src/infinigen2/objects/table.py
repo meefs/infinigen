@@ -600,8 +600,14 @@ def table_top(
 ) -> t.ProcNode[pf.MeshObject]:
     """Slab spanning z in [0, size.z]; support_loop_offset sets edge roundness.
     Subdivision is left to an unapplied modifier on the final object."""
-    box = mesh.corner_box(size=size, support_loop_offset=support_loop_offset)
-    smooth = pf.nodes.geo.set_shade_smooth(geometry=box.mesh, shade_smooth=True)
+    box = mesh.box_with_support_loops(
+        size=size,
+        vertices_x=4,
+        vertices_y=4,
+        vertices_z=4,
+        support_loop_offset=support_loop_offset,
+    )
+    smooth = pf.nodes.geo.set_shade_smooth(geometry=box, shade_smooth=True)
 
     translation = pf.nodes.math.combine_xyz(z=size.z * 0.5)
     return pf.nodes.geo.transform(

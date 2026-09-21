@@ -18,8 +18,8 @@ from infinigen2.shaders.functionality_lists import (
     furniture_material_rand,
     glass_material_rand,
 )
+from infinigen2.util import mesh as mesh_util
 from infinigen2.util.curve import curve_to_mesh_with_uv
-from infinigen2.util.mesh import crease_sharp
 
 # parts are built flat in XY; reorients them into the wall frame like door_body
 _WALL_REORIENT = (math.pi / 2, 0.0, math.pi / 2)
@@ -215,7 +215,7 @@ def _curtain_geometry(
     join_3 = pf.nodes.geo.join_geometry([creased, set_material_1])
 
     # rail circles tessellate at ~11 deg, so 60 catches only the hem's 90 deg corners
-    creased = crease_sharp(join_3, threshold_degrees=60.0)
+    creased = mesh_util.crease_sharp(join_3, threshold_degrees=60.0)
 
     set_shade_smooth = pf.nodes.geo.set_shade_smooth(
         geometry=creased, shade_smooth=False
@@ -346,7 +346,7 @@ def _window_shutter(
         y=cube_size_y_a - cube_size_y,
         z=panel_thickness,
     )
-    cube = pf.nodes.geo.mesh_cube(cube_size)
+    cube = mesh_util.box(size=cube_size)
 
     curve_line_end = pf.nodes.math.combine_xyz(y=shutter_width * 0.5)
     curve_line = pf.nodes.geo.curve_line(end=curve_line_end, start=(0, 0, 0))
@@ -367,15 +367,15 @@ def _window_shutter(
     )
 
     set_position = pf.nodes.geo.set_position(
-        geometry=cube.mesh, offset=sample_curve.position
+        geometry=cube, offset=sample_curve.position
     )
 
     cube_1_size = pf.nodes.math.combine_xyz(
         x=width - frame_width, y=shutter_width, z=shutter_thickness
     )
-    cube_1 = pf.nodes.geo.mesh_cube(cube_1_size)
+    cube_1 = mesh_util.box(size=cube_1_size)
 
-    to_instance_1 = pf.nodes.geo.geometry_to_instance(cube_1.mesh)
+    to_instance_1 = pf.nodes.geo.geometry_to_instance(cube_1)
 
     shutter_number = set_0_a - 1.0
 

@@ -34,10 +34,13 @@ def bed(
     frame_material: pf.Material,
     mattress_material: pf.Material,
 ) -> BedResult:
-    platform = mesh.corner_box(
+    platform = mesh.box_with_support_loops(
         size=(dimensions.x + 0.08, dimensions.y + 0.08, 0.10),
+        vertices_x=4,
+        vertices_y=4,
+        vertices_z=4,
         support_loop_offset=(0.01, 0.01, 0.01),
-    ).mesh
+    )
     platform = pf.nodes.to_mesh_object(platform)
     pf.ops.object.set_transform(platform, location=(0, 0, frame_height - 0.05))
     pf.ops.object.set_material(
@@ -47,10 +50,13 @@ def bed(
     )
     # one level here plus the assembled bed's two keeps the soft parts at three
     pf.ops.modifier.subdivide_surface(platform, levels=1)
-    mattress = mesh.corner_box(
+    mattress = mesh.box_with_support_loops(
         size=dimensions,
+        vertices_x=4,
+        vertices_y=4,
+        vertices_z=4,
         support_loop_offset=(0.12, 0.12, 0.07),
-    ).mesh
+    )
     mattress = pf.nodes.to_mesh_object(mattress)
     pf.ops.object.set_transform(
         mattress, location=(0, 0, frame_height + dimensions.z * 0.5)
