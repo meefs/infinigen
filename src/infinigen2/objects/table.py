@@ -215,7 +215,7 @@ def _n_gon_cylinder(
 
 
 @pf.nodes.node_function
-def _strecher(
+def _stretcher(
     n_gon: t.SocketOrVal[int],
     profile_width: t.SocketOrVal[float],
 ) -> t.ProcNode[pf.MeshObject]:
@@ -280,18 +280,18 @@ def _create_anchors(
 
 
 @pf.nodes.node_function
-def _create_legs_and_strechers(
+def _create_legs_and_stretchers(
     anchors: t.ProcNode[pf.MeshObject],
     keep_legs: t.SocketOrVal[bool],
     leg_instance: t.ProcNode[pf.MeshObject],
     table_height: t.SocketOrVal[float],
     leg_bottom_relative_scale: t.SocketOrVal[float],
     leg_bottom_relative_rotation: t.SocketOrVal[float],
-    keep_odd_strechers: t.SocketOrVal[bool],
-    keep_even_strechers: t.SocketOrVal[bool],
-    strecher_instance: t.ProcNode[pf.MeshObject],
-    strecher_index_increment: t.SocketOrVal[int],
-    strecher_relative_position: t.SocketOrVal[float],
+    keep_odd_stretchers: t.SocketOrVal[bool],
+    keep_even_stretchers: t.SocketOrVal[bool],
+    stretcher_instance: t.ProcNode[pf.MeshObject],
+    stretcher_index_increment: t.SocketOrVal[int],
+    stretcher_relative_position: t.SocketOrVal[float],
     leg_bottom_offset: t.SocketOrVal[float],
 ) -> t.ProcNode[pf.MeshObject]:
     transform_translation = pf.nodes.math.combine_xyz(z=table_height)
@@ -322,7 +322,7 @@ def _create_legs_and_strechers(
     set_position_position_vector = input_position - (set_b_1 * set_b_0)
     set_position_position = pf.nodes.math.vector_scale(
         vector=set_position_position_vector,
-        scale=strecher_relative_position * -1.0,
+        scale=stretcher_relative_position * -1.0,
     )
 
     input_position_1 = pf.nodes.geo.input_position()
@@ -336,10 +336,10 @@ def _create_legs_and_strechers(
 
     instance_2 = input_index.astype(dtype=float) % 2.0
     instance_a_a = pf.nodes.func.boolean_and(
-        a=instance_2.astype(dtype=bool), b=keep_odd_strechers
+        a=instance_2.astype(dtype=bool), b=keep_odd_stretchers
     )
     instance_a_b_b = pf.nodes.func.boolean_not(instance_2.astype(dtype=bool))
-    instance_a_b = pf.nodes.func.boolean_and(a=keep_even_strechers, b=instance_a_b_b)
+    instance_a_b = pf.nodes.func.boolean_and(a=keep_even_stretchers, b=instance_a_b_b)
     instance_a = pf.nodes.func.boolean_or(a=instance_a_a, b=instance_a_b)
 
     attribute_domain_size = pf.nodes.geo.attribute_domain_size(
@@ -348,7 +348,7 @@ def _create_legs_and_strechers(
 
     instance_b_switch = pf.nodes.func.equal(
         a=attribute_domain_size.point_count.astype(dtype=float)
-        / strecher_index_increment.astype(dtype=float),
+        / stretcher_index_increment.astype(dtype=float),
         b=2.0,
         epsilon=0.001,
     )
@@ -364,7 +364,7 @@ def _create_legs_and_strechers(
     input_position_2 = pf.nodes.geo.input_position()
 
     field = (
-        input_index.astype(dtype=float) + strecher_index_increment.astype(dtype=float)
+        input_index.astype(dtype=float) + stretcher_index_increment.astype(dtype=float)
     ) % attribute_domain_size.point_count.astype(dtype=float)
     field_at_index = pf.nodes.geo.field_at_index(
         value=input_position_2, index=field.astype(dtype=int)
@@ -389,7 +389,7 @@ def _create_legs_and_strechers(
     spans_a_gap = pf.nodes.func.greater_than(a=instance_z, b=1e-6)
     instance_on_points = pf.nodes.geo.instance_on_points(
         points=set_position,
-        instance=strecher_instance,
+        instance=stretcher_instance,
         selection=pf.nodes.func.boolean_and(
             a=instance_on_points_selection, b=spans_a_gap
         ),
@@ -666,20 +666,20 @@ def _base_straight_geometry(
         fillet_ratio=0.1,
     )
 
-    stretcher_geo = _strecher(n_gon=4, profile_width=leg_diameter * 0.5)
+    stretcher_geo = _stretcher(n_gon=4, profile_width=leg_diameter * 0.5)
 
-    return _create_legs_and_strechers(
+    return _create_legs_and_stretchers(
         anchors=anchors,
         keep_legs=True,
         leg_instance=leg,
         table_height=z,
         leg_bottom_relative_scale=leg_placement_bottom_scale,
         leg_bottom_relative_rotation=0.0,
-        keep_odd_strechers=True,
-        keep_even_strechers=True,
-        strecher_instance=stretcher_geo,
-        strecher_index_increment=stretcher_increment,
-        strecher_relative_position=stretcher_relative_pos,
+        keep_odd_stretchers=True,
+        keep_even_stretchers=True,
+        stretcher_instance=stretcher_geo,
+        stretcher_index_increment=stretcher_increment,
+        stretcher_relative_position=stretcher_relative_pos,
         leg_bottom_offset=0.0,
     )
 
@@ -714,18 +714,18 @@ def _base_square_geometry(
 
     empty_stretcher = pf.nodes.geo.points(position=(0, 0, 0))
 
-    return _create_legs_and_strechers(
+    return _create_legs_and_stretchers(
         anchors=anchors,
         keep_legs=True,
         leg_instance=leg,
         table_height=z,
         leg_bottom_relative_scale=leg_placement_bottom_scale,
         leg_bottom_relative_rotation=0.0,
-        keep_odd_strechers=False,
-        keep_even_strechers=False,
-        strecher_instance=empty_stretcher,
-        strecher_index_increment=1,
-        strecher_relative_position=0.0,
+        keep_odd_stretchers=False,
+        keep_even_stretchers=False,
+        stretcher_instance=empty_stretcher,
+        stretcher_index_increment=1,
+        stretcher_relative_position=0.0,
         leg_bottom_offset=0.0,
     )
 
@@ -1256,7 +1256,7 @@ if __name__ == "__main__":
     leg_straight_result = _leg_straight()
     leg_square_result = _leg_square()
 
-    create_legs_and_strechers_result = _create_legs_and_strechers()
+    create_legs_and_stretchers_result = _create_legs_and_stretchers()
     create_anchors_result = _create_anchors()
 
-    strecher_result = _strecher()
+    stretcher_result = _stretcher()

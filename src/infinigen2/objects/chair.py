@@ -977,18 +977,18 @@ def _wheeled_base_wheel(
 
 
 @pf.nodes.node_function
-def _wheeled_base_create_legs_and_strechers(
+def _wheeled_base_create_legs_and_stretchers(
     anchors: pf.ProcNode,
     leg_instance: pf.ProcNode,
-    strecher_instance: pf.ProcNode,
+    stretcher_instance: pf.ProcNode,
     keep_legs: t.SocketOrVal[bool] = False,
     table_height: t.SocketOrVal[float] = 0.0,
     leg_bottom_relative_scale: t.SocketOrVal[float] = 0.0,
     leg_bottom_relative_rotation: t.SocketOrVal[float] = 0.0,
-    keep_odd_strechers: t.SocketOrVal[bool] = True,
-    keep_even_strechers: t.SocketOrVal[bool] = True,
-    strecher_index_increment: t.SocketOrVal[int] = 0,
-    strecher_relative_position: t.SocketOrVal[float] = 0.5,
+    keep_odd_stretchers: t.SocketOrVal[bool] = True,
+    keep_even_stretchers: t.SocketOrVal[bool] = True,
+    stretcher_index_increment: t.SocketOrVal[int] = 0,
+    stretcher_relative_position: t.SocketOrVal[float] = 0.5,
     leg_bottom_offset: t.SocketOrVal[float] = 0.0,
     align_leg_x_rot: t.SocketOrVal[bool] = False,
 ) -> pf.ProcNode[pf.MeshObject | pf.CurveObject | t.Instances | pf.VolumeObject]:
@@ -1008,7 +1008,7 @@ def _wheeled_base_create_legs_and_strechers(
     )
     set_position_position_vector = input_position - set_b_1 * set_b_0
     set_position_position = set_position_position_vector * (
-        strecher_relative_position * -1.0
+        stretcher_relative_position * -1.0
     )
     input_position_1 = pf.nodes.geo.input_position()
     set_position = pf.nodes.geo.set_position(
@@ -1019,17 +1019,17 @@ def _wheeled_base_create_legs_and_strechers(
     input_index = pf.nodes.geo.input_index()
     instance_2 = input_index.astype(dtype=float) % 2.0
     instance_a_a = pf.nodes.func.boolean_and(
-        a=instance_2.astype(dtype=bool), b=keep_odd_strechers
+        a=instance_2.astype(dtype=bool), b=keep_odd_stretchers
     )
     instance_a_b_b = pf.nodes.func.boolean_not(instance_2.astype(dtype=bool))
-    instance_a_b = pf.nodes.func.boolean_and(a=keep_even_strechers, b=instance_a_b_b)
+    instance_a_b = pf.nodes.func.boolean_and(a=keep_even_stretchers, b=instance_a_b_b)
     instance_a = pf.nodes.func.boolean_or(a=instance_a_a, b=instance_a_b)
     attribute_domain_size = pf.nodes.geo.attribute_domain_size(
         geometry=transform, component="POINTCLOUD"
     )
     instance_b_switch = attribute_domain_size.point_count.astype(
         dtype=float
-    ) / strecher_index_increment.astype(dtype=float)
+    ) / stretcher_index_increment.astype(dtype=float)
     instance_b_a = pf.nodes.math.constant(True)
     input_index_1 = pf.nodes.geo.input_index()
     instance_1 = attribute_domain_size.point_count.astype(dtype=float) / 2.0
@@ -1045,7 +1045,7 @@ def _wheeled_base_create_legs_and_strechers(
     instance_on_points_selection = pf.nodes.func.boolean_and(a=instance_a, b=instance_b)
     input_position_2 = pf.nodes.geo.input_position()
     field = (
-        input_index.astype(dtype=float) + strecher_index_increment.astype(dtype=float)
+        input_index.astype(dtype=float) + stretcher_index_increment.astype(dtype=float)
     ) % attribute_domain_size.point_count.astype(dtype=float)
     field_at_index = pf.nodes.geo.field_at_index(
         value=input_position_2,
@@ -1063,7 +1063,7 @@ def _wheeled_base_create_legs_and_strechers(
     instance_on_points_scale = pf.nodes.math.combine_xyz(x=1.0, y=1.0, z=instance_z)
     instance_on_points = pf.nodes.geo.instance_on_points(
         points=set_position,
-        instance=strecher_instance,
+        instance=stretcher_instance,
         rotation=instance_0.astype(dtype=pf.Euler),
         scale=instance_on_points_scale,
         selection=instance_on_points_selection,
@@ -1159,20 +1159,20 @@ def _wheeled_base_geometry(
     transform_1 = pf.nodes.geo.transform(
         geometry=chair_wheel_result, rotation=(0.0, 1.5708, 0.0)
     )
-    create_legs_and_strechers_result = _wheeled_base_create_legs_and_strechers(
+    create_legs_and_stretchers_result = _wheeled_base_create_legs_and_stretchers(
         anchors=create_anchors_result,
         keep_legs=True,
         leg_instance=transform_1,
         table_height=0.025,
         leg_bottom_relative_scale=2.0 / create_anchors_profile_width,
-        strecher_instance=pf.nodes.geo.points(position=(0, 0, 0)),
-        strecher_index_increment=1,
-        strecher_relative_position=1.0,
+        stretcher_instance=pf.nodes.geo.points(position=(0, 0, 0)),
+        stretcher_index_increment=1,
+        stretcher_relative_position=1.0,
         leg_bottom_offset=0.025,
         align_leg_x_rot=True,
     )
     align_bottom_to_floor_result = _wheeled_base_align_bottom_to_floor(
-        geometry=create_legs_and_strechers_result
+        geometry=create_legs_and_stretchers_result
     )
     cylinder_1_depth = joint_height - align_bottom_to_floor_result.offset
     cylinder_1 = pf.nodes.geo.mesh_cylinder(
