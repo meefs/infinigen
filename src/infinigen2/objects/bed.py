@@ -16,11 +16,12 @@ from infinigen2.shaders.functionality_lists import (
 )
 from infinigen2.util import mesh
 
-__all__ = ["BedResult", "bed", "bed_rand"]
+__all__ = ["BedResult", "bed", "bed_rand", "mattress_rand"]
 
 
 class BedResult(NamedTuple):
     mesh: pf.MeshObject
+    mattress_child: pf.MeshObject
 
 
 @pf.tracer.generator
@@ -28,11 +29,11 @@ def bed(
     base: pf.MeshObject,
     headboard: pf.MeshObject,
     footboard: pf.MeshObject | None,
+    mattress_child: pf.MeshObject,
     dimensions: pf.Vector,
     frame_height: float,
     base_material: pf.Material,
     frame_material: pf.Material,
-    mattress_material: pf.Material,
 ) -> BedResult:
     platform = mesh.box_with_support_loops(
         size=(dimensions.x + 0.08, dimensions.y + 0.08, 0.10),
@@ -50,23 +51,6 @@ def bed(
     )
     # one level here plus the assembled bed's two keeps the soft parts at three
     pf.ops.modifier.subdivide_surface(platform, levels=1)
-    mattress = mesh.box_with_support_loops(
-        size=dimensions,
-        vertices_x=4,
-        vertices_y=4,
-        vertices_z=4,
-        support_loop_offset=(0.12, 0.12, 0.07),
-    )
-    mattress = pf.nodes.to_mesh_object(mattress)
-    pf.ops.object.set_transform(
-        mattress, location=(0, 0, frame_height + dimensions.z * 0.5)
-    )
-    pf.ops.object.set_material(
-        mattress,
-        surface=mattress_material.surface,
-        displacement=mattress_material.displacement,
-    )
-    pf.ops.modifier.subdivide_surface(mattress, levels=1)
     pf.ops.object.set_transform(
         headboard, location=(-dimensions.x * 0.5 - 0.04, 0, frame_height - 0.10)
     )
@@ -82,11 +66,12 @@ def bed(
             rotation_euler=(0, 0, math.pi),
         )
         pf.ops.object.join(platform, footboard)
-    pf.ops.object.join(platform, mattress)
     pf.ops.uv.cube_project(platform, uv_name="UVMap")
-    # a join drops each part's own stack, so the assembled bed carries the subdivision
     pf.ops.modifier.subdivide_surface(platform, levels=2, _skip_apply=True)
-    return BedResult(platform)
+    platform.item().name = "bed"
+    mattress_child.item().parent = platform.item()
+    mattress_child.item().matrix_parent_inverse.identity()
+    return BedResult(platform, mattress_child)
 
 
 def _bed_base_rand(
@@ -132,18 +117,49 @@ def _bed_base_rand(
         r: pf.RNG, dims: pf.Vector, _material: pf.Material
     ) -> table.TableResult:
         r_choice, r_body = r.spawn(2)
+        leg_diameter = 0.06
+        leg_width = leg_diameter / math.sqrt(2.0)
+        footprint_x = dims.x + 0.08
+        footprint_y = dims.y + 0.08
+        straight_dimensions = pf.Vector(
+            (
+                footprint_x + leg_diameter - leg_width,
+                footprint_y + leg_diameter - leg_width,
+                dims.z,
+            )
+        )
+        square_scale = 0.94
+        square_dimensions = pf.Vector(
+            (
+                (footprint_x - leg_width) / square_scale,
+                (footprint_y - leg_width) / square_scale,
+                dims.z,
+            )
+        )
         base_fn = pf.control.choice(
             r_choice,
             [
-                (table.base_straight_rand, 1.0),
-                (table.base_square_rand, 1.0),
+                (
+                    partial(
+                        table.base_straight_rand,
+                        dimensions=straight_dimensions,
+                    ),
+                    1.0,
+                ),
+                (
+                    partial(
+                        table.base_square_rand,
+                        dimensions=square_dimensions,
+                    ),
+                    1.0,
+                ),
             ],
         )
         return base_fn(
             r_body,
-            dimensions=dims,
-            leg_diameter=0.06,
+            leg_diameter=leg_diameter,
             leg_placement_bottom_scale=1.0,
+            close_edges=True,
         )
 
     base_fn = pf.control.choice(
@@ -188,10 +204,42 @@ def _mattress_material_rand(rng: pf.RNG) -> pf.Material:
     return material_fn(r_material, pf.nodes.shader.coord().uv)
 
 
-def bed_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> BedResult:
-    r_size, r_thick, r_frame, r_head, r_base, r_style, r_material, r_fabric = rng.spawn(
-        8
+def mattress_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector,
+    center_z: float,
+) -> pf.MeshObject:
+    material = _mattress_material_rand(rng)
+    mattress_geo = mesh.box_with_support_loops(
+        size=dimensions,
+        vertices_x=30,
+        vertices_y=30,
+        vertices_z=6,
+        support_loop_offset=(0.12, 0.12, 0.07),
     )
+    mattress = pf.nodes.to_mesh_object(mattress_geo)
+    pf.ops.object.set_transform(mattress, location=(0, 0, center_z))
+    pf.ops.object.set_material(
+        mattress,
+        surface=material.surface,
+        displacement=material.displacement,
+    )
+    pf.ops.modifier.subdivide_surface(mattress, levels=3, _skip_apply=True)
+    mattress.item().name = "mattress"
+    return mattress
+
+
+def bed_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> BedResult:
+    (
+        r_size,
+        r_thick,
+        r_frame,
+        r_head,
+        r_base,
+        r_style,
+        r_material,
+        r_mattress,
+    ) = rng.spawn(8)
     if dimensions is None:
         width = pf.control.choice(
             r_size, [(0.90, 1.0), (1.20, 1.0), (1.40, 1.0), (1.60, 1.0), (1.80, 1.0)]
@@ -200,28 +248,59 @@ def bed_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> BedResult:
     frame_height = pf.random.uniform(r_frame, 0.32, 0.40)
     head_height = pf.random.uniform(r_head, 0.85, 1.00)
     r_hard, r_upholstery = r_material.spawn(2)
-    r_back_choice, r_head_board, r_foot_choice, r_foot_board = r_style.spawn(4)
+    r_back_choice, r_finish, r_head_board, r_foot_choice, r_foot_board = r_style.spawn(
+        5
+    )
     material = furniture_material_rand(r_hard, pf.nodes.shader.coord().uv)
     frame_material = _frame_material_rand(r_upholstery, material)
-    mattress_material = _mattress_material_rand(r_fabric)
     base = _bed_base_rand(
         r_base,
         pf.Vector((dimensions.x, dimensions.y, frame_height - 0.05)),
         material,
     ).mesh
 
-    def solid_board(r: pf.RNG, board_dimensions: pf.Vector) -> pf.MeshObject:
-        top_rise = pf.random.clip_gaussian(r, 0.05, 0.035, 0.0, 0.12)
+    r_finish_choice, r_top_rise = r_finish.spawn(2)
+    rounded_top_rise = pf.random.clip_gaussian(r_top_rise, 0.05, 0.035, 0.0, 0.12)
+    finish = pf.control.choice(
+        r_finish_choice,
+        [
+            ((0.0, True, False), 1.0),
+            ((rounded_top_rise, False, False), 1.0),
+            ((rounded_top_rise, False, True), 1.0),
+        ],
+    )
+
+    def solid_board(_r: pf.RNG, board_dimensions: pf.Vector) -> pf.MeshObject:
         profile = pf.Vector(
             (
                 board_dimensions.x,
                 board_dimensions.y,
-                board_dimensions.z - top_rise * 0.75,
+                board_dimensions.z - finish[0] * 0.75,
             )
         )
-        obj = pf.nodes.to_mesh_object(
-            chair.chair_back_solid(profile, top_rise=top_rise)
+        geo = chair.chair_back_solid(profile, top_rise=finish[0])
+        edge = pf.nodes.geo.input_mesh_edge_vertices()
+        dx = pf.nodes.math.absolute(edge.position_1.x - edge.position_2.x)
+        dy = pf.nodes.math.absolute(edge.position_1.y - edge.position_2.y)
+        dz = pf.nodes.math.absolute(edge.position_1.z - edge.position_2.z)
+        width_dominant = pf.nodes.func.boolean_and(
+            a=(dy > dx).astype(dtype=bool),
+            b=(dy > dz).astype(dtype=bool),
         )
+        sharp = (
+            pf.nodes.geo.input_mesh_edge_angle().unsigned_angle > math.radians(40)
+        ).astype(dtype=bool)
+        long_crease = pf.nodes.func.boolean_and(a=finish[2], b=width_dominant)
+        crease = pf.nodes.func.boolean_or(
+            a=finish[1], b=pf.nodes.func.boolean_and(a=long_crease, b=sharp)
+        )
+        geo = pf.nodes.geo.store_named_attribute(
+            geometry=geo,
+            name="crease_edge",
+            value=crease.astype(dtype=float),
+            domain="EDGE",
+        )
+        obj = pf.nodes.to_mesh_object(geo)
         pf.ops.object.set_material(
             obj,
             surface=frame_material.surface,
@@ -270,13 +349,14 @@ def bed_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> BedResult:
         r_foot_board,
         pf.Vector((0.05, dimensions.y + 0.08, 0.10 + dimensions.z * 0.75)),
     )
+    mattress = mattress_rand(r_mattress, dimensions, 0.05 + dimensions.z * 0.5)
     return bed(
         base,
         head,
         foot,
+        mattress,
         dimensions,
         frame_height,
         material,
         frame_material,
-        mattress_material,
     )

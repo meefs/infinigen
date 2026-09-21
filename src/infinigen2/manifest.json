@@ -1019,5 +1019,10 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.plant_pot.plant_pot_small_rand"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.bed_setup.bed_setup_rand",
+    "integration_test_string": "bed_setup_rand object_demo render_cycles"
   }
 ]

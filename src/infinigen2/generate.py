@@ -340,6 +340,9 @@ def _cleanup_except_returnvals(return_data: dict) -> list[str]:
     if "obj" in return_data:
         valid_objects.append(return_data["obj"])
     valid_objects = [o.item() for o in valid_objects]
+    valid_objects = {
+        child for root in valid_objects for child in (root, *root.children_recursive)
+    }
 
     cleaned = []
     for asset in bpy.data.objects:
