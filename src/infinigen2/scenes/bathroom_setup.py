@@ -51,6 +51,8 @@ _WALL_MARGIN = 0.003
 _MIN_SINK_TOP_HEIGHT = 0.8
 _MAX_SINK_TOP_HEIGHT = 0.9
 _MAX_TAP_HEIGHT = 0.4
+_MIN_TAP_BACK_MARGIN = bathtub.MIN_BACK_MARGIN * 0.1
+_MAX_TAP_BACK_MARGIN = bathtub.MIN_BACK_MARGIN
 _TAP_BACK_OFFSET = 0.05
 _TAP_SURFACE_INSET = 0.01
 
@@ -78,11 +80,15 @@ class BathroomSetupResult(NamedTuple):
     temporary_objects: list[pf.MeshObject]
 
 
-def _place_tap_at_back(tap_obj: pf.MeshObject, fixture: pf.MeshObject) -> None:
+def _place_tap_at_back(
+    tap_obj: pf.MeshObject,
+    fixture: pf.MeshObject,
+    back_offset: float = _TAP_BACK_OFFSET,
+) -> None:
     minimum, maximum = pf.ops.attr.bbox_min_max(fixture, global_coords=False)
     location = pf.Vector(
         (
-            minimum[0] + _TAP_BACK_OFFSET,
+            minimum[0] + back_offset,
             (minimum[1] + maximum[1]) / 2.0,
             maximum[2] - _TAP_SURFACE_INSET,
         )
@@ -320,12 +326,18 @@ def _bathtub_against_wall_side_rand(
         rng_hardware_choice,
         rng_hardware,
         rng_place,
-    ) = rng.spawn(5)
+        rng_tap_placement,
+    ) = rng.spawn(6)
     result = bathtub.bathtub_rand(rng_bathtub)
     result.mesh.item().rotation_mode = "XYZ"
     pf.ops.object.set_transform(result.mesh, rotation_euler=(0.0, 0.0, 0.0))
     tap_result = tap.tap_rand(rng_tap)
-    _place_tap_at_back(tap_result.mesh, result.mesh)
+    tap_minimum, _ = pf.ops.attr.bbox_min_max(tap_result.mesh, global_coords=False)
+    tap_back_margin = pf.random.uniform(
+        rng_tap_placement, _MIN_TAP_BACK_MARGIN, _MAX_TAP_BACK_MARGIN
+    )
+    tap_back_offset = tap_back_margin - tap_minimum[0]
+    _place_tap_at_back(tap_result.mesh, result.mesh, tap_back_offset)
     include_hardware = pf.control.choice(
         rng_hardware_choice, [(True, 1.0), (False, 1.0)]
     )

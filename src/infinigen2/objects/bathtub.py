@@ -14,6 +14,7 @@ from infinigen2.util import mesh
 
 __all__ = [
     "BathtubResult",
+    "MIN_BACK_MARGIN",
     "SinkBathroomResult",
     "SinkPedestalResult",
     "bathtub",
@@ -23,6 +24,8 @@ __all__ = [
     "sink_bathroom_rand",
     "sink_pedestal",
 ]
+
+MIN_BACK_MARGIN = 0.1
 
 
 class BathtubResult(NamedTuple):
@@ -477,7 +480,7 @@ def _bathtub_dimensions_rand(
     if depth is None:
         depth = pf.random.uniform(rng, 0.48, 0.72)
     if back_margin is None:
-        back_margin = pf.random.uniform(rng, 0.1, 0.3)
+        back_margin = pf.random.uniform(rng, MIN_BACK_MARGIN, 0.3)
     if width is None:
         width = pf.random.uniform(rng, 1.3, 1.7) + back_margin + thickness
     if size is None:
