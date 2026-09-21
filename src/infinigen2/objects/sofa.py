@@ -710,14 +710,14 @@ def sofa_rand(
         [(ARM_TYPE_SQUARE, 0.4), (ARM_TYPE_ROUND, 0.2), (ARM_TYPE_ANGULAR, 0.4)],
     )
 
-    dim_x, dim_y, dim_z = dimensions
-
     reflection = pf.control.choice(rng, [(1, 0.5), (-1, 0.5)])
     leg_type = pf.control.choice(rng, [(True, 0.5), (False, 0.5)])
 
     arm_dimensions = pf.random.uniform(rng, (1.0, 0.06, 0.5), (1.0, 0.15, 0.75))
     back_dimensions = pf.random.uniform(rng, (0.15, 0.0, 0.5), (0.25, 0.0, 0.75))
-    seat_dimensions = pf.random.uniform(rng, (dim_x, 1.2, 0.15), (dim_x, 1.5, 0.3))
+    seat_dimensions = pf.random.uniform(
+        rng, (dimensions[0], 1.2, 0.15), (dimensions[0], 1.5, 0.3)
+    )
     foot_dimensions = pf.random.uniform(rng, (0.07, 0.06, 0.06), (0.25, 0.06, 0.06))
 
     baseboard_height = pf.random.uniform(rng, 0.05, 0.09)

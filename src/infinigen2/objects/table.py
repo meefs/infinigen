@@ -648,9 +648,12 @@ def _base_straight_geometry(
     leg_placement_top_scale: t.SocketOrVal[float] = 1.0,
 ) -> t.ProcNode[pf.MeshObject]:
     """4-leg base with optional stretchers."""
-    x, y, z = dimensions.x, dimensions.y, dimensions.z
-    leg_span_x = (x - leg_diameter - 2.0 * leg_inset) * leg_placement_top_scale
-    leg_span_y = (y - leg_diameter - 2.0 * leg_inset) * leg_placement_top_scale
+    leg_span_x = (
+        dimensions.x - leg_diameter - 2.0 * leg_inset
+    ) * leg_placement_top_scale
+    leg_span_y = (
+        dimensions.y - leg_diameter - 2.0 * leg_inset
+    ) * leg_placement_top_scale
     anchors = _create_anchors(
         profile_n_gon=4,
         profile_width=1.414 * leg_span_x,
@@ -672,7 +675,7 @@ def _base_straight_geometry(
         anchors=anchors,
         keep_legs=True,
         leg_instance=leg,
-        table_height=z,
+        table_height=dimensions.z,
         leg_bottom_relative_scale=leg_placement_bottom_scale,
         leg_bottom_relative_rotation=0.0,
         keep_odd_stretchers=True,
@@ -693,17 +696,16 @@ def _base_square_geometry(
     has_bottom_connector: t.SocketOrVal[bool],
 ) -> t.ProcNode[pf.MeshObject]:
     """2 box-frame legs."""
-    x, y, z = dimensions.x, dimensions.y, dimensions.z
     anchors = _create_anchors(
         profile_n_gon=2,
-        profile_width=1.414 * x * leg_placement_top_scale,
-        profile_aspect_ratio=y / x,
+        profile_width=1.414 * dimensions.x * leg_placement_top_scale,
+        profile_aspect_ratio=dimensions.y / dimensions.x,
         profile_rotation=0.0,
     )
 
     leg = _leg_square(
         height=1.0,
-        width=y * leg_placement_top_scale,
+        width=dimensions.y * leg_placement_top_scale,
         fillet_radius=0.03,
         has_bottom_connector=has_bottom_connector,
         profile_n_gon=4,
@@ -718,7 +720,7 @@ def _base_square_geometry(
         anchors=anchors,
         keep_legs=True,
         leg_instance=leg,
-        table_height=z,
+        table_height=dimensions.z,
         leg_bottom_relative_scale=leg_placement_bottom_scale,
         leg_bottom_relative_rotation=0.0,
         keep_odd_stretchers=False,
@@ -977,20 +979,22 @@ def _table_square_base_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult:
 
 
 def _table_pedestal_rand(rng: pf.RNG, dimensions: pf.Vector) -> TableResult:
-    x = dimensions[0]
     return pedestal_base_rand(
         rng,
         dimensions,
-        top_radius_range=(0.012 * x, 0.05 * x),
-        bottom_radius_range=(0.14 * x, 0.29 * x),
+        top_radius_range=(0.012 * dimensions[0], 0.05 * dimensions[0]),
+        bottom_radius_range=(0.14 * dimensions[0], 0.29 * dimensions[0]),
     )
 
 
 def _inscribed_base_dimensions(
     dimensions: tuple[float, float, float],
 ) -> tuple[float, float, float]:
-    x, y, z = dimensions
-    return (x / math.sqrt(2.0), y / math.sqrt(2.0), z)
+    return (
+        dimensions[0] / math.sqrt(2.0),
+        dimensions[1] / math.sqrt(2.0),
+        dimensions[2],
+    )
 
 
 def _circular_table_straight_base_rand(

@@ -81,8 +81,7 @@ def rug_rand(
         length = width * pf.random.uniform(rng, 1.0, 1.5)
         thickness = pf.random.uniform(rng, 0.01, 0.02)
         dimensions = (length, width, thickness)
-    length, width, thickness = dimensions
-    min_dim = min(width, length)
+    min_dim = min(dimensions[1], dimensions[0])
     fillet_radius = pf.random.uniform(rng, 0.0, min_dim / 2)
 
     vec = pf.nodes.shader.geometry().position
@@ -90,10 +89,10 @@ def rug_rand(
     mat = mat_shader
 
     geo = _rug_geometry(
-        width=width,
-        length=length,
+        width=dimensions[1],
+        length=dimensions[0],
         fillet_radius=fillet_radius,
-        thickness=thickness,
+        thickness=dimensions[2],
         material=mat,
     )
 

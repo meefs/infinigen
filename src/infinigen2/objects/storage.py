@@ -72,43 +72,43 @@ def storage_cell_bounds(
     back_width: float,
 ) -> list[tuple[pf.Vector, pf.Vector]]:
     """Interior slot bounds in the shelf's min-corner coordinate system."""
-    depth, width, height = dimensions
     f, r, c = frame_thickness, row_divider_width, col_divider_width
-    y_step = (width - 2 * f + c) / n_spaces_y
-    z_step = (height - 2 * f + r) / n_spaces_z
+    y_step = (dimensions.y - 2 * f + c) / n_spaces_y
+    z_step = (dimensions.z - 2 * f + r) / n_spaces_z
     slots = []
     for y in range(n_spaces_y):
         y_min = f + y * y_step
         y_max = f + (y + 1) * y_step - c
         for z in range(n_spaces_z):
             z_min = f + z * z_step
-            z_max = height - f if z == n_spaces_z - 1 else f + (z + 1) * z_step - r
+            z_max = (
+                dimensions.z - f if z == n_spaces_z - 1 else f + (z + 1) * z_step - r
+            )
             lower = pf.Vector((back_width, y_min, z_min))
-            upper = pf.Vector((depth, y_max, z_max))
+            upper = pf.Vector((dimensions.x, y_max, z_max))
             slots.append((lower, upper))
     return slots
 
 
-@pf.tracer.generator
+@pf.tracer.primitive
 def _storage_drawers_rand(
     rng: pf.RNG,
     slots: list[tuple[pf.Vector, pf.Vector]],
     params: StorageParams,
 ) -> pf.MeshObject:
-    lower, upper = slots[0]
     side = min(params.frame_thickness, params.col_divider_width)
     row = min(params.frame_thickness, params.row_divider_width)
     drawers = drawer.drawer_rand(
         rng,
-        upper - lower,
+        slots[0][1] - slots[0][0],
         material=params.material,
         frame_widths=(side, side, row, row),
         opening_fraction=0,
     ).mesh
     copies = [drawers.clone() for _ in slots[1:]]
-    pf.ops.object.set_transform(drawers, location=lower)
-    for copy, (other, _) in zip(copies, slots[1:], strict=True):
-        pf.ops.object.set_transform(copy, location=other)
+    pf.ops.object.set_transform(drawers, location=slots[0][0])
+    for index, copy in enumerate(copies, start=1):
+        pf.ops.object.set_transform(copy, location=slots[index][0])
         pf.ops.object.join(drawers, copy)
     return drawers
 
@@ -722,14 +722,13 @@ def cabinet_with_base(
         dimensions = pf.Vector((0.3, 0.5, 1.2))
     if frame_material is None:
         frame_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-    depth, width, height = dimensions.x, dimensions.y, dimensions.z
     carcass = storage_cell_shelf(
-        dimensions=pf.Vector((depth, width, height - base_height)),
+        dimensions=pf.Vector((dimensions.x, dimensions.y, dimensions.z - base_height)),
         frame_material=frame_material,
     ).mesh
     pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
     base = table.base_square(
-        dimensions=pf.Vector((width, depth, base_height)),
+        dimensions=pf.Vector((dimensions.y, dimensions.x, base_height)),
         leg_diameter=leg_diameter,
     ).mesh
     pf.ops.object.set_material(
@@ -738,7 +737,7 @@ def cabinet_with_base(
     # bases separate their frames along local x, so turn that across the width
     pf.ops.object.set_transform(
         base,
-        location=(depth * 0.5, width * 0.5, 0.0),
+        location=(dimensions.x * 0.5, dimensions.y * 0.5, 0.0),
         rotation_euler=(0.0, 0.0, math.pi / 2),
     )
     pf.ops.object.join(carcass, base)
@@ -754,15 +753,13 @@ def cabinet_with_base_rand(
         width = pf.random.uniform(rng, 0.3, 0.55)
         height = pf.random.uniform(rng, 0.9, 1.8)
         dimensions = pf.Vector((depth, width, height))
-    depth, width, height = dimensions.x, dimensions.y, dimensions.z
-
     frame_material = furniture_material_rand(rng_mat, pf.nodes.shader.coord().uv)
     base_height = pf.random.uniform(rng, 0.0254, 0.1524)
     leg_diameter = pf.random.uniform(rng, 0.0508, 0.127)
 
     carcass = storage_cell_shelf_rand(
         rng_shelves,
-        dimensions=pf.Vector((depth, width, height - base_height)),
+        dimensions=pf.Vector((dimensions.x, dimensions.y, dimensions.z - base_height)),
         frame_material=frame_material,
     ).mesh
     pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
@@ -771,7 +768,7 @@ def cabinet_with_base_rand(
     )
     base = base_fn(
         rng_base,
-        dimensions=pf.Vector((width, depth, base_height)),
+        dimensions=pf.Vector((dimensions.y, dimensions.x, base_height)),
         material=frame_material,
         leg_diameter=leg_diameter,
         leg_placement_bottom_scale=1.0,
@@ -779,7 +776,7 @@ def cabinet_with_base_rand(
     # bases separate their frames along local x, so turn that across the width
     pf.ops.object.set_transform(
         base,
-        location=(depth * 0.5, width * 0.5, 0.0),
+        location=(dimensions.x * 0.5, dimensions.y * 0.5, 0.0),
         rotation_euler=(0.0, 0.0, math.pi / 2),
     )
     pf.ops.object.join(carcass, base)
@@ -850,16 +847,20 @@ def grid_legs_rand(
     close_edges: bool = False,
     diameter: float | None = None,
 ) -> pf.MeshObject:
+    rngs = rng.spawn(3)
+    rng_margin = rngs[0]
+    rng_spacing = rngs[1]
+    rng_diameter = rngs[2]
     depth = dimensions[0]
     width = dimensions[1]
     if close_edges:
-        margin_frac = pf.random.uniform(rng, 0.04, 0.08)
+        margin_frac = pf.random.uniform(rng_margin, 0.04, 0.08)
     else:
-        margin_frac = pf.random.uniform(rng, 0.08, 0.16)
+        margin_frac = pf.random.uniform(rng_margin, 0.08, 0.16)
     max_spacing = pf.nodes.math.maximum(depth, width) * 0.55
-    spacing_frac = pf.random.clip_gaussian(rng, 0.5, 0.3, 0.25, max_spacing)
+    spacing_frac = pf.random.clip_gaussian(rng_spacing, 0.5, 0.3, 0.25, max_spacing)
     if diameter is None:
-        diameter = pf.random.uniform(rng, 0.025, 0.14)
+        diameter = pf.random.uniform(rng_diameter, 0.025, 0.14)
     geo = _grid_legs(depth, width, leg_height, margin_frac, spacing_frac, diameter)
     geo = mesh_util.crease_sharp(geo, threshold_degrees=30.0)
     return pf.nodes.to_mesh_object(geo)
@@ -1000,13 +1001,14 @@ def storage_coffee_table_rand(
     # keep-local: table imports storage for coffee-table composition.
     from infinigen2.objects import table
 
+    rng_dimensions, rng_leg_height, rng_storage = rng.spawn(3)
     if dimensions is None:
-        dimensions = pf.Vector(table.coffee_table_dimensions_rand(rng))
+        dimensions = pf.Vector(table.coffee_table_dimensions_rand(rng_dimensions))
     return storage_with_legs_rand(
-        rng,
+        rng_storage,
         dimensions=dimensions,
         n_spaces_z=1,
-        leg_height=dimensions[2] * pf.random.uniform(rng, 0.3, 0.7),
+        leg_height=dimensions[2] * pf.random.uniform(rng_leg_height, 0.3, 0.7),
     )
 
 
@@ -1038,17 +1040,16 @@ def cabinet_with_door(
     if frame_material is None:
         frame_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
     thickness = 0.019
-    depth, width, height = dimensions.x, dimensions.y, dimensions.z
-    shelf_dimensions = pf.Vector((depth - thickness, width, height))
+    shelf_dimensions = pf.Vector((dimensions.x - thickness, dimensions.y, dimensions.z))
     carcass_result = storage_cell_shelf(
         dimensions=shelf_dimensions, frame_material=frame_material
     )
     door_result = door_with_handle(
-        dimensions=pf.Vector((thickness, width, height)),
+        dimensions=pf.Vector((thickness, dimensions.y, dimensions.z)),
         material=frame_material,
     )
     pf.ops.object.set_transform(
-        door_result.mesh, location=(depth - thickness, 0.0, 0.0)
+        door_result.mesh, location=(dimensions.x - thickness, 0.0, 0.0)
     )
     pf.ops.object.join(carcass_result.mesh, door_result.mesh)
     return StorageResult(mesh=carcass_result.mesh)
@@ -1064,8 +1065,6 @@ def cabinet_with_door_rand(
         width = pf.random.uniform(rng, 0.3, 0.55)
         height = pf.random.uniform(rng, 0.9, 1.8)
         dimensions = pf.Vector((depth, width, height))
-    depth, width, height = dimensions.x, dimensions.y, dimensions.z
-
     vec = pf.nodes.shader.coord().uv
     frame_material = furniture_material_rand(rng_mat, vec)
 
@@ -1092,7 +1091,7 @@ def cabinet_with_door_rand(
     )(rng_inner_body)
 
     thickness = pf.random.uniform(rng, 0.016, 0.022)
-    shelf_dimensions = pf.Vector((depth - thickness, width, height))
+    shelf_dimensions = pf.Vector((dimensions.x - thickness, dimensions.y, dimensions.z))
     carcass_result = storage_cell_shelf_rand(
         rng_shelves,
         dimensions=shelf_dimensions,
@@ -1114,13 +1113,13 @@ def cabinet_with_door_rand(
     )
     door_result = front_func(
         rng_front,
-        dimensions=pf.Vector((thickness, width, height)),
+        dimensions=pf.Vector((thickness, dimensions.y, dimensions.z)),
         material=front_material,
         inner_material=inner_material,
         handle=handle_func(rng_handle).mesh,
     )
     pf.ops.object.set_transform(
-        door_result.mesh, location=(depth - thickness, 0.0, 0.0)
+        door_result.mesh, location=(dimensions.x - thickness, 0.0, 0.0)
     )
     pf.ops.object.join(carcass_result.mesh, door_result.mesh)
     return StorageResult(mesh=carcass_result.mesh)

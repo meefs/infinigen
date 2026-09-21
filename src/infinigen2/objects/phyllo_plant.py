@@ -388,6 +388,11 @@ def _plant_geometry(
     return pf.nodes.geo.join_geometry([leaves, stem_mesh])
 
 
+@pf.tracer.primitive(normalize=False)
+def _plant_geometry_group(*args: object, **kwargs: object) -> pf.ProcNode:
+    return _plant_geometry(*args, **kwargs)
+
+
 @pf.tracer.primitive
 def _normalize_leaf(obj: pf.MeshObject) -> pf.MeshObject:
     obj = pf.MeshObject(pf.ops.object.duplicate(obj).item())
@@ -447,7 +452,7 @@ def phyllo_plant(
                 base_color=(0.04, 0.10, 0.01, 1.0), roughness=0.65
             )
         )
-    geometry = _plant_geometry(
+    geometry = _plant_geometry_group(
         first=first,
         stem_material=stem_material,
         count=count,

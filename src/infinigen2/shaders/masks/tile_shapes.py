@@ -2305,8 +2305,8 @@ def square(
     border: t.SocketOrVal[float] = 0.0,
     flatness: t.SocketOrVal[float] = 0.0,
 ) -> TileShapeResult:
-    x, y, z = pf.nodes.math.separate_xyz(vector)
-    vector = pf.nodes.math.combine_xyz(x, y * subtiles_number, z)
+    xyz = pf.nodes.math.separate_xyz(vector)
+    vector = pf.nodes.math.combine_xyz(xyz[0], xyz[1] * subtiles_number, xyz[2])
     checker_texture = pf.nodes.texture.checker(
         vector=vector,
         scale=1.0,

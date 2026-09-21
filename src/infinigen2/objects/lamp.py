@@ -1172,7 +1172,7 @@ def ceiling_shade_lamp_rand(
         lampshade_material=lampshade_mat,
         metal_material=stem_mat,
     )
-    result.mesh.item().rotation_euler = (pi, 0, 0)
+    pf.ops.object.set_transform(result.mesh, rotation_euler=(pi, 0, 0))
     light_location = result.light.item().location
     result.light.item().parent = None
     result.light.item().location = (

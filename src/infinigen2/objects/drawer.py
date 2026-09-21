@@ -85,9 +85,9 @@ def drawer(
 
     Opening translates the whole drawer by a fraction of its tray depth along +X.
     """
-    _, width, height = dimensions
     board, gap = thickness, clearance
-    inner_width, inner_height = width - 2 * gap, height - 2 * gap
+    inner_width = dimensions.y - 2 * gap
+    inner_height = dimensions.z - 2 * gap
     tray_depth = front_origin.x - gap
     bottom = _panel((tray_depth, inner_width, board), (gap, gap, gap))
     left = _panel((tray_depth, board, inner_height - board), (gap, gap, gap + board))
@@ -161,27 +161,38 @@ def drawer_rand(
         opening_fraction = pf.control.choice(
             r_choice, [(0.0, 2.0), (pf.random.uniform(r_distance, 0.05, 0.30), 1.0)]
         )
-    depth, width, height = dimensions.x, dimensions.y, dimensions.z
-    smallest = min(depth, width, height)
+    smallest = min(dimensions.x, dimensions.y, dimensions.z)
     clearance = min(0.002, smallest * 0.02)
 
     def inset_front(_r: pf.RNG) -> tuple[pf.Vector, pf.Vector]:
-        origin = pf.Vector((depth - clearance - front_thickness, clearance, clearance))
-        size = (front_thickness, width - 2 * clearance, height - 2 * clearance)
+        origin = pf.Vector(
+            (dimensions.x - clearance - front_thickness, clearance, clearance)
+        )
+        size = (
+            front_thickness,
+            dimensions.y - 2 * clearance,
+            dimensions.z - 2 * clearance,
+        )
         return origin, pf.Vector(size)
 
     def overlay_front(r: pf.RNG) -> tuple[pf.Vector, pf.Vector]:
         fraction = pf.random.uniform(r, 0.2, 1 / 3)
-        left, right, bottom, top = (fraction * edge for edge in frame_widths)
-        origin = pf.Vector((depth, -left, -bottom))
-        size = (front_thickness, width + left + right, height + bottom + top)
+        left = fraction * frame_widths[0]
+        right = fraction * frame_widths[1]
+        bottom = fraction * frame_widths[2]
+        top = fraction * frame_widths[3]
+        origin = pf.Vector((dimensions.x, -left, -bottom))
+        size = (
+            front_thickness,
+            dimensions.y + left + right,
+            dimensions.z + bottom + top,
+        )
         return origin, pf.Vector(size)
 
     front_fn = pf.control.choice(
         r_front_choice, [(inset_front, 1.0), (overlay_front, 1.0)]
     )
     front = front_fn(r_front_body)
-    front_origin, front_dimensions = front[0], front[1]
     front_bevel = pf.control.choice(
         r_bevel_choice,
         [(0.0, 1.0), (pf.random.uniform(r_bevel_body, 0.001, 0.004), 1.0)],
@@ -189,20 +200,20 @@ def drawer_rand(
     result = drawer(
         dimensions,
         material,
-        front_origin,
-        front_dimensions,
+        front[0],
+        front[1],
         clearance=clearance,
         thickness=min(0.012, smallest * 0.08),
         front_bevel=front_bevel,
         opening_fraction=opening_fraction,
     )
-    handle = drawer_handle_rand(r_handle, front_dimensions)
+    handle = drawer_handle_rand(r_handle, front[1])
     pf.ops.object.set_transform(
         handle,
         location=(
-            front_origin.x + front_thickness,
-            front_origin.y + front_dimensions.y * 0.5,
-            front_origin.z + front_dimensions.z * 0.5,
+            front[0].x + front_thickness,
+            front[0].y + front[1].y * 0.5,
+            front[0].z + front[1].z * 0.5,
         ),
         rotation_euler=(math.pi / 2, 0, 0),
     )
