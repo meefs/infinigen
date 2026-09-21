@@ -16,7 +16,6 @@ __all__ = ["SinkResult", "sink", "sink_rand"]
 class SinkResult(NamedTuple):
     mesh: pf.MeshObject
     cutter: pf.MeshObject
-    tap_mount: pf.Vector
 
 
 class _SinkGeometryResult(NamedTuple):
@@ -165,7 +164,7 @@ def _sink_geometry(
     return _SinkGeometryResult(geometry=geometry, cutter=cutter)
 
 
-def _finish(result: _SinkGeometryResult, tap_mount: pf.Vector) -> SinkResult:
+def _finish(result: _SinkGeometryResult) -> SinkResult:
     bounds = pf.nodes.geo.bound_box(result.geometry)
     ground = pf.nodes.math.combine_xyz(z=bounds.min.z * -1.0)
     geometry = pf.nodes.geo.transform(
@@ -181,7 +180,7 @@ def _finish(result: _SinkGeometryResult, tap_mount: pf.Vector) -> SinkResult:
     pf.ops.uv.smart_project(obj, uv_name="UVMap", island_margin=0.01)
     cutter_obj.item().hide_viewport = True
     cutter_obj.item().hide_render = True
-    return SinkResult(mesh=obj, cutter=cutter_obj, tap_mount=tap_mount)
+    return SinkResult(mesh=obj, cutter=cutter_obj)
 
 
 def sink(
@@ -208,8 +207,7 @@ def sink(
         margin=margin,
         water_tap_margin=water_tap_margin,
     )
-    tap_mount = pf.Vector((-depth / 2.0, 0.0, upper_height + 0.01 - lower_height))
-    return _finish(result, tap_mount)
+    return _finish(result)
 
 
 def sink_rand(

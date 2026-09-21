@@ -634,8 +634,8 @@
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.sink_setup.sink_setup_rand",
-    "integration_test_string": "sink_setup_rand object_demo render_cycles"
+    "name": "infinigen2.scenes.bathroom_setup.bathroom_setup_rand",
+    "integration_test_string": "bathroom_setup_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
@@ -712,6 +712,22 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.random_primitives.primitive_with_effect_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bathroom_hardware.bathroom_hardware_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bathtub.bathtub_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bathtub.sink_bathroom_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.toilet.toilet_rand"
   },
   {
     "category": "Object",

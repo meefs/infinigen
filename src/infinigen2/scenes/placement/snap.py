@@ -98,7 +98,21 @@ def snap_to_plane(
     c_min_point = _project(cbb[0], c_orthogonal_dir_local)
     c_max_point = _project(cbb[1], c_orthogonal_dir_local)
 
-    if not overhang:
+    if child_axis != parent_axis and not overhang:
+        p_tangent = p_orthogonal_dir_local.normalized()
+        p_values = [np.dot(bound, p_tangent) for bound in pbb]
+        child_to_parent = (
+            parent.item().matrix_world.to_3x3().inverted() @ rotation_matrix
+        )
+        c_corners = pf.ops.attr.bbox_corners(child, global_coords=False)
+        c_values = [
+            (child_to_parent @ pf.Vector(corner)).dot(p_tangent) for corner in c_corners
+        ]
+        p_min_value = min(p_values) - min(c_values)
+        p_max_value = max(p_values) - max(c_values)
+        p_min_point = p_tangent * p_min_value
+        p_max_point = p_tangent * p_max_value
+    elif not overhang:
         p_min_point = p_min_point - c_min_point
         p_max_point = p_max_point - c_max_point
 
