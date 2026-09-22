@@ -4,8 +4,14 @@
 # Authors: Alexander Raistrick
 
 from infinigen2.scenes.room.room import (  # noqa: F401
-    LivingroomResult,
+    RoomResult,
     livingroom_rand,
+    room_bathroom_rand,
+    room_bedroom_rand,
+    room_diningroom_rand,
+    room_livingroom_rand,
+    room_rand,
+    room_unfurnished_rand,
 )
 from infinigen2.scenes.room.room_shape import (  # noqa: F401
     room_shape_rand,

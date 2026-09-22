@@ -18,7 +18,7 @@ __all__ = [
 def camera_in_room_corner(
     floor: pf.MeshObject,
     room_height: float,
-    focal_length_mm: float = 20.0,
+    focal_length_mm: float = 12.0,
 ) -> pf.CameraObject:
     item = floor.item()
     centers = np.asarray(

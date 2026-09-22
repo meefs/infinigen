@@ -246,7 +246,7 @@ def skirting_profile_rand(
     if height is None:
         height = pf.random.uniform(rng, 0.07, 0.20)
     if width is None:
-        width = height * pf.random.uniform(rng, 0.3, 0.6)
+        width = height * pf.random.uniform(rng, 0.15, 0.3)
     if fillet_vertices is None:
         fillet_vertices = pf.control.choice(rng, [(1, 0.3), (4, 0.7)])
     if fillet_radius is None:

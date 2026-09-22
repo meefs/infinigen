@@ -29,6 +29,8 @@ class WallStorageSetupResult(NamedTuple):
     storage: list[MeshResult]
     all_objects: list[pf.MeshObject]
     colliders: ccol.CollisionSet
+    storage_containers: list[pf.MeshObject]
+    storage_supports: list[pf.MeshObject]
 
 
 @pf.tracer.grammar
@@ -77,4 +79,11 @@ def wall_storage_setup_rand(
     storage_objects, colliders = keep_non_colliding(placed_storage, colliders)
     logger.info(f"Placed {len(storage_objects)} storage objects out of {n} attempts")
     all_objects = standalone_walls + [r.mesh for r in storage_objects]
-    return WallStorageSetupResult(storage_objects, all_objects, colliders)
+    storage_meshes = [r.mesh for r in storage_objects]
+    return WallStorageSetupResult(
+        storage=storage_objects,
+        all_objects=all_objects,
+        colliders=colliders,
+        storage_containers=storage_meshes,
+        storage_supports=storage_meshes,
+    )

@@ -78,6 +78,23 @@ class BathroomSetupResult(NamedTuple):
     all_objects: list[pf.MeshObject]
     colliders: ccol.CollisionSet
     temporary_objects: list[pf.MeshObject]
+    storage_containers: list[pf.MeshObject]
+    storage_supports: list[pf.MeshObject]
+
+
+def _snap_fixture_against_wall(
+    rng: pf.RNG,
+    child: MeshResult,
+    parents: list[pf.MeshObject],
+    margin: float,
+) -> None:
+    snap_back_front(
+        rng,
+        child,
+        parents,
+        placement=pf.random.uniform(rng, 0.0, 1.0),
+        margin=margin,
+    )
 
 
 def _place_tap_at_back(
@@ -218,7 +235,7 @@ def _toilet_against_wall_rand(
         rng_place,
         result,
         colliders,
-        snap_back_front,
+        _snap_fixture_against_wall,
         attempts=64,
         accept_fn=valid,
         parents=wall_planes,
@@ -257,7 +274,7 @@ def _place_bathtub_composite(
 ) -> None:
     rng_wall, rng_place, rng_hardware_height = rng.spawn(3)
     wall = rng_wall.choice(parents)
-    placement = pf.random.uniform(rng_place, 0.1, 0.9)
+    placement = pf.random.uniform(rng_place, 0.0, 1.0)
     snap_to_plane(
         child.mesh,
         wall,
@@ -548,27 +565,28 @@ def _fixture_result(
     colliders: ccol.CollisionSet,
 ) -> BathroomSetupResult:
     sink_setup = fixtures.sink_setup
+    sinks = [result.mesh for result in sink_setup.bathroom_sinks]
+    sink_supports = [result.mesh for result in sink_setup.sink_supports]
+    sink_cabinets = [
+        support for support in sink_supports if support.item().name == "sink_cabinet"
+    ]
+    wall_storage = [result.mesh for result in sink_setup.wall_storage]
+    bathtubs = [result.mesh for result in fixtures.bathtub_setup.bathtubs]
     named_objects = {
-        "bathroom_sink": _name_objects(
-            [result.mesh for result in sink_setup.bathroom_sinks], "bathroom_sink"
-        ),
+        "bathroom_sink": _name_objects(sinks, "bathroom_sink"),
         "sink_tap": _name_objects(
             [result.mesh for result in sink_setup.sink_taps], "sink_tap"
         ),
-        "sink_support": _name_objects(
-            [result.mesh for result in sink_setup.sink_supports], "sink_support"
-        ),
+        "sink_support": _name_objects(sink_supports, "sink_support"),
         "mirror": _name_objects(
             [result.mesh for result in sink_setup.mirrors], "mirror"
         ),
         "bathroom_wall_storage": _name_objects(
-            [result.mesh for result in sink_setup.wall_storage],
+            wall_storage,
             "bathroom_wall_storage",
         ),
         "toilet": _name_objects([result.mesh for result in fixtures.toilets], "toilet"),
-        "bathtub": _name_objects(
-            [result.mesh for result in fixtures.bathtub_setup.bathtubs], "bathtub"
-        ),
+        "bathtub": _name_objects(bathtubs, "bathtub"),
         "bathtub_tap": _name_objects(
             [result.mesh for result in fixtures.bathtub_setup.taps], "bathtub_tap"
         ),
@@ -579,7 +597,16 @@ def _fixture_result(
         "bathroom_hardware": [],
     }
     all_objects = [obj for objects in named_objects.values() for obj in objects]
-    return BathroomSetupResult(named_objects, all_objects, colliders, [])
+    storage_containers = sinks + bathtubs + sink_cabinets + wall_storage
+    storage_supports = sink_cabinets + wall_storage
+    return BathroomSetupResult(
+        named_objects=named_objects,
+        all_objects=all_objects,
+        colliders=colliders,
+        temporary_objects=[],
+        storage_containers=storage_containers,
+        storage_supports=storage_supports,
+    )
 
 
 def bathroom_setup_accept_pred(
@@ -723,6 +750,8 @@ def _finalize_bathroom_setup_rand(
         all_objects=all_objects,
         colliders=setup_colliders,
         temporary_objects=clearances,
+        storage_containers=setup.storage_containers,
+        storage_supports=setup.storage_supports,
     )
 
 
@@ -761,7 +790,7 @@ def _repeat_bathroom_setup_rand(
     colliders: ccol.CollisionSet,
     sink_obj: pf.MeshObject | None,
 ) -> BathroomSetupResult:
-    rng_bathtub_choice, rng_attempts = rng.spawn(2)
+    rng_bathtub_choice, rng_attempts, rng_without_bathtub = rng.spawn(3)
     include_bathtub = pf.control.choice(rng_bathtub_choice, [(True, 1.0), (False, 1.0)])
     setup = repeat_attempts(
         _bathroom_setup_attempt_rand,
@@ -773,6 +802,17 @@ def _repeat_bathroom_setup_rand(
         sink_obj=sink_obj,
         include_bathtub=include_bathtub,
     )
+    if setup is None and include_bathtub:
+        setup = repeat_attempts(
+            _bathroom_setup_attempt_rand,
+            rng_without_bathtub,
+            attempts=12,
+            wall_planes=wall_planes,
+            room_dimensions=room_dimensions,
+            colliders=colliders,
+            sink_obj=sink_obj,
+            include_bathtub=False,
+        )
     if setup is None:
         raise RejectedScene("Could not place a valid bathroom setup")
     return setup
@@ -1532,7 +1572,7 @@ def _place_sink_composite(
     components: list[MeshResult],
     component_matrices: list[pf.Matrix],
 ) -> None:
-    snap_back_front(rng, child, parents, margin=margin)
+    _snap_fixture_against_wall(rng, child, parents, margin)
     delta = child.mesh.item().matrix_world @ child_matrix.inverted()
     for component, matrix in zip(components, component_matrices, strict=True):
         component.mesh.item().matrix_world = delta @ matrix

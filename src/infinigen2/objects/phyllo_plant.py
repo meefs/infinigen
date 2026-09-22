@@ -663,7 +663,7 @@ def _phyllo_rand(
     if leaf_bend is None:
         leaf_bend = pf.random.uniform(rng_leaf_bend, 0.03, 0.22)
     if leaf_droop is None:
-        leaf_droop = pf.random.uniform(rng_leaf_droop, 0.18, 0.35)
+        leaf_droop = pf.random.uniform(rng_leaf_droop, 0.0, 0.9)
     if leaf_twist_degrees is None:
         leaf_twist_degrees = pf.random.uniform(rng_leaf_twist, 5.0, 35.0)
     if leaf_warble is None:

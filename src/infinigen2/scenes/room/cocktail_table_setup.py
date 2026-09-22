@@ -6,7 +6,10 @@
 import procfunc as pf
 
 from infinigen2.objects import table
-from infinigen2.scenes.dining_table_setup import DiningSetupResult, dining_setup_rand
+from infinigen2.scenes.room.dining_table_setup import (
+    DiningSetupResult,
+    dining_setup_rand,
+)
 
 __all__ = ["cocktail_table_setup_rand"]
 

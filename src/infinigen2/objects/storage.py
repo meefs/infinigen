@@ -486,7 +486,7 @@ def storage_dimensions_rand(rng: pf.RNG) -> pf.Vector:
         (
             pf.random.uniform(rng_depth, 0.25, 0.45),
             pf.random.uniform(rng_width, 0.7, 2.5),
-            pf.random.uniform(rng_height, 0.8, 2.2),
+            pf.random.clip_gaussian(rng_height, 0.9, 0.4, 0.55, 2.2),
         )
     )
 

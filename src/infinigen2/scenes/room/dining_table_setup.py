@@ -11,7 +11,7 @@ import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import chair, rug, table
+from infinigen2.objects import bowl, chair, plant_pot, table, vase
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import place_surrounding
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
@@ -20,6 +20,7 @@ from infinigen2.scenes.setup_utils import (
     MeshResult,
     jitter_object_rotation_rand,
     retry_place,
+    snap_on_top,
 )
 
 __all__ = [
@@ -33,6 +34,8 @@ __all__ = [
 logger = logging.getLogger(__name__)
 MR = TypeVar("MR", bound=MeshResult)
 _CHAIR_POSITION_JITTER = 0.30
+_TABLE_PLACEMENT_INSET = 0.30
+_TABLE_PLACEMENT_ATTEMPTS = 32
 
 
 class _BareMeshResult(NamedTuple):
@@ -46,43 +49,21 @@ class DiningSetupResult(NamedTuple):
 
 
 class DiningTableSetupResult(NamedTuple):
+    all_objects: list[pf.MeshObject]
     dining_tables: list[MeshResult]
     dining_chairs: list[MeshResult]
-    rugs: list[pf.MeshObject]
-    all_objects: list[pf.MeshObject]
+    storage_containers: list[pf.MeshObject]
+    storage_supports: list[pf.MeshObject]
 
 
 def _place_on_floor(rng: pf.RNG, child: MR, room_dimensions: pf.Vector) -> None:
     bmin, _ = pf.ops.attr.bbox_min_max(child.mesh, global_coords=False)
+    high = 1.0 - _TABLE_PLACEMENT_INSET
     child.mesh.item().location = (
-        pf.random.uniform(rng, 0.2, 0.8) * room_dimensions.x,
-        pf.random.uniform(rng, 0.4, 0.6) * room_dimensions.y,
+        pf.random.uniform(rng, _TABLE_PLACEMENT_INSET, high) * room_dimensions.x,
+        pf.random.uniform(rng, _TABLE_PLACEMENT_INSET, high) * room_dimensions.y,
         0.001 - bmin[2],
     )
-
-
-def _rug_rand(
-    rng: pf.RNG,
-    room_dimensions: pf.Vector,
-) -> list[pf.MeshObject]:
-    wall_clearance = 0.3
-    avail_x = room_dimensions.x - 2 * wall_clearance
-    avail_y = room_dimensions.y - 2 * wall_clearance
-    length = pf.random.uniform(rng, min(1.0, avail_x), avail_x)
-    width = pf.random.uniform(rng, min(1.0, avail_y), avail_y)
-    thickness = pf.random.uniform(rng, 0.01, 0.02)
-    result = rug.rug_rand(rng, dimensions=pf.Vector((length, width, thickness)))
-    result.mesh.item().name = rug.rug_rand.__name__
-    cx = pf.random.uniform(
-        rng,
-        wall_clearance + length / 2,
-        room_dimensions.x - wall_clearance - length / 2,
-    )
-    cy = pf.random.uniform(
-        rng, wall_clearance + width / 2, room_dimensions.y - wall_clearance - width / 2
-    )
-    pf.ops.object.set_transform(result.mesh, location=(cx, cy, 0.001))
-    return [result.mesh]
 
 
 def _place_in_free_floorspace(
@@ -91,7 +72,7 @@ def _place_in_free_floorspace(
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
     clearance: float = 2.0,
-    attempts: int = 7,
+    attempts: int = _TABLE_PLACEMENT_ATTEMPTS,
 ) -> MR | None:
     """Place `child` at a random floor location whose `clearance`x-footprint box
     (at the child's own height) clears all existing colliders. Returns the placed
@@ -351,15 +332,13 @@ def dining_table_setup_rand(
     room_dimensions: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
 ) -> DiningTableSetupResult:
-    """Place a dining table in clear floor space, arrange chairs around it, and
-    optionally add a rug. Chairs are culled against `colliders`, retrying the
-    arrangement with a fresh chair design and margins when too few survive."""
+    """Place a dining table in clear floor space and arrange chairs around it."""
     del wall_planes
     if room_dimensions is None:
         room_dimensions = pf.Vector((5.0, 15.0, 3.0))
     if colliders is None:
         colliders = ccol.collision_set([])
-    rng_table_choice, rng_table, rng_place, rng_setup, rng_rug = rng.spawn(5)
+    rng_table_choice, rng_table, rng_place, rng_setup, rng_middle = rng.spawn(5)
 
     table_fn = pf.control.choice(
         rng_table_choice,
@@ -398,13 +377,31 @@ def dining_table_setup_rand(
     colliders = ccol.collision_set(
         colliders.objs + [r.mesh for r in diningtable_objs], cache=colliders
     )
-    rug_func = pf.control.choice(
-        rng_rug,
-        [
-            (_rug_rand, 1.0),
-            (lambda *_, **__: [], 1.0),
-        ],
+    middle_decorations: list[MeshResult] = []
+    if diningtable_objs:
+        rng_middle_choice, rng_middle_asset, rng_middle_place = rng_middle.spawn(3)
+        middle_func = pf.control.choice(
+            rng_middle_choice,
+            [
+                (lambda _: [], 2.0),
+                (lambda r: [vase.vase_rand(r)], 1.0),
+                (lambda r: [bowl.bowl_rand(r)], 1.0),
+                (lambda r: [plant_pot.plant_pot_small_rand(r)], 1.0),
+            ],
+        )
+        middle_decorations = middle_func(rng_middle_asset)
+        for decoration in middle_decorations:
+            snap_on_top(
+                rng_middle_place,
+                decoration,
+                parents=[diningtable_objs[0].mesh],
+            )
+
+    all_objects = [r.mesh for r in diningtable_objs + chair_objs + middle_decorations]
+    return DiningTableSetupResult(
+        all_objects=all_objects,
+        dining_tables=diningtable_objs,
+        dining_chairs=chair_objs,
+        storage_containers=[],
+        storage_supports=[],
     )
-    rug_objs = rug_func(rng_rug, room_dimensions=room_dimensions)
-    all_objects = [r.mesh for r in diningtable_objs + chair_objs] + rug_objs
-    return DiningTableSetupResult(diningtable_objs, chair_objs, rug_objs, all_objects)

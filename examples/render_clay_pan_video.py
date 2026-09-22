@@ -34,7 +34,7 @@ from infinigen2.exporters.util.blender_render import DisplacementMode
 from infinigen2.exporters.util.format import ExportType, RenderPass
 from infinigen2.cameras import camera_cube_free_space_check, monocular
 import infinigen2.scenes.placement.collision as ccol
-from infinigen2.scenes.room import room
+from infinigen2.scenes.room import room, room_shape
 from infinigen2.util.render_metadata import time_step, write_render_metadata
 from infinigen2.util.scene_cleanup import cleanup_except
 
@@ -120,11 +120,11 @@ def main():
     times = {}
 
     with time_step(times, "livingroom"):
-        gen_rng, rng = rng.spawn(2)
-        living = room.livingroom_rand(
-            rng=gen_rng, dimensions=None, frame_start=0, frame_end=0
+        dimensions_rng, room_rng, rng = rng.spawn(3)
+        dimensions = room_shape.room_dimensions_rand(dimensions_rng)
+        living = room.room_livingroom_rand(
+            rng=room_rng, dimensions=dimensions, frame_start=0, frame_end=0
         )
-    dimensions = living.dimensions
     objects = list(living.all_objects)
     floor_colliders = ccol.collision_set([living.floor])
     accept_pred = functools.partial(

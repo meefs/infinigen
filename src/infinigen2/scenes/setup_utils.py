@@ -9,15 +9,8 @@ from typing import Callable, Protocol, TypeVar, runtime_checkable
 import numpy as np
 import procfunc as pf
 
-from infinigen2.objects import (
-    lamp,
-    sofa,
-    storage,
-    table,
-    vase,
-)
+from infinigen2.objects import sofa, storage, table
 from infinigen2.scenes.placement import collision as ccol
-from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.snap import snap_to_plane
 
 __all__ = [
@@ -31,11 +24,9 @@ __all__ = [
     "snap_on_top",
     "snap_side_by_side",
     "snap_to_wall",
-    "sofa_lamps_rand",
     "sofa_object_rand",
     "standalone_wall_planes",
     "storage_object_rand",
-    "table_decoration_object_rand",
 ]
 
 logger = logging.getLogger(__name__)
@@ -116,21 +107,6 @@ def random_bbox_poses_animation_rand(
         cam.rotation_euler = (pitch, roll, yaw)
         cam.keyframe_insert("location", frame=frame)
         cam.keyframe_insert("rotation_euler", frame=frame)
-
-
-@pf.tracer.grammar
-def table_decoration_object_rand(
-    rng: pf.RNG,
-) -> MeshResult:
-    func = pf.control.choice(
-        rng,
-        [
-            (vase.vase_rand, 1.0),
-        ],
-    )
-    result = func(rng)
-    result.mesh.item().name = func.__name__
-    return result
 
 
 @pf.tracer.grammar
@@ -316,54 +292,3 @@ def snap_on_top(
         bbox_min[1] + (bbox_max[1] - bbox_min[1]) * xy_frac[1],
         bbox_max[2] + 0.002,
     )
-
-
-def sofa_lamps_rand(
-    rng: pf.RNG,
-    sofa_meshes: list[pf.MeshObject],
-    side_table_meshes: list[pf.MeshObject],
-    colliders: ccol.CollisionSet,
-) -> tuple[list[MeshResult], list[MeshResult], list[pf.LightObject], ccol.CollisionSet]:
-    """Place floor lamps beside `sofa_meshes` and table lamps atop `side_table_meshes`,
-    culling against `colliders`. Returns (floor_lamps, table_lamps, lights, colliders);
-    each lamp's light is kept in `lights` ~2/3 of the time."""
-    rng_lamp, rng_table_lamp = rng.spawn(2)
-
-    n = min(pf.random.randint(rng_lamp, 0, 3), len(sofa_meshes))
-    rngs = rng_lamp.spawn(n)
-    floor_lamps = [lamp.floor_lamp_rand(rngs[i]) for i in range(n)]
-    placed_floor_lamps = []
-    for i in range(n):
-        floor_lamp = retry_place(
-            rngs[i],
-            floor_lamps[i],
-            colliders,
-            snap_side_by_side,
-            parents=sofa_meshes,
-        )
-        placed_floor_lamps.append(floor_lamp)
-    floor_lamps, colliders = keep_non_colliding(placed_floor_lamps, colliders)
-    logger.info(f"Placed {len(floor_lamps)} floor lamps out of {n} attempts")
-    floor_lamp_lights = [r.light for r in floor_lamps if r.light is not None]
-    lights: list[pf.LightObject] = []
-    lights += pf.control.choice(rng_lamp, [(floor_lamp_lights, 2), ([], 1)])
-
-    n = min(pf.random.randint(rng_table_lamp, 1, 3), len(side_table_meshes))
-    rngs = rng_table_lamp.spawn(n)
-    table_lamps = [lamp.desk_lamp_rand(rngs[i]) for i in range(n)]
-    placed_table_lamps = []
-    for i in range(n):
-        table_lamp = retry_place(
-            rngs[i],
-            table_lamps[i],
-            colliders,
-            snap_on_top,
-            parents=side_table_meshes,
-        )
-        placed_table_lamps.append(table_lamp)
-    table_lamps, colliders = keep_non_colliding(placed_table_lamps, colliders)
-    logger.info(f"Placed {len(table_lamps)} table lamps out of {n} attempts")
-    table_lamp_lights = [r.light for r in table_lamps if r.light is not None]
-    lights += pf.control.choice(rng_table_lamp, [(table_lamp_lights, 2), ([], 1)])
-
-    return floor_lamps, table_lamps, lights, colliders

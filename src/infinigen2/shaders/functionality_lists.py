@@ -526,7 +526,7 @@ def wall_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Materi
     non_brick = pf.control.choice(
         rng_nonbrick,
         [
-            (paint_wall_rand, 3.0),
+            (paint_wall_rand, 17.5),
             (paint_patterned_rand, 1.0),
             (_art_patterned_paint_rand, 0.5),
             (wood_planks.wood_planks_rand, 1.5),

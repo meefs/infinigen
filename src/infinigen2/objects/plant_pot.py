@@ -94,7 +94,7 @@ def _phyllo_basal_pot_rand(
     leaf_size = pf.random.uniform(rng_size, 0.65, 1.0)
     stem_height = foliage_height * pf.random.uniform(rng_height, 0.04, 0.16)
     stem_radius = foliage_radius * pf.random.uniform(rng_radius, 0.035, 0.07)
-    leaf_reach = min(foliage_radius - stem_radius, foliage_height - stem_height)
+    leaf_reach = foliage_radius - stem_radius
     leaf_length = leaf_reach * pf.random.uniform(rng_length, 0.75, 0.95)
     leaf_length = leaf_length / (1.45 * 1.25 * leaf_size)
     return phyllo_plant.plant_phyllo_basal_rand(
@@ -118,11 +118,12 @@ def _phyllo_ascending_pot_rand(
     leaf_size = pf.random.uniform(rng_size, 0.65, 1.0)
     stem_height = foliage_height * pf.random.uniform(rng_height, 0.45, 0.7)
     stem_radius = foliage_radius * pf.random.uniform(rng_radius, 0.025, 0.05)
-    leaf_reach = min(foliage_radius - stem_radius, foliage_height - stem_height)
+    leaf_reach = foliage_radius - stem_radius
     leaf_length = leaf_reach * pf.random.uniform(rng_length, 0.75, 0.95)
     leaf_length = leaf_length / (1.45 * 1.25 * leaf_size)
     return phyllo_plant.plant_phyllo_ascending_rand(
         rng_plant,
+        sparse=False,
         leaf_size=leaf_size,
         leaf_width=pf.random.uniform(rng_width, 0.65, 1.0),
         plant_height=foliage_height,
@@ -226,6 +227,6 @@ def plant_pot_small_rand(rng: pf.RNG) -> PlantPotResult:
         base_radius=base_radius,
         rim_ratio=rim_ratio,
         height=diameter * pf.random.log_uniform(rng_height, 0.45, 0.9),
-        foliage_radius=base_radius * rim_ratio * pf.random.uniform(rng_width, 0.6, 2.0),
+        foliage_radius=base_radius * rim_ratio * pf.random.uniform(rng_width, 1.0, 2.5),
         foliage_height=base_radius * pf.random.log_uniform(rng_foliage, 1.0, 6.0),
     )

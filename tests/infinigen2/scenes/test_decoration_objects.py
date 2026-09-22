@@ -6,7 +6,7 @@
 import procfunc as pf
 
 from infinigen2.objects import random_primitives
-from infinigen2.scenes.room import room_small_objects
+from infinigen2.scenes.room import decoration_objects
 
 
 def _resolve_label(label: str) -> tuple[object, object]:
@@ -18,9 +18,9 @@ def _resolve_label(label: str) -> tuple[object, object]:
 
 
 def test_small_objects_pool_has_unique_stems_and_sampler_labels(rng: pf.RNG) -> None:
-    pool = room_small_objects.small_objects_collection_rand(rng)
+    pool = decoration_objects.small_objects_collection_rand(rng)
     data_names = [obj.item().data.name for obj in pool]
-    labels = [room_small_objects._smallobj_label(name) for name in data_names]
+    labels = [decoration_objects._smallobj_label(name) for name in data_names]
 
     assert len(data_names) == len(set(data_names))
 
@@ -32,8 +32,8 @@ def test_small_objects_pool_has_unique_stems_and_sampler_labels(rng: pf.RNG) -> 
 
 
 def test_small_objects_are_never_labelled_after_the_wrapper(rng: pf.RNG) -> None:
-    pool = room_small_objects.small_objects_collection_rand(rng)
-    labels = {room_small_objects._smallobj_label(obj.item().data.name) for obj in pool}
+    pool = decoration_objects.small_objects_collection_rand(rng)
+    labels = {decoration_objects._smallobj_label(obj.item().data.name) for obj in pool}
 
     assert random_primitives.primitive_with_effect_rand.__name__ not in labels
     assert random_primitives.primitive_rand.__name__ not in labels
@@ -42,4 +42,4 @@ def test_small_objects_are_never_labelled_after_the_wrapper(rng: pf.RNG) -> None
 
 def test_small_objects_label_survives_alias_copy_suffix() -> None:
     label = "cube_rand_effect_twist"
-    assert room_small_objects._smallobj_label(f"{label}_004.003") == label
+    assert decoration_objects._smallobj_label(f"{label}_004.003") == label

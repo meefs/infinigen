@@ -430,7 +430,8 @@ def wall_windows_rand(
         wall_planes=[res.geom],
         backs=backs,
         sills=sills,
-        storage=[],
+        storage_containers=sills,
+        storage_supports=[],
         lights=portals,
         decorations={"window": res.aliases, "window_trim": trims},
     )
@@ -506,7 +507,8 @@ def wall_painting_grid_rand(
         wall_planes=[geom],
         backs=[wall_thick],
         sills=[],
-        storage=[],
+        storage_containers=[],
+        storage_supports=[],
         lights=[],
         decorations={"painting": painting_aliases},
     )
@@ -586,7 +588,8 @@ def wall_storage_shelf_rand(
         wall_planes=[geom],
         backs=backs,
         sills=sills,
-        storage=cabinet_aliases,
+        storage_containers=cabinet_aliases,
+        storage_supports=cabinet_aliases,
         lights=[],
         decorations={"wall_storage": cabinet_aliases},
     )
@@ -666,7 +669,8 @@ def wall_cubby_rand(
             wall_planes=[geom],
             backs=backs,
             sills=[],
-            storage=cabinet_aliases,
+            storage_containers=cabinet_aliases,
+            storage_supports=cabinet_aliases,
             lights=[],
             decorations={"wall_cubby": cabinet_aliases},
         )
@@ -678,7 +682,8 @@ def wall_cubby_rand(
             wall_planes=[geom],
             backs=backs,
             sills=sills,
-            storage=[],
+            storage_containers=sills,
+            storage_supports=[],
             lights=[],
             decorations={},
         )
@@ -762,7 +767,8 @@ def wall_doors_rand(
         wall_planes=[geom],
         backs=backs,
         sills=[],
-        storage=[],
+        storage_containers=[],
+        storage_supports=[],
         lights=[],
         decorations={"door": door_aliases},
     )
@@ -853,7 +859,8 @@ def wall_full_window_rand(
         wall_planes=[geom],
         backs=[wall_back],
         sills=[],
-        storage=[],
+        storage_containers=[],
+        storage_supports=[],
         lights=portals,
         decorations={"window": win_aliases},
     )

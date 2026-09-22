@@ -44,19 +44,20 @@ def wall_board_shelf_rand(
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
     wall_width, wall_height = wall_uv_dimensions(wall)
 
-    shelf_depth = pf.random.uniform(rng, 0.27, 0.675)
+    shelf_depth = pf.random.uniform(rng, 0.27, 0.4725)
     shelf_thickness = pf.random.uniform(rng, 0.02, 0.05)
     spacing_x = pf.random.uniform(rng, 0.03, 0.25)
     spacing_y = pf.random.uniform(rng, 0.5, 0.65)
 
-    # shelf width spans 0.7m up to the full available wall, skewed toward narrow
-    # (squared) so multi-column runs are common while a single full-width shelf
-    # stays possible; the column count emerges from the width+spacing+margin fit
-    # (like the window grid), never chosen up front
-    side_margin = wall_width * pf.random.uniform(rng, 0.04, 0.25) * 2.0
-    available_x = wall_width - side_margin
-    shelf_width = (
-        0.7 + (max(0.7, available_x) - 0.7) * pf.random.uniform(rng, 0.0, 1.0) ** 2
+    max_shelf_width = wall_width * 0.8
+    shelf_width = pf.random.uniform(
+        rng,
+        min(0.7, max_shelf_width),
+        max_shelf_width,
+    )
+    side_margin = min(
+        wall_width * pf.random.uniform(rng, 0.04, 0.25) * 2.0,
+        wall_width - shelf_width,
     )
 
     # canonical wall frame: X=depth out of wall, Y=width, Z=thickness up
@@ -76,10 +77,8 @@ def wall_board_shelf_rand(
         displacement=shelf_material.displacement,
     )
 
-    top_frac = pf.random.uniform(rng, 0.12, 0.25)
-    bot_frac = pf.random.uniform(rng, top_frac, 0.50)
-    margin_top = wall_height * top_frac
-    margin_bottom = wall_height * bot_frac
+    margin_top = wall_height * pf.random.uniform(rng, 0.12, 0.25)
+    margin_bottom = wall_height * pf.random.uniform(rng, 0.40, 0.70)
     margin_split = pf.random.uniform(rng, 0.375, 0.625)
 
     uv_meters = pf.nodes.geo.input_named_attribute(
@@ -130,7 +129,8 @@ def wall_board_shelf_rand(
         wall_planes=[wall],
         backs=[wall_thick],
         sills=[],
-        storage=shelf_aliases,
+        storage_containers=[],
+        storage_supports=shelf_aliases,
         lights=[],
         decorations={"wall_board_shelf": shelf_aliases},
     )
@@ -211,7 +211,8 @@ def wall_storage_flush_rand(
         wall_planes=[wall],
         backs=[wall_thick],
         sills=[],
-        storage=aliases,
+        storage_containers=aliases,
+        storage_supports=aliases,
         lights=[],
         decorations={"wall_storage": aliases},
     )
