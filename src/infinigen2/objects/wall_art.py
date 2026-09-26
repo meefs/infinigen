@@ -198,10 +198,11 @@ def _art_panel_material_rand(
 ) -> pf.Material:
     panel_width = dimensions.y - 2.0 * frame_width
     panel_height = dimensions.z - 2.0 * frame_width
-    uv_scale = pf.nodes.math.combine_xyz(x=panel_width, y=panel_height, z=1.0)
-    normalized_uv = vector / uv_scale
+    tile_size = pf.nodes.math.minimum(panel_width, panel_height)
+    uv_scale = pf.nodes.math.combine_xyz(x=tile_size, y=tile_size, z=1.0)
+    tiled_uv = vector / uv_scale
     rng_color, rng_paint = rng.spawn(2)
-    color = graphicdesign.art_rand(rng_color, normalized_uv)
+    color = graphicdesign.art_rand(rng_color, tiled_uv)
     return paint.paint_rand(rng_paint, vector, base_color=color)
 
 
