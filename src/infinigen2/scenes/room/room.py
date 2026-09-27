@@ -604,7 +604,7 @@ def room_diningroom_rand(
         colliders=colliders,
     )
     name_objects([r.mesh for r in dining_setup.dining_tables], "dining_table")
-    name_objects([r.mesh for r in dining_setup.dining_chairs], "dining_chair")
+    name_objects(dining_setup.dining_chairs, "dining_chair")
     colliders = _with_objects(colliders, dining_setup.all_objects)
     storage_setup = wall_storage_setup_rand(
         rng_storage,

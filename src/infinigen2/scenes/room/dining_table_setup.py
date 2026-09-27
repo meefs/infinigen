@@ -38,10 +38,6 @@ _TABLE_PLACEMENT_INSET = 0.30
 _TABLE_PLACEMENT_ATTEMPTS = 32
 
 
-class _BareMeshResult(NamedTuple):
-    mesh: pf.MeshObject
-
-
 class DiningSetupResult(NamedTuple):
     dining_table: pf.MeshObject
     chairs: list[pf.MeshObject]
@@ -51,7 +47,7 @@ class DiningSetupResult(NamedTuple):
 class DiningTableSetupResult(NamedTuple):
     all_objects: list[pf.MeshObject]
     dining_tables: list[MeshResult]
-    dining_chairs: list[MeshResult]
+    dining_chairs: list[pf.MeshObject]
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
 
@@ -347,8 +343,7 @@ def dining_table_setup_rand(
             (table.circular_dining_table_rand, 1.0),
         ],
     )
-    table_res = table_fn(rng_table)
-    dining_table = _BareMeshResult(mesh=table_res.mesh)
+    dining_table = table_fn(rng_table)
 
     placed = _place_in_free_floorspace(
         rng_place,
@@ -359,7 +354,7 @@ def dining_table_setup_rand(
     diningtable_objs = [placed] if placed is not None else []
     logger.info(f"Placed {len(diningtable_objs)} dining tables")
 
-    chair_objs: list[MeshResult] = []
+    chair_objs: list[pf.MeshObject] = []
     if diningtable_objs:
 
         def arrange_chairs(rng: pf.RNG, parent: pf.MeshObject) -> list[pf.MeshObject]:
@@ -368,10 +363,9 @@ def dining_table_setup_rand(
             ).chairs
 
         # colliders here excludes the table so the obstruction ray hits the wall behind it
-        chair_meshes, colliders = place_surrounding(
+        chair_objs, colliders = place_surrounding(
             rng_setup, diningtable_objs[0].mesh, arrange_chairs, colliders
         )
-        chair_objs = [_BareMeshResult(mesh=c) for c in chair_meshes]
         logger.info(f"Kept {len(chair_objs)} dining chairs after obstruction/collision")
 
     colliders = ccol.collision_set(
@@ -397,7 +391,11 @@ def dining_table_setup_rand(
                 parents=[diningtable_objs[0].mesh],
             )
 
-    all_objects = [r.mesh for r in diningtable_objs + chair_objs + middle_decorations]
+    all_objects = (
+        [r.mesh for r in diningtable_objs]
+        + chair_objs
+        + [r.mesh for r in middle_decorations]
+    )
     return DiningTableSetupResult(
         all_objects=all_objects,
         dining_tables=diningtable_objs,

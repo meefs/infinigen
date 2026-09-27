@@ -29,6 +29,7 @@ from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
+    BareMeshResult,
     MeshResult,
     back_face_grounded,
     retry_place,
@@ -604,10 +605,6 @@ class DecorationObjectsResult(NamedTuple):
     colliders: ccol.CollisionSet
 
 
-class _BareMeshResult(NamedTuple):
-    mesh: pf.MeshObject
-
-
 def _sample_surface_collection(
     rng: pf.RNG,
     count: int,
@@ -825,7 +822,7 @@ def decorate_floor_objects_rand(
     ):
         result = retry_place(
             rng_object,
-            _BareMeshResult(mesh),
+            BareMeshResult(mesh),
             colliders,
             _place_floor_decoration,
             attempts=5,
@@ -927,7 +924,7 @@ def decorate_surface_objects_rand(
     ):
         result = retry_place(
             rng_object,
-            _BareMeshResult(mesh),
+            BareMeshResult(mesh),
             colliders,
             _place_surface_decoration,
             attempts=5,

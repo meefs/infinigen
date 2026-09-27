@@ -26,6 +26,7 @@ from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
+    BareMeshResult,
     MeshResult,
     back_face_grounded,
     retry_place,
@@ -55,10 +56,6 @@ _MIN_TAP_BACK_MARGIN = bathtub.MIN_BACK_MARGIN * 0.1
 _MAX_TAP_BACK_MARGIN = bathtub.MIN_BACK_MARGIN
 _TAP_BACK_OFFSET = 0.05
 _TAP_SURFACE_INSET = 0.01
-
-
-class _BareMeshResult(NamedTuple):
-    mesh: pf.MeshObject
 
 
 class _BathtubSetupResult(NamedTuple):
@@ -257,8 +254,7 @@ def _no_bathtub_setup_rand(
 
 
 def _bathtub_wall_hardware_rand(rng: pf.RNG) -> list[MeshResult]:
-    hardware = bathroom_hardware.bathroom_hardware_rand(rng)
-    return [_BareMeshResult(hardware.mesh)]
+    return [bathroom_hardware.bathroom_hardware_rand(rng)]
 
 
 def _place_bathtub_composite(
@@ -392,11 +388,7 @@ def _bathtub_against_wall_side_rand(
         for item in hardware:
             delete_object(item.mesh.item())
         return None
-    return _BathtubSetupResult(
-        [_BareMeshResult(result.mesh)],
-        [_BareMeshResult(tap_result.mesh)],
-        hardware,
-    )
+    return _BathtubSetupResult([result], [tap_result], hardware)
 
 
 def _bathtub_against_wall_rand(
@@ -896,9 +888,9 @@ def _translate_objects(objects: list[pf.MeshObject], translation: pf.Vector) -> 
 
 
 def _place_sink_over_support(
-    sink_objects: list[pf.MeshObject], support_height: float
+    sink_parts: list[MeshResult], support_height: float
 ) -> None:
-    minimum, maximum = pf.ops.attr.bbox_min_max(sink_objects[0], global_coords=False)
+    minimum, maximum = pf.ops.attr.bbox_min_max(sink_parts[0].mesh, global_coords=False)
     translation = pf.Vector(
         (
             -minimum[0],
@@ -906,18 +898,15 @@ def _place_sink_over_support(
             support_height + 0.001 - minimum[2],
         )
     )
-    _translate_objects(sink_objects, translation)
+    _translate_objects([part.mesh for part in sink_parts], translation)
 
 
 def _bathroom_result(
-    sink_objects: list[pf.MeshObject], support_objects: list[pf.MeshObject]
+    sink_parts: list[MeshResult], supports: list[MeshResult]
 ) -> _BathroomSinkSetupParts:
-    sinks: list[MeshResult] = [_BareMeshResult(mesh=sink_objects[0])]
-    taps: list[MeshResult] = [_BareMeshResult(mesh=obj) for obj in sink_objects[1:]]
-    supports: list[MeshResult] = [_BareMeshResult(mesh=obj) for obj in support_objects]
     return _BathroomSinkSetupParts(
-        bathroom_sinks=sinks,
-        sink_taps=taps,
+        bathroom_sinks=sink_parts[:1],
+        sink_taps=sink_parts[1:],
         sink_supports=supports,
         mirrors=[],
         wall_storage=[],
@@ -931,8 +920,8 @@ def _sink_bathroom_for_setup_rand(
     depth: float,
     surface_material: pf.Material | None = None,
     metal_material: pf.Material | None = None,
-) -> pf.MeshObject:
-    result = bathtub.sink_bathroom_rand(
+) -> MeshResult:
+    return bathtub.sink_bathroom_rand(
         rng,
         width=width,
         size=size,
@@ -940,7 +929,6 @@ def _sink_bathroom_for_setup_rand(
         surface_material=surface_material,
         metal_material=metal_material,
     )
-    return result.mesh
 
 
 def _sink_kitchen_for_setup_rand(
@@ -950,7 +938,7 @@ def _sink_kitchen_for_setup_rand(
     depth: float,
     surface_material: pf.Material | None = None,
     metal_material: pf.Material | None = None,
-) -> pf.MeshObject:
+) -> MeshResult:
     del metal_material
     rim_margin = 0.03
     tap_margin = 0.11
@@ -964,7 +952,7 @@ def _sink_kitchen_for_setup_rand(
         water_tap_margin=tap_margin,
     )
     delete_object(result.cutter.item())
-    return result.mesh
+    return result
 
 
 def _bathroom_sink_parts_rand(
@@ -975,7 +963,7 @@ def _bathroom_sink_parts_rand(
     surface_material: pf.Material | None = None,
     metal_material: pf.Material | None = None,
     tap_material: pf.Material | None = None,
-) -> list[pf.MeshObject]:
+) -> list[MeshResult]:
     (
         rng_choice,
         rng_width,
@@ -993,7 +981,7 @@ def _bathroom_sink_parts_rand(
         depth = pf.random.uniform(rng_depth, 0.14, 0.22)
     sink_kind = pf.control.choice(rng_choice, [("bathroom", 3.0), ("kitchen", 1.0)])
     if sink_kind == "kitchen":
-        sink_object = _sink_kitchen_for_setup_rand(
+        sink_result = _sink_kitchen_for_setup_rand(
             rng_kitchen,
             width,
             size,
@@ -1002,7 +990,7 @@ def _bathroom_sink_parts_rand(
             metal_material,
         )
     else:
-        sink_object = _sink_bathroom_for_setup_rand(
+        sink_result = _sink_bathroom_for_setup_rand(
             rng_bathroom,
             width,
             size,
@@ -1010,10 +998,10 @@ def _bathroom_sink_parts_rand(
             surface_material,
             metal_material,
         )
-    tap_object = tap.tap_rand(rng_tap, material=tap_material).mesh
-    tap_object.item().name = "sink_tap"
-    _place_tap_at_back(tap_object, sink_object)
-    return [sink_object, tap_object]
+    tap_result = tap.tap_rand(rng_tap, material=tap_material)
+    tap_result.mesh.item().name = "sink_tap"
+    _place_tap_at_back(tap_result.mesh, sink_result.mesh)
+    return [sink_result, tap_result]
 
 
 def _floating_sink_setup_rand(
@@ -1033,7 +1021,7 @@ def _floating_sink_setup_rand(
         height = pf.random.uniform(
             rng_height, _MIN_SINK_TOP_HEIGHT, _MAX_SINK_TOP_HEIGHT
         )
-    sink_objects = _bathroom_sink_parts_rand(
+    sink_parts = _bathroom_sink_parts_rand(
         rng_sink,
         width=width,
         size=size,
@@ -1042,9 +1030,9 @@ def _floating_sink_setup_rand(
         metal_material=metal_material,
         tap_material=tap_material,
     )
-    minimum, maximum = pf.ops.attr.bbox_min_max(sink_objects[0], global_coords=False)
-    _place_sink_over_support(sink_objects, height - (maximum[2] - minimum[2]))
-    return _bathroom_result(sink_objects, [])
+    minimum, maximum = pf.ops.attr.bbox_min_max(sink_parts[0].mesh, global_coords=False)
+    _place_sink_over_support(sink_parts, height - (maximum[2] - minimum[2]))
+    return _bathroom_result(sink_parts, [])
 
 
 def _pedestal_sink_setup_rand(
@@ -1064,7 +1052,7 @@ def _pedestal_sink_setup_rand(
         height = pf.random.uniform(
             rng_height, _MIN_SINK_TOP_HEIGHT, _MAX_SINK_TOP_HEIGHT
         )
-    sink_objects = _bathroom_sink_parts_rand(
+    sink_parts = _bathroom_sink_parts_rand(
         rng_sink,
         width=width,
         size=size,
@@ -1073,7 +1061,7 @@ def _pedestal_sink_setup_rand(
         metal_material=metal_material,
         tap_material=tap_material,
     )
-    minimum, maximum = pf.ops.attr.bbox_min_max(sink_objects[0], global_coords=False)
+    minimum, maximum = pf.ops.attr.bbox_min_max(sink_parts[0].mesh, global_coords=False)
     sink_width = maximum[1] - minimum[1]
     sink_depth = maximum[0] - minimum[0]
     support_height = height - (maximum[2] - minimum[2])
@@ -1084,13 +1072,13 @@ def _pedestal_sink_setup_rand(
         bottom_radius=sink_width * pf.random.uniform(rng_dimensions, 0.1, 0.3),
         is_circular=pf.control.choice(rng_shape, [(True, 1.0), (False, 1.0)]),
         material=surface_material,
-    ).mesh
+    )
     pf.ops.object.set_transform(
-        pedestal,
+        pedestal.mesh,
         location=(sink_depth / 2.0, 0.0, 0.001),
     )
-    _place_sink_over_support(sink_objects, support_height)
-    return _bathroom_result(sink_objects, [pedestal])
+    _place_sink_over_support(sink_parts, support_height)
+    return _bathroom_result(sink_parts, [pedestal])
 
 
 def _bathroom_storage_rand(
@@ -1137,9 +1125,9 @@ def _existing_sink_setup_rand(
     tap_material: pf.Material | None,
 ) -> _BathroomSinkSetupParts:
     rng_support, rng_tap, rng_inset, rng_pedestal, rng_cabinet = rng.spawn(5)
-    tap_obj = tap.tap_rand(rng_tap, material=tap_material).mesh
-    tap_obj.item().name = "sink_tap"
-    _place_tap_at_back(tap_obj, sink_obj)
+    tap_result = tap.tap_rand(rng_tap, material=tap_material)
+    tap_result.mesh.item().name = "sink_tap"
+    _place_tap_at_back(tap_result.mesh, sink_obj)
 
     minimum, maximum = pf.ops.attr.bbox_min_max(sink_obj, global_coords=False)
     origin = sink_obj.item().matrix_world.translation
@@ -1162,18 +1150,19 @@ def _existing_sink_setup_rand(
             bottom_radius=sink_width * pf.random.uniform(rng_dimensions, 0.1, 0.3),
             is_circular=pf.control.choice(rng_shape, [(True, 1.0), (False, 1.0)]),
             material=surface_material,
-        ).mesh
-        _place_support_under_sink(pedestal, sink_obj)
-        supports = [_BareMeshResult(pedestal)]
+        )
+        _place_support_under_sink(pedestal.mesh, sink_obj)
+        supports = [pedestal]
     elif support_style == "cabinet":
         if base_inset is None:
             base_inset = pf.random.uniform(rng_inset, 0.0, 0.1)
         support_depth = max(sink_depth - base_inset, 0.1)
         support_width = max(sink_width - base_inset, 0.1)
-        cabinet = _bathroom_storage_rand(
+        cabinet_result = _bathroom_storage_rand(
             rng_cabinet,
             pf.Vector((support_depth, support_width, support_height)),
-        ).mesh
+        )
+        cabinet = cabinet_result.mesh
         cabinet_minimum, cabinet_maximum = pf.ops.attr.bbox_min_max(
             cabinet, global_coords=False
         )
@@ -1188,10 +1177,10 @@ def _existing_sink_setup_rand(
         )
         cabinet.item().name = "sink_cabinet"
         _place_support_under_sink(cabinet, sink_obj)
-        supports = [_BareMeshResult(cabinet)]
+        supports = [cabinet_result]
     return _BathroomSinkSetupParts(
-        bathroom_sinks=[_BareMeshResult(sink_obj)],
-        sink_taps=[_BareMeshResult(tap_obj)],
+        bathroom_sinks=[BareMeshResult(sink_obj)],
+        sink_taps=[tap_result],
         sink_supports=supports,
         mirrors=[],
         wall_storage=[],
@@ -1214,7 +1203,7 @@ def _cabinet_sink_setup_rand(
         height = pf.random.uniform(
             rng_height, _MIN_SINK_TOP_HEIGHT, _MAX_SINK_TOP_HEIGHT
         )
-    sink_objects = _bathroom_sink_parts_rand(
+    sink_parts = _bathroom_sink_parts_rand(
         rng_sink,
         width=width,
         size=size,
@@ -1223,7 +1212,7 @@ def _cabinet_sink_setup_rand(
         metal_material=metal_material,
         tap_material=tap_material,
     )
-    minimum, maximum = pf.ops.attr.bbox_min_max(sink_objects[0], global_coords=False)
+    minimum, maximum = pf.ops.attr.bbox_min_max(sink_parts[0].mesh, global_coords=False)
     sink_width = maximum[1] - minimum[1]
     sink_depth = maximum[0] - minimum[0]
     sink_height = maximum[2] - minimum[2]
@@ -1232,10 +1221,11 @@ def _cabinet_sink_setup_rand(
         base_inset = pf.random.uniform(rng_inset, 0.0, 0.1)
     support_depth = sink_depth - base_inset
     support_width = sink_width - base_inset
-    cabinet = _bathroom_storage_rand(
+    cabinet_result = _bathroom_storage_rand(
         rng_storage,
         dimensions=pf.Vector((support_depth, support_width, support_height)),
-    ).mesh
+    )
+    cabinet = cabinet_result.mesh
     cabinet_minimum, cabinet_maximum = pf.ops.attr.bbox_min_max(
         cabinet,
         global_coords=False,
@@ -1254,8 +1244,8 @@ def _cabinet_sink_setup_rand(
         cabinet,
         location=(0.0, -support_width / 2.0, 0.001),
     )
-    _place_sink_over_support(sink_objects, support_height)
-    return _bathroom_result(sink_objects, [cabinet])
+    _place_sink_over_support(sink_parts, support_height)
+    return _bathroom_result(sink_parts, [cabinet_result])
 
 
 def _bathroom_with_mirror_rand(
@@ -1303,12 +1293,11 @@ def _bathroom_with_mirror_rand(
     mirror.mesh.item().matrix_world = (
         sink_result.mesh.item().matrix_world @ mirror.mesh.item().matrix_world
     )
-    mirror_result = _BareMeshResult(mesh=mirror.mesh)
     return _BathroomSinkSetupParts(
         bathroom_sinks=setup.bathroom_sinks,
         sink_taps=setup.sink_taps,
         sink_supports=setup.sink_supports,
-        mirrors=[mirror_result],
+        mirrors=[mirror],
         wall_storage=setup.wall_storage,
     )
 
@@ -1338,10 +1327,11 @@ def _bathroom_with_wall_storage_rand(
             available_height = room_height - sink_world_maximum[2] - gap - 0.02
             maximum_height = max(0.36, min(maximum_height, available_height))
         height = pf.random.uniform(rng_height, 0.36, maximum_height)
-    cabinet = _bathroom_storage_rand(
+    cabinet_result = _bathroom_storage_rand(
         rng_storage,
         dimensions=pf.Vector((depth, sink_width, height)),
-    ).mesh
+    )
+    cabinet = cabinet_result.mesh
     cabinet_minimum, cabinet_maximum = pf.ops.attr.bbox_min_max(
         cabinet, global_coords=False
     )
@@ -1370,7 +1360,6 @@ def _bathroom_with_wall_storage_rand(
     cabinet.item().matrix_world = (
         sink_result.mesh.item().matrix_world @ cabinet.item().matrix_world
     )
-    cabinet_result = _BareMeshResult(mesh=cabinet)
     return _BathroomSinkSetupParts(
         bathroom_sinks=setup.bathroom_sinks,
         sink_taps=setup.sink_taps,

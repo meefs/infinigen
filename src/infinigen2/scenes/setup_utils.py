@@ -4,7 +4,7 @@
 # Authors: Alexander Raistrick
 
 import logging
-from typing import Callable, Protocol, TypeVar, runtime_checkable
+from typing import Callable, NamedTuple, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 import procfunc as pf
@@ -14,6 +14,7 @@ from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.snap import snap_to_plane
 
 __all__ = [
+    "BareMeshResult",
     "MeshResult",
     "back_face_grounded",
     "jitter_object_rotation_rand",
@@ -38,6 +39,10 @@ MR = TypeVar("MR", bound="MeshResult")
 class MeshResult(Protocol):
     @property
     def mesh(self) -> pf.MeshObject: ...
+
+
+class BareMeshResult(NamedTuple):
+    mesh: pf.MeshObject
 
 
 def _yaw_about_point(

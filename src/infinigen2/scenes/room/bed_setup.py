@@ -12,6 +12,7 @@ from infinigen2.scenes.placement import collision
 from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
+    BareMeshResult,
     MeshResult,
     back_face_grounded,
     retry_place,
@@ -33,10 +34,6 @@ class BedSetupResult(NamedTuple):
     colliders: collision.CollisionSet
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
-
-
-class _BareMeshResult(NamedTuple):
-    mesh: pf.MeshObject
 
 
 _WALL_MARGIN_MIN = 0.0254
@@ -195,7 +192,7 @@ def bed_setup_rand(
         colliders = collision.collision_set(external, cache=colliders)
         original_matrix = bed_mesh.item().matrix_world.copy()
         original_name = bed_mesh.item().name
-        placement_result = _BareMeshResult(bed_mesh)
+        placement_result = BareMeshResult(bed_mesh)
         placed: MeshResult | None = placement_result
         if wall_planes:
             placed = _place_bed_against_wall(
@@ -255,13 +252,25 @@ def bed_setup_rand(
         r_lamp,
         base_radius=0.125 * min(table_size[0], table_size[1]),
     )
-    lamp_candidates: list[tuple[pf.MeshObject, pf.MeshObject, pf.LightObject]] = []
+    setup_colliders = collision.collision_set(
+        colliders.objs + anchor_objects,
+        cache=colliders,
+    )
+    kept_tables, setup_colliders = keep_non_colliding(
+        bedside_tables,
+        setup_colliders,
+        key=lambda obj: obj,
+    )
+    kept = {table_mesh.item() for table_mesh in kept_tables}
+    lamps: list[lamp.LampResult] = []
     for table_mesh, lamp_rng in zip(
         bedside_tables,
         r_lamp_choices.spawn(len(bedside_tables)),
         strict=True,
     ):
         if not pf.control.choice(lamp_rng, [(True, 0.5), (False, 0.5)]):
+            continue
+        if table_mesh.item() not in kept:
             continue
         lamp_mesh = pf.ops.object.alias(lamp_template.mesh)
         light_obj = pf.ops.object.duplicate(lamp_template.light, linked=True)
@@ -282,31 +291,12 @@ def bed_setup_rand(
         light.item().parent = None
         light.item().matrix_world = light_matrix
         lamp_mesh.item().name = "bedside_lamp"
-        lamp_candidates.append((table_mesh, lamp_mesh, light))
-        objects.append(lamp_mesh)
+        lamps.append(lamp.LampResult(mesh=lamp_mesh, light=light))
 
-    setup_colliders = collision.collision_set(
-        colliders.objs + anchor_objects,
-        cache=colliders,
-    )
-    candidates: list[pf.MeshObject | None] = [
-        *bedside_tables,
-        *(lamp_mesh for _, lamp_mesh, _ in lamp_candidates),
-    ]
-    kept_objects, setup_colliders = keep_non_colliding(
-        candidates,
-        setup_colliders,
-        key=lambda obj: obj,
-    )
-    kept = {obj.item() for obj in kept_objects}
-    bedside_tables = [table for table in bedside_tables if table.item() in kept]
-    lamp_candidates = [
-        candidate
-        for candidate in lamp_candidates
-        if candidate[0].item() in kept and candidate[1].item() in kept
-    ]
-    bedside_lamps = [lamp_mesh for _, lamp_mesh, _ in lamp_candidates]
-    lights = [light for _, _, light in lamp_candidates]
+    lamps, setup_colliders = keep_non_colliding(lamps, setup_colliders)
+    bedside_tables = kept_tables
+    bedside_lamps = [result.mesh for result in lamps]
+    lights = [result.light for result in lamps]
     objects = [*anchor_objects, *bedside_tables, *bedside_lamps]
     setup_colliders = collision.collision_set(
         colliders.objs + objects,
