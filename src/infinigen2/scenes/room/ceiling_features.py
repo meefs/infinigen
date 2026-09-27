@@ -3,6 +3,7 @@
 
 # Authors: Alexander Raistrick
 
+import logging
 from typing import NamedTuple
 
 import numpy as np
@@ -19,6 +20,7 @@ from infinigen2.scenes.room.wall_base import (
     ROOM_SUBSURF_LEVELS,
     extrude_for_thickness,
     fit_grid_margins,
+    name_objects,
 )
 from infinigen2.scenes.room.wall_cutouts import (
     _arrange_window_portals,
@@ -30,6 +32,8 @@ from infinigen2.shaders.functionality_lists import (
 )
 from infinigen2.util import mesh as mesh_util
 from infinigen2.uv_surface import grid_placement
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CeilingFeaturesResult",
@@ -55,18 +59,13 @@ def ceiling_light_placement_rand(
     ceiling: pf.MeshObject,
     dimensions: pf.Vector,
 ) -> tuple[list[pf.MeshObject], list[pf.LightObject]]:
-    approx_room_area = dimensions.x * dimensions.y
-    w_per_area = pf.random.clip_gaussian(rng, 0.9, 2.5, 0.3, 12.0)
-    total_energy = approx_room_area * w_per_area
+    lumens = dimensions.x * dimensions.y * pf.random.uniform(rng, 100, 500)
+    total_energy = lumens / 177
 
     spacing_x = pf.random.uniform(rng, 1.5, 2.5)
     spacing_y = pf.random.uniform(rng, 1.5, 2.5)
-    margin_x = pf.random.uniform(rng, 0.4, 1.5)
-    margin_y = pf.random.uniform(rng, 0.4, 1.5)
-
-    n_estimate_x = max(1, int((dimensions.x - 2 * margin_x) // spacing_x) + 1)
-    n_estimate_y = max(1, int((dimensions.y - 2 * margin_y) // spacing_y) + 1)
-    per_energy = total_energy / (n_estimate_x * n_estimate_y)
+    margin_x = min(pf.random.uniform(rng, 0.4, 1.5), 0.3 * dimensions.x)
+    margin_y = min(pf.random.uniform(rng, 0.4, 1.5), 0.3 * dimensions.y)
 
     template_fn = pf.control.choice(
         rng,
@@ -75,7 +74,7 @@ def ceiling_light_placement_rand(
             (lamp.ceiling_shade_lamp_rand, 1.0),
         ],
     )
-    lamp_template = template_fn(rng, energy=per_energy)
+    lamp_template = template_fn(rng, energy=total_energy)
     lamp_template.mesh.item().name = template_fn.__name__
     mesh_template = lamp_template.mesh
 
@@ -103,6 +102,15 @@ def ceiling_light_placement_rand(
 
     # 2d grid placement, no cutting
     pf.ops.uv.cube_project(ceiling, uv_name="UVMap")
+    ceiling_uvs = pf.ops.attr.uv_coords(ceiling)
+    extent_x = ceiling_uvs[:, 0].max() - ceiling_uvs[:, 0].min()
+    extent_y = ceiling_uvs[:, 1].max() - ceiling_uvs[:, 1].min()
+    margin_x_low, margin_x_high, n_x = fit_grid_margins(
+        extent_x, lamp_w[0], gap_x, margin_x, 0.5
+    )
+    margin_y_low, margin_y_high, n_y = fit_grid_margins(
+        extent_y, lamp_w[1], gap_y, margin_y, 0.5
+    )
     uv_meters = pf.nodes.geo.input_named_attribute(
         name="UVMap", data_type=pf.NodeDataType.FLOAT_VECTOR
     ).attribute
@@ -111,10 +119,10 @@ def ceiling_light_placement_rand(
         target_uv=uv_meters,
         instance=mesh_template,
         spacing=pf.Vector((gap_x, gap_y, 0)),
-        margin_low=pf.Vector((margin_x, margin_y, 0)),
-        margin_high=pf.Vector((margin_x, margin_y, 0)),
-        x_instances_max=n_estimate_x,
-        y_instances_max=n_estimate_y,
+        margin_low=pf.Vector((margin_x_low, margin_y_low, 0)),
+        margin_high=pf.Vector((margin_x_high, margin_y_high, 0)),
+        x_instances_max=n_x,
+        y_instances_max=n_y,
         rotation_offset=lamp_hang,
     )
     instances = grid_placement.place_instances_on_uv_grid(
@@ -128,6 +136,14 @@ def ceiling_light_placement_rand(
     )
     meshes = pf.nodes.to_aliases(instances)
     propagate_modifiers_to_instances([mesh_template], meshes)
+    logger.info(
+        "Placed %d ceiling lamps in %.1fx%.1fm room",
+        len(meshes),
+        dimensions.x,
+        dimensions.y,
+    )
+    if not meshes:
+        logger.warning("Ceiling lamp grid produced no lamps")
 
     if lamp_template.light is None or not meshes or light_offset is None:
         return meshes, []
@@ -137,7 +153,6 @@ def ceiling_light_placement_rand(
     # rescale to the actual placed count to hit total_energy
     for light in lights:
         light.item().data.energy = total_energy / len(lights)
-    lights = pf.control.choice(rng, [(lights, 3.0), ([], 1.0)])
     return meshes, lights
 
 
@@ -314,9 +329,8 @@ def ceiling_light_bars_rand(
 
     bar_ceiling_locs = [np.array(alias.item().location) for alias in bar_aliases]
 
-    approx_room_area = dimensions.x * dimensions.y
-    w_per_area = pf.random.clip_gaussian(rng, 1, 1, 0.3, 12.0)
-    per_energy = approx_room_area * w_per_area / max(1, len(bar_aliases))
+    lumens = dimensions.x * dimensions.y * pf.random.uniform(rng, 100, 500)
+    per_energy = lumens / 177 / max(1, len(bar_aliases))
 
     # shared blackbody temperature, indoor range
     temperature = pf.random.clip_gaussian(rng, 4500, 1000, 2000, 8000)
@@ -332,7 +346,7 @@ def ceiling_light_bars_rand(
             energy=lamp_energy,
         )
         blackbody = pf.nodes.color.blackbody(temperature=temperature)
-        emission = pf.nodes.shader.emission(color=blackbody, strength=lamp_energy)
+        emission = pf.nodes.shader.emission(color=blackbody, strength=1.0)
         pf.nodes.to_light(light, surface=emission)
         light.item().location = (
             ceiling_loc[0],
@@ -341,7 +355,6 @@ def ceiling_light_bars_rand(
         )
         lights.append(light)
 
-    lights = pf.control.choice(rng, [(lights, 7.0), ([], 1.0)])
     backs = [lightblocker] if lightblocker is not None else []
     sills = [sill] if sill is not None else []
     return geom, backs, sills, bar_aliases, lights
@@ -406,6 +419,11 @@ def ceiling_feature_rand(
     )
     ceiling_geom, backs, sills, light_meshes, ceiling_lights = option(rng_feature)
 
+    name_objects([shape.floor], "room_floor")
+    name_objects([ceiling_geom], "room_ceiling")
+    name_objects(backs, "room_ceiling_back")
+    name_objects(sills, "room_ceiling_sill")
+    name_objects(light_meshes, "ceiling_light")
     return CeilingFeaturesResult(
         floor=shape.floor,
         ceiling=ceiling_geom,

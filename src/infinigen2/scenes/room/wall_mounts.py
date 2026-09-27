@@ -8,6 +8,8 @@ import logging
 import procfunc as pf
 
 from infinigen2.objects import storage
+from infinigen2.scenes.placement import collision as ccol
+from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
 from infinigen2.scenes.room.wall_base import (
     WallResult,
@@ -40,6 +42,7 @@ def wall_board_shelf_rand(
     wall: pf.MeshObject | None = None,
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
+    colliders: ccol.CollisionSet | None = None,
 ) -> WallResult:
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
     wall_width, wall_height = wall_uv_dimensions(wall)
@@ -113,6 +116,10 @@ def wall_board_shelf_rand(
             margin_top,
             margin_bottom,
         )
+    if colliders is not None:
+        shelf_aliases, _ = keep_non_colliding(
+            shelf_aliases, colliders, key=lambda obj: obj
+        )
 
     wall_thick = extrude_for_thickness(wall, wall_thickness)
     wall_thick.item().name = "room_wall_back"
@@ -142,6 +149,7 @@ def wall_storage_flush_rand(
     wall: pf.MeshObject | None = None,
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
+    colliders: ccol.CollisionSet | None = None,
 ) -> WallResult:
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
     wall_width, wall_height = wall_uv_dimensions(wall)
@@ -204,6 +212,8 @@ def wall_storage_flush_rand(
             margin_low_x,
             margin_high_x,
         )
+    if colliders is not None:
+        aliases, _ = keep_non_colliding(aliases, colliders, key=lambda obj: obj)
 
     wall, wall_thick = plain_wall(wall, wall_material, wall_thickness)
     return WallResult(

@@ -16,6 +16,7 @@ __all__ = [
     "WallResult",
     "extrude_for_thickness",
     "fit_grid_margins",
+    "name_objects",
     "overlap_wall_plane_edges",
     "plain_wall",
     "plane_to_posed_canonical_mesh",
@@ -135,6 +136,20 @@ def plane_to_posed_canonical_mesh(
 def subdivide_wall_plane(obj: pf.MeshObject) -> None:
     mesh_util.crease_all_edges(obj)
     pf.ops.modifier.subdivide_surface(obj, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True)
+
+
+def _name_materials(obj: pf.MeshObject, base: str) -> None:
+    for j, slot in enumerate(obj.item().material_slots):
+        if slot.material is not None:
+            slot.material.name = f"{base}_{j}"
+
+
+def name_objects(objs: list[pf.MeshObject], name: str) -> list[pf.MeshObject]:
+    for i, obj in enumerate(objs):
+        object_name = f"{name}.{i:02d}"
+        obj.item().name = object_name
+        _name_materials(obj, object_name)
+    return objs
 
 
 def wall_uv_dimensions(wall: pf.MeshObject) -> tuple[float, float]:

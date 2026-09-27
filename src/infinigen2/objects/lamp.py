@@ -55,7 +55,7 @@ def point_light_indoor(
         shadow_soft_size=shadow_soft_size,
     )
     blackbody = pf.nodes.color.blackbody(temperature=temperature)
-    emission = pf.nodes.shader.emission(color=blackbody, strength=energy)
+    emission = pf.nodes.shader.emission(color=blackbody, strength=1.0)
     pf.nodes.to_light(light, surface=emission)
 
     return light
@@ -71,7 +71,7 @@ def point_light_indoor_rand(
     if temperature is None:
         temperature = pf.random.clip_gaussian(rng_temperature, 4500, 1000, 2000, 8000)
     if energy is None:
-        energy = pf.random.uniform(rng_energy, 5, 15)
+        energy = pf.random.uniform(rng_energy, 450, 1600) / 177
 
     return point_light_indoor(
         energy=energy, temperature=temperature, shadow_soft_size=shadow_soft_size
@@ -877,7 +877,7 @@ def _lamp_parameters_rand(
     if height is None:
         height = pf.random.uniform(rng_height, 0.3, 0.6)
     if energy is None:
-        energy = pf.random.clip_gaussian(rng_energy, 7, 4, 5, 18)
+        energy = pf.random.uniform(rng_energy, 450, 1600) / 177
     if temperature is None:
         temperature = pf.random.clip_gaussian(rng_temperature, 4500, 1000, 2000, 8000)
 

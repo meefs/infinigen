@@ -162,7 +162,7 @@ def ceiling_light(
     height: float = 0.063,
     inner_height: float = 0.0504,
     curvature: float = 0.3,
-    energy: float = 75.0,
+    energy: float = 9.0,
     temperature: float = 4500.0,
     shadow_soft_size: float = 0.025,
     turned_on: bool = True,
@@ -238,7 +238,7 @@ def ceiling_light_rand(
     light = None
     if turned_on:
         if energy is None:
-            energy = pf.random.uniform(rng, 50, 100)
+            energy = pf.random.uniform(rng, 800, 3000) / 177
         if shadow_soft_size is None:
             shadow_soft_size = pf.random.uniform(rng, 0.02, 0.03)
 

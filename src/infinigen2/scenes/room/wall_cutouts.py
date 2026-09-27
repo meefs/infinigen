@@ -13,6 +13,8 @@ from mathutils import Euler
 from infinigen2.curves.skirting_board_profile import trim_profile_rand
 from infinigen2.objects import storage, wall_art, window
 from infinigen2.objects.door import door_composite_rand, door_double_rand
+from infinigen2.scenes.placement import collision as ccol
+from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.distribute import (
     duplicates,
     propagate_modifiers_to_instances,
@@ -443,6 +445,7 @@ def wall_painting_grid_rand(
     wall: pf.MeshObject | None = None,
     wall_material: pf.Material | None = None,
     wall_thickness: float = 0.05,
+    colliders: ccol.CollisionSet | None = None,
 ) -> WallResult:
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
     wall_width, wall_height = wall_uv_dimensions(wall)
@@ -462,9 +465,6 @@ def wall_painting_grid_rand(
         rng, dimensions=pf.Vector((art_depth, art_width, art_height))
     ).mesh
 
-    wall_thick = extrude_for_thickness(wall, wall_thickness)
-    wall_thick.item().name = "room_wall_back"
-
     spacing_x = pf.random.uniform(rng, 0.1, 0.5)
     spacing_y = pf.random.uniform(rng, 0.1, 0.5)
     margin_split = pf.random.uniform(rng, 0.375, 0.625)
@@ -479,16 +479,27 @@ def wall_painting_grid_rand(
     margin_bottom = bottom_min + v_slack * up_bias
     margin_top = top_gap + v_slack * (1.0 - up_bias)
 
-    geom, _sill, _lightblocker, painting_aliases, _trim_edges = cutout_spaced_instances(
-        surface=wall,
+    uv_meters = pf.nodes.geo.input_named_attribute(
+        name="UVMap", data_type=pf.NodeDataType.FLOAT_VECTOR
+    ).attribute
+    grid_res = grid_placement.grid_from_spacing(
+        uv_surface=wall,
+        target_uv=uv_meters,
         instance=art,
-        surface_material=wall_material,
         spacing=pf.Vector((spacing_x, spacing_y, 0)),
         margin_low=pf.Vector((side_margin * margin_split, margin_bottom, 0)),
         margin_high=pf.Vector((side_margin * (1 - margin_split), margin_top, 0)),
         y_instances_max=n_rows,
-        recess=False,
     )
+    instances = grid_placement.place_instances_on_uv_grid(
+        surface=wall,
+        uv_field=uv_meters,
+        grid_mesh=grid_res.grid_mesh,
+        query_uv=grid_res.query_uv,
+        instance=art,
+    )
+    painting_aliases = pf.nodes.to_aliases(instances)
+    propagate_modifiers_to_instances([art], painting_aliases)
     if not painting_aliases:
         logger.warning(
             "painting: grid fit 0 paintings on %.2fx%.2fm wall "
@@ -501,10 +512,15 @@ def wall_painting_grid_rand(
             spacing_y,
             n_rows,
         )
+    if colliders is not None:
+        painting_aliases, _ = keep_non_colliding(
+            painting_aliases, colliders, key=lambda obj: obj
+        )
 
+    wall, wall_thick = plain_wall(wall, wall_material, wall_thickness)
     return WallResult(
-        all_objects=[geom, wall_thick, *painting_aliases],
-        wall_planes=[geom],
+        all_objects=[wall, wall_thick, *painting_aliases],
+        wall_planes=[wall],
         backs=[wall_thick],
         sills=[],
         storage_containers=[],
