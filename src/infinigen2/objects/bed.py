@@ -9,7 +9,7 @@ import procfunc as pf
 
 from infinigen2.objects import chair, storage, table
 from infinigen2.shaders.base_materials import fabric, leather
-from infinigen2.shaders.composites import fabric_patterned
+from infinigen2.shaders.composites import fabric_patterned, fabric_wrinkled
 from infinigen2.shaders.functionality_lists import (
     fabric_art_rand,
     furniture_material_rand,
@@ -199,6 +199,13 @@ def _mattress_material_rand(rng: pf.RNG) -> pf.Material:
             (partial(fabric.fabric_rand, base_color=color), 2.0),
             (fabric_patterned.fabric_patterned_rand, 3.0),
             (fabric_art_rand, 1.0),
+            (
+                partial(
+                    fabric_wrinkled.fabric_bedding_wrinkled_rand,
+                    base_color=color,
+                ),
+                2.0,
+            ),
         ],
     )
     return material_fn(r_material, pf.nodes.shader.coord().uv)

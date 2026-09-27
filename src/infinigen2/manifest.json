@@ -362,6 +362,39 @@
   },
   {
     "category": "Material",
+    "name": "infinigen2.shaders.composites.fabric_wrinkled.fabric_wrinkled_rand",
+    "integration_test_string": "fabric_wrinkled_rand material_torus_uv render_cycles"
+  },
+  {
+    "category": "Displacement",
+    "name": "infinigen2.shaders.displacements.wrinkles.wrinkles_fabric_rand",
+    "integration_test_string": "wrinkles_fabric_rand material_cube render_cycles",
+    "presets": [
+      "wrinkles_crease_preset",
+      "wrinkles_crease_dense_preset",
+      "wrinkles_crumpled_preset"
+    ]
+  },
+  {
+    "category": "Displacement",
+    "name": "infinigen2.shaders.displacements.wrinkles.wrinkles_rug_rand",
+    "integration_test_string": "wrinkles_rug_rand material_cube render_cycles",
+    "presets": [
+      "wrinkles_carpet_preset",
+      "wrinkles_rug_preset"
+    ]
+  },
+  {
+    "category": "Displacement",
+    "name": "infinigen2.shaders.displacements.wrinkles.wrinkles_paper_rand",
+    "integration_test_string": "wrinkles_paper_rand material_cube render_cycles",
+    "presets": [
+      "wrinkles_paper_crumpled_preset",
+      "wrinkles_paper_soft_preset"
+    ]
+  },
+  {
+    "category": "Material",
     "name": "infinigen2.shaders.base_materials.carpet.carpet_rand",
     "presets": [
       "carpet_noisy_preset",

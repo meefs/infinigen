@@ -744,10 +744,13 @@ def box_with_support_loops(
         vertices_z=vertices_z,
     )
 
+    vertices_x_float = vertices_x.astype(dtype=float)
+    vertices_y_float = vertices_y.astype(dtype=float)
+    vertices_z_float = vertices_z.astype(dtype=float)
     index_max = pf.nodes.math.combine_xyz(
-        pf.nodes.math.subtract(vertices_x, 1),
-        pf.nodes.math.subtract(vertices_y, 1),
-        pf.nodes.math.subtract(vertices_z, 1),
+        pf.nodes.math.subtract(vertices_x_float, 1.0),
+        pf.nodes.math.subtract(vertices_y_float, 1.0),
+        pf.nodes.math.subtract(vertices_z_float, 1.0),
     )
     index_float = pf.nodes.math.map_range(
         clamp=False,
@@ -773,9 +776,9 @@ def box_with_support_loops(
     neg_half = pf.nodes.math.vector_scale(vector=size, scale=-0.5)
     ones = (1.0, 1.0, 1.0)
     interior_index_max = pf.nodes.math.combine_xyz(
-        pf.nodes.math.subtract(vertices_x, 2),
-        pf.nodes.math.subtract(vertices_y, 2),
-        pf.nodes.math.subtract(vertices_z, 2),
+        pf.nodes.math.subtract(vertices_x_float, 2.0),
+        pf.nodes.math.subtract(vertices_y_float, 2.0),
+        pf.nodes.math.subtract(vertices_z_float, 2.0),
     )
     even = pf.nodes.math.map_range(
         clamp=False,

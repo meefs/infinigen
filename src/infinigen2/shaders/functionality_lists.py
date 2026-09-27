@@ -33,6 +33,7 @@ from infinigen2.shaders.base_materials import (
 from infinigen2.shaders.composites import (
     bricks,
     fabric_patterned,
+    fabric_wrinkled,
     paint_overlay,
     tiles,
     wall,
@@ -45,6 +46,7 @@ from infinigen2.shaders.composites.splats_overlay import (
     splats_base_material_rand,
     splats_overlay_rand,
 )
+from infinigen2.shaders.displacements.wrinkles import wrinkles_rug_rand
 from infinigen2.shaders.masks import cracks, graphicdesign, splats
 from infinigen2.shaders.masks.tile_shapes import (
     tile_coord_transform_rand,
@@ -57,6 +59,7 @@ __all__ = [
     "ceiling_material_rand",
     "decorative_material_rand",
     "fabric_art_rand",
+    "fabric_floor_rand",
     "fabric_light_rand",
     "fabric_sturdy_rand",
     "floor_material_rand",
@@ -321,6 +324,7 @@ def fabric_sturdy_rand(
     )
     art_patterned = partial(fabric_art_rand, translucency=translucency)
     opaque = partial(fabric.fabric_rand, base_color=color)
+    wrinkled = partial(fabric_wrinkled.fabric_wrinkled_rand, base_color=color)
     material_func = pf.control.choice(
         rng_choice,
         [
@@ -328,6 +332,7 @@ def fabric_sturdy_rand(
             (patterned, 2.0),
             (art_patterned, 0.5),
             (opaque, 1.0),
+            (wrinkled, 1.0 / 3.0),
             (leather.leather_rand, 3.0),
         ],
     )
@@ -361,6 +366,7 @@ def fabric_light_rand(
     )
     art_patterned = partial(fabric_art_rand, translucency=translucency)
     opaque = partial(fabric.fabric_rand, base_color=color)
+    wrinkled = partial(fabric_wrinkled.fabric_wrinkled_rand, base_color=color)
     material_func = pf.control.choice(
         rng_choice,
         [
@@ -368,6 +374,7 @@ def fabric_light_rand(
             (patterned, 2.0),
             (art_patterned, 0.5),
             (opaque, 0.5),
+            (wrinkled, 1.0 / 3.0),
         ],
     )
     material = material_func(rng_mat, vec)
@@ -481,6 +488,7 @@ def all_materials_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Materi
             (concrete.concrete_rand, 1.0),
             (fabric.fabric_rand, 1.0),
             (fabric_patterned.fabric_patterned_rand, 2.0),
+            (fabric_wrinkled.fabric_wrinkled_rand, 1.0 / 3.0),
             (glass_colored.glass_colored_rand, 1.0),
             (granite.granite_smooth_rand, 1.0),
             (gravel_concrete.gravel_concrete_rand, 2.0),
@@ -627,20 +635,65 @@ def ceiling_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mat
     return func(rng_func, vector)
 
 
-def rug_material_rand(
+def _rug_wrinkles_overlay(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+    material: pf.Material,
+) -> pf.Material:
+    wrinkles = wrinkles_rug_rand(rng, vector)
+    return pf.Material(
+        surface=material.surface,
+        displacement=material.displacement + wrinkles,
+    )
+
+
+def fabric_floor_rand(
     rng: pf.RNG,
     vector: t.SocketOrVal[pf.Vector],
 ) -> pf.Material:
-    rng_choice, rng_func = rng.spawn(2)
-    func = pf.control.choice(
-        rng_choice,
+    (
+        rng_uv,
+        rng_base_choice,
+        rng_base,
+        rng_wrinkles_choice,
+        rng_wrinkles,
+        rng_wear_choice,
+        rng_wear,
+    ) = rng.spawn(7)
+    vector = uv_maybe_rotate(rng_uv, vector)
+    base_func = pf.control.choice(
+        rng_base_choice,
         [
             (fabric_patterned.fabric_patterned_rand, 3.0),
             (fabric.fabric_rand, 1.0),
             (lambda rng, vector, **_: carpet.carpet_rand(rng, vector), 2.0),
         ],
     )
-    return func(rng_func, vector)
+    material = base_func(rng_base, vector)
+    wrinkles_func = pf.control.choice(
+        rng_wrinkles_choice,
+        [
+            (lambda r, v, m: m, 1.0),
+            (_rug_wrinkles_overlay, 2.0),
+        ],
+    )
+    material = wrinkles_func(rng_wrinkles, vector, material)
+    wear_func = pf.control.choice(
+        rng_wear_choice,
+        [
+            (lambda r, v, m: m, 3.0),
+            (scratches_overlay_rand, 1.0),
+            (splats_overlay_rand, 1.0),
+        ],
+    )
+    return wear_func(rng_wear, vector, material)
+
+
+def rug_material_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+) -> pf.Material:
+    return fabric_floor_rand(rng, vector)
 
 
 def _mirror_splats_gradient(
