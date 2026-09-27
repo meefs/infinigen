@@ -103,6 +103,44 @@ def test_generators_material(rng, pathspec, min_parameters):
     validate_trace_generator(material_sample, rng, min_parameters=min_parameters)
 
 
+_DISPLACEMENT_FUNCS = pf.util.manifest.filter_manifest(
+    GENERATORS_MANIFEST,
+    filter={"category": "Displacement"},
+    require_nonempty=["name"],
+    min_entries=1,
+)
+
+
+@pytest.mark.parametrize(
+    "pathspec, min_parameters",
+    _manifest_params(_DISPLACEMENT_FUNCS, {"min_parameters": 2}),
+)
+def test_generators_displacement(rng, pathspec, min_parameters):
+    displacement_sample = import_item(pathspec)
+    vector = pf.nodes.shader.coord().object
+    displacement = displacement_sample(rng=rng, vector=vector)
+    material = pf.Material(
+        surface=pf.nodes.shader.diffuse_bsdf(color=(0.35, 0.3, 0.25, 1.0)),
+        displacement=displacement,
+    )
+    plane = pf.ops.primitives.mesh_plane(size=1)
+    pf.ops.object.set_material(plane, material=material)
+    _assert_render_valid([plane])
+    validate_trace_generator(displacement_sample, rng, min_parameters=min_parameters)
+
+
+def test_displacement_integration_commands_present() -> None:
+    assert _DISPLACEMENT_FUNCS["integration_test_string"].notna().all()
+
+
+def test_masonry_displacement_uses_readable_demo() -> None:
+    row = _DISPLACEMENT_FUNCS.iloc[0]
+    assert row["name"].endswith(".masonry_displacement_rand")
+    assert row["integration_test_string"] == (
+        "masonry_displacement_rand material_plane_uv render_cycles"
+    )
+
+
 _OBJECT_FUNCS = pf.util.manifest.filter_manifest(
     GENERATORS_MANIFEST,
     filter={"category": "Object"},

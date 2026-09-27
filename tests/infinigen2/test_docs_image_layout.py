@@ -12,6 +12,8 @@ _SHELL_SUBS = (
     ("{}", r"[A-Za-z0-9_]+"),
     ("$sn", r"[A-Za-z0-9_]+"),
     ("$CAM_SCENE", "livingroom_rand"),
+    ("$demo_slug", r"[A-Za-z0-9_]+"),
+    ("$renderer_slug", r"[A-Za-z0-9_]+"),
     ("$disp", r"[A-Za-z0-9_]+"),
     ("$i", r"\d+"),
 )
@@ -81,3 +83,31 @@ def test_published_urls_are_versioned_webp() -> None:
             assert url.startswith(f"{conf.IMAGE_URL_BASE}/{conf.VERSION_SLUG}/")
             assert not url.endswith(".png")
             assert url.endswith(".webp") or url.endswith(".mp4")
+
+
+def test_docs_commands_use_manifest_integration_override() -> None:
+    conf = _load_conf()
+    name = "infinigen2.shaders.displacements.masonry.masonry_displacement_rand"
+    command = conf._replicate_command("Displacement", name, 0)
+    assert command.startswith(
+        "infinigen2 masonry_displacement_rand material_plane_uv render_cycles "
+    )
+    assert conf._archive_rel(name, 0).startswith(
+        "displacement-masonry_displacement_rand-planeuv-cycles-0/"
+    )
+
+
+def test_docs_commands_use_category_default_without_override() -> None:
+    conf = _load_conf()
+    name = "infinigen2.shaders.base_materials.fabric.fabric_rand"
+    command = conf._replicate_command("Material", name, 0)
+    assert command.startswith("infinigen2 fabric_rand material_cube render_cycles ")
+
+
+def test_docs_preset_commands_inherit_owner_integration_geometry() -> None:
+    conf = _load_conf()
+    name = "infinigen2.shaders.composites.bricks.brick_masonry_brown_preset"
+    command = conf._replicate_command("Material", name, 0)
+    assert command.startswith(
+        "infinigen2 brick_masonry_brown_preset material_plane_uv render_cycles "
+    )

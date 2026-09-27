@@ -274,6 +274,7 @@ _FALLBACK_CATEGORY_SEARCH_STRINGS = [
     ("Exporter", "exporters"),
     ("Material", "materials"),
     ("Mask", "masks"),
+    ("Displacement", "displacements"),
     ("Material", "shaders.composites"),
 ]
 
@@ -294,7 +295,7 @@ def _resolve_generator(name: str) -> tuple[Callable, str]:
 
     presets = {n.rsplit(".", 1)[-1]: n for n in list_command.preset_dotted_names()}
     if name in presets:
-        return import_item(presets[name]), "Material"
+        return import_item(presets[name]), list_command.preset_categories()[name]
 
     category = next(
         (
@@ -514,6 +515,12 @@ def _unpack_by_category(category: str, result, data: dict):
             data["mask"] = result.mask
             data["material"] = pf.Material(
                 surface=pf.nodes.shader.diffuse_bsdf(color=result.mask)
+            )
+        case "Displacement":
+            data["displacement"] = result
+            data["material"] = pf.Material(
+                surface=pf.nodes.shader.diffuse_bsdf(color=(0.35, 0.3, 0.25, 1.0)),
+                displacement=result,
             )
         case "Object":
             data["obj"] = result.mesh

@@ -361,6 +361,17 @@ def test_viewer_type_sort_is_opt_in(tmp_path):
     assert client.get(f"/?{query}&sort=unknown").status_code == 400
 
 
+def test_viewer_exposes_displacement_filter(tmp_path):
+    before = _viewer_sort_run(tmp_path, "before", 0, 0)
+    after = _viewer_sort_run(tmp_path, "after", 10, 255)
+    query = urlencode([("v", before), ("v", after)])
+    client = compare.app.test_client()
+
+    html = client.get(f"/?{query}").get_data(as_text=True)
+
+    assert 'data-filter-value="displacement" checked' in html
+
+
 def test_freeze_forwards_type_sort(tmp_path):
     before = _viewer_sort_run(tmp_path, "before", 0, 0)
     after = _viewer_sort_run(tmp_path, "after", 10, 255)

@@ -45,15 +45,20 @@ def get_parser():
     return parser
 
 
-def _owned_presets() -> list[tuple[str, str, list[str]]]:
-    """(generator dotted name, generator shortname, owned preset shortnames) for each
-    manifest entry that declares a `presets` list. Ownership is explicit in the
-    manifest — nothing is inferred from names."""
+def _owned_presets() -> list[tuple[str, str, str, list[str]]]:
+    """Generator dotted name, shortname, category, and owned preset shortnames."""
     owned = []
     for record in GENERATORS_MANIFEST.to_dict("records"):
         presets = record.get("presets")
         if isinstance(presets, list) and presets:
-            owned.append((record["name"], record["name"].rsplit(".", 1)[-1], presets))
+            owned.append(
+                (
+                    record["name"],
+                    record["name"].rsplit(".", 1)[-1],
+                    record["category"],
+                    presets,
+                )
+            )
     return owned
 
 
@@ -61,7 +66,7 @@ def preset_dotted_names() -> list[str]:
     """Dotted names of every preset the manifest declares, resolved in its owning
     generator's module (presets live alongside the generator that owns them)."""
     names = []
-    for gen_name, _, presets in _owned_presets():
+    for gen_name, _, _, presets in _owned_presets():
         module_path = gen_name.rsplit(".", 1)[0]
         names.extend(f"{module_path}.{preset}" for preset in presets)
     return sorted(names)
@@ -71,14 +76,28 @@ def preset_parents() -> dict[str, str]:
     """Map each preset shortname to the generator shortname that owns it, read
     directly from the manifest `presets` lists (no name-based inference)."""
     parents = {}
-    for _, owner, presets in _owned_presets():
+    for _, owner, _, presets in _owned_presets():
         for preset in presets:
             parents[preset] = owner
     return parents
 
 
+def preset_categories() -> dict[str, str]:
+    categories = {}
+    for _, _, category, presets in _owned_presets():
+        for preset in presets:
+            categories[preset] = category
+    return categories
+
+
 def _preset_manifest() -> pd.DataFrame:
-    return pd.DataFrame({"name": preset_dotted_names(), "category": "MaterialPreset"})
+    names = []
+    categories = []
+    for gen_name, _, category, presets in _owned_presets():
+        module_path = gen_name.rsplit(".", 1)[0]
+        names.extend(f"{module_path}.{preset}" for preset in presets)
+        categories.extend(f"{category}Preset" for _ in presets)
+    return pd.DataFrame({"name": names, "category": categories}).sort_values("name")
 
 
 def _format_cell(value: object) -> str:

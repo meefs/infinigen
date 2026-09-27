@@ -72,6 +72,11 @@ CATEGORIES = {
     "objects": (["--categories", "Object"], "OBJECT_LIMIT", "OBJECTS"),
     "scenes": (["--categories", "Scene"], "SCENE_LIMIT", "SCENES"),
     "masks": (["--categories", "Mask"], "MASK_LIMIT", "MASKS"),
+    "displacements": (
+        ["--categories", "Displacement"],
+        "DISPLACEMENT_LIMIT",
+        "DISPLACEMENTS",
+    ),
     "presets": (["--presets"], "PRESET_LIMIT", "PRESETS"),
     "environments": (
         ["--categories", "Environment"],

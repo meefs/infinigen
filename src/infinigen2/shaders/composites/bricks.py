@@ -490,7 +490,7 @@ def brick_masonry_sharp_preset(
         value=brick_cutter_result.distance_from_edge, from_max=0.43
     )
 
-    layer_1_result = masonry.voronoi_displacement_layer(
+    layer_1_height = masonry.voronoi_displacement_layer(
         vector=brick_cutter_result.vector * (0.6, 1.0, 1.0),
         size=0.09,
         detail=0.0,
@@ -499,9 +499,9 @@ def brick_masonry_sharp_preset(
         height=displacement_layer_1_height * 0.35,
         clamp_max=9.715,
     )
-    layer_2_result = masonry.noise_displacement_layer(
-        vector=layer_1_result.displacement,
-        previous_layer=layer_1_result.height,
+    layer_2_height = masonry.noise_displacement_layer(
+        vector=brick_cutter_result.vector * (0.6, 1.0, 1.0),
+        previous_layer=layer_1_height,
         mask=displacement_layer_2_mask,
         size=0.1,
         detail=4.0,
@@ -511,7 +511,7 @@ def brick_masonry_sharp_preset(
         clamp_min=-12.0,
     )
     displacement = pf.nodes.shader.displacement(
-        height=layer_2_result.height,
+        height=layer_2_height,
         midlevel=0.0,
     )
     return pf.Material(
@@ -557,15 +557,15 @@ def brick_masonry_granite_preset(
         value=brick_cutter_result.distance_from_edge, from_max=0.43
     )
 
-    layer_1_result = masonry.noise_displacement_layer(
+    layer_1_height = masonry.noise_displacement_layer(
         vector=brick_cutter_result.vector,
         size=0.1,
         height=brick_cutter_result.distance_from_edge * 0.2,
         clamp_max=0.015,
     )
-    layer_2_result = masonry.noise_displacement_layer(
-        vector=layer_1_result.displacement,
-        previous_layer=layer_1_result.height,
+    layer_2_height = masonry.noise_displacement_layer(
+        vector=brick_cutter_result.vector,
+        previous_layer=layer_1_height,
         mask=displacement_layer_2_mask,
         size=0.2,
         detail=8.0,
@@ -573,7 +573,7 @@ def brick_masonry_granite_preset(
         clamp_min=-12.0,
     )
     displacement = pf.nodes.shader.displacement(
-        height=layer_2_result.height,
+        height=layer_2_height,
         midlevel=0.0,
     )
     return pf.Material(
@@ -625,7 +625,7 @@ def brick_masonry_brown_preset(
         value=brick_cutter_result.distance_from_edge, from_max=0.43
     )
 
-    layer_1_result = masonry.voronoi_displacement_layer(
+    layer_1_height = masonry.voronoi_displacement_layer(
         vector=brick_cutter_result.vector,
         size=0.12,
         detail=0.0,
@@ -635,9 +635,9 @@ def brick_masonry_brown_preset(
         height=brick_cutter_result.distance_from_edge * 0.32,
         clamp_max=0.015,
     )
-    layer_2_result = masonry.noise_displacement_layer(
-        vector=layer_1_result.displacement,
-        previous_layer=layer_1_result.height,
+    layer_2_height = masonry.noise_displacement_layer(
+        vector=brick_cutter_result.vector,
+        previous_layer=layer_1_height,
         mask=displacement_layer_2_mask,
         size=0.1,
         detail=4.0,
@@ -647,7 +647,7 @@ def brick_masonry_brown_preset(
         clamp_min=-12.0,
     )
     displacement = pf.nodes.shader.displacement(
-        height=layer_2_result.height,
+        height=layer_2_height,
         midlevel=0.0,
     )
     return pf.Material(
@@ -1488,7 +1488,7 @@ def bricks_masonry_rand(
     height = mult * (brick_cutter.distance_from_edge)  # **exp)
     clip = dimensions_sep.x * pf.random.uniform(rng, 0.03, 0.17)
 
-    masonry_displacement_result = masonry.masonry_displacement_rand(
+    displacement = masonry.masonry_displacement_rand(
         rng=r4,
         vector=brick_cutter.vector,
         layer_1_height=height,
@@ -1497,7 +1497,6 @@ def bricks_masonry_rand(
         layer_2_height=dimensions_sep.y,
     )
 
-    displacement = masonry_displacement_result.displacement
     return pf.Material(
         surface=surface,
         displacement=displacement,

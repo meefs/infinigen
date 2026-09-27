@@ -300,6 +300,7 @@ def _lint_doc_paths(app):
 _CATEGORY_IMAGE_COUNT = {
     "Material": 6,
     "Mask": 6,
+    "Displacement": 6,
     "Object": 6,
     "Scene": 6,
     "Environment": 6,
@@ -378,6 +379,7 @@ _ENTRYPOINTS = _manifest_entrypoints()
 _CATEGORY_ARCHIVE = {
     "Material": ("material", "cube-cycles", "Camera/0000.png"),
     "Mask": ("mask", "planeuv-cycles", "Camera/0000.png"),
+    "Displacement": ("displacement", "torusuv-cycles", "Camera/0000.png"),
     "Object": ("object", "demo-cycles", "Camera/0000.png"),
     "Scene": ("scene", "demo-cycles", "Camera/0000.png"),
     "Environment": ("environment", "monkey-cycles", "Camera/0000.png"),
@@ -388,6 +390,8 @@ _CATEGORY_ARCHIVE = {
 def _archive_rel(name: str, seed: int) -> str:
     category = _IMAGE_CATEGORIES.get(name)
     prefix, mid, media = _CATEGORY_ARCHIVE[category]
+    if category == "Displacement" and _render_commands is not None:
+        mid = _render_commands.archive_variant(category, name) or mid
     variant = f"traj{seed}" if category == "Cameras" else str(seed)
     shortname = name.rsplit(".", 1)[-1]
     return f"{prefix}-{shortname}-{mid}-{variant}/{media}"

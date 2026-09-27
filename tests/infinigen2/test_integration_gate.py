@@ -18,6 +18,7 @@ import baseline_diff  # noqa: E402
 import compose_pr_comment  # noqa: E402
 import launch_andromeda  # noqa: E402
 import prune_archive  # noqa: E402
+import run_and_index  # noqa: E402
 
 DAY = 86400.0
 
@@ -82,7 +83,7 @@ def _write_baseline(tmp_path: Path, mapping: dict) -> Path:
     return path
 
 
-ALL_CATEGORIES = ("materials", "objects", "scenes", "masks")
+ALL_CATEGORIES = ("materials", "objects", "scenes", "masks", "displacements")
 EXTRA_CATEGORIES = ("presets", "environments", "cameras")
 
 
@@ -125,6 +126,7 @@ def test_category_config_has_one_entry_per_shard_and_limit():
         "objects",
         "scenes",
         "masks",
+        "displacements",
         "presets",
         "environments",
         "cameras",
@@ -133,6 +135,14 @@ def test_category_config_has_one_entry_per_shard_and_limit():
         assert selector
         assert limit_env.endswith("_LIMIT")
         assert shard_env.isupper()
+
+
+def test_parse_asset_fields_displacement() -> None:
+    fields = run_and_index.parse_asset_fields(
+        "displacement-masonry_displacement_rand-planeuv-cycles-4"
+    )
+
+    assert fields == ("displacement", "masonry_displacement_rand", "planeuv-cycles-4")
 
 
 def test_gate_forces_full_render_on_non_python_change(tmp_path, monkeypatch):

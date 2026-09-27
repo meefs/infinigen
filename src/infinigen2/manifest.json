@@ -81,6 +81,11 @@
     ]
   },
   {
+    "category": "Displacement",
+    "name": "infinigen2.shaders.displacements.masonry.masonry_displacement_rand",
+    "integration_test_string": "masonry_displacement_rand material_plane_uv render_cycles"
+  },
+  {
     "category": "Material",
     "name": "infinigen2.shaders.composites.fabric_patterned.fabric_patterned_rand"
   },

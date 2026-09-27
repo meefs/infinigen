@@ -24,6 +24,7 @@ MATERIAL_XARGS="-t -I {} -P $MATERIAL_PARALLEL"
 MATERIALS=${MATERIALS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Material --missing_values drop --columns shortname $REST_ARGS)}
 OBJECTS=${OBJECTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Object --missing_values drop --columns shortname $REST_ARGS)}
 MASKS=${MASKS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Mask --missing_values drop --columns shortname $REST_ARGS)}
+DISPLACEMENTS=${DISPLACEMENTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Displacement --missing_values drop --columns shortname $REST_ARGS)}
 PRESETS=${PRESETS-$(uv run python -m infinigen2.list $LIST_ARGS --presets --missing_values drop --columns shortname $REST_ARGS)}
 ENVIRONMENTS=${ENVIRONMENTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Environment --missing_values drop --columns shortname $REST_ARGS)}
 CAMERAS=${CAMERAS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Cameras --missing_values drop --columns shortname $REST_ARGS)}
@@ -104,11 +105,14 @@ NORMAL_STEPS="render_cycles_ground_truth visualize_gt"
 MATERIAL_CMDS=$(uv run python -m infinigen2.list $LIST_ARGS --categories Material \
     --columns shortname integration_test_string --missing_values drop \
     --separator $'\t' $REST_ARGS)
+DISPLACEMENT_CMDS=$(uv run python -m infinigen2.list $LIST_ARGS --categories Displacement \
+    --columns shortname integration_test_string --missing_values drop \
+    --separator $'\t' $REST_ARGS)
 
 # Presets inherit the demo geometry (2nd token) of the generator that owns them.
 PRESET_CMDS=$(awk -F'\t' 'NR==FNR{split($2,a," "); g[$1]=a[2]; next}
     ($2 in g){print $1"\t"$1" "g[$2]" render_cycles"}' \
-    <(printf '%s\n' "$MATERIAL_CMDS") \
+    <(printf '%s\n' "$MATERIAL_CMDS" "$DISPLACEMENT_CMDS") \
     <(uv run python -c "from infinigen2.list import preset_parents
 for k, v in preset_parents().items():
     print(f'{k}\t{v}')"))
@@ -127,6 +131,7 @@ defaults_in_shard() {
 
 MATERIAL_OVERRIDES=$(overrides_in_shard "$MATERIAL_CMDS" "$MATERIALS")
 MATERIAL_DEFAULTS=$(defaults_in_shard "$MATERIAL_CMDS" "$MATERIALS")
+DISPLACEMENT_OVERRIDES=$(overrides_in_shard "$DISPLACEMENT_CMDS" "$DISPLACEMENTS")
 PRESET_OVERRIDES=$(overrides_in_shard "$PRESET_CMDS" "$PRESETS")
 PRESET_DEFAULTS=$(defaults_in_shard "$PRESET_CMDS" "$PRESETS")
 
@@ -173,6 +178,20 @@ for i in {0..5}; do
     echo "$MASKS" | xargs $XARGS "${RENDER_RUNNER_ARGS[@]}" {} material_plane_uv render_cycles \
         $GEN_ARGS --output $OUTPUT_PATH/mask-{}-planeuv-cycles-$i --seed $i \
         --passes rgb -r 384 384 -s 128
+done
+
+# DISPLACEMENTS VISUAL CHECK (warm-grey geometric displacement on declared demo geometry)
+for i in {0..5}; do
+    while IFS=$'\t' read -r sn cmd; do
+        [ -z "$sn" ] && continue
+        read -r _ demo renderer <<< "$cmd"
+        demo_slug=${demo#material_}
+        demo_slug=${demo_slug//_/}
+        renderer_slug=${renderer#render_}
+        "${RENDER_RUNNER_ARGS[@]}" $cmd \
+            $GEN_ARGS --output $OUTPUT_PATH/displacement-$sn-$demo_slug-$renderer_slug-$i --seed $i \
+            --passes rgb --displacement_mode DISPLACEMENT -r 384 384 -s 128
+    done <<< "$DISPLACEMENT_OVERRIDES"
 done
 
 # OBJECTS VISUAL CHECK
