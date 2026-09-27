@@ -9,6 +9,7 @@ import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 
+from infinigen2.cameras import framing
 from infinigen2.curves.room_edge import (
     RoomEdgeCurveResult,
     room_edge_curve_rand,
@@ -32,10 +33,8 @@ class RoomShapeResult(NamedTuple):
     ceiling: pf.MeshObject
     dimensions: pf.Vector
     edge_curve: RoomEdgeCurveResult
-
-    @property
-    def all_objects(self) -> list[pf.MeshObject]:
-        return [self.walls, self.floor, self.ceiling]
+    all_objects: list[pf.MeshObject]
+    cameras: list[pf.CameraObject]
 
 
 class RoomEdgeToWallsResult(NamedTuple):
@@ -232,6 +231,7 @@ def room_shape_rand(
     )
 
     flat_walls = _split_flat_walls(walls_mesh)
+    camera = framing.camera_in_room_corner(floor, float(dimensions.z))
 
     return RoomShapeResult(
         walls=walls_mesh,
@@ -240,4 +240,6 @@ def room_shape_rand(
         ceiling=ceiling,
         dimensions=dimensions,
         edge_curve=edge_curve,
+        all_objects=[walls_mesh, *flat_walls, floor, ceiling],
+        cameras=[camera],
     )

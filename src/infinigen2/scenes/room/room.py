@@ -9,7 +9,6 @@ from typing import NamedTuple, cast
 
 import procfunc as pf
 
-from infinigen2.cameras import framing
 from infinigen2.lighting import sky_lighting
 from infinigen2.objects import window
 from infinigen2.scenes.placement import collision as ccol
@@ -366,7 +365,7 @@ def room_unfurnished_rand(
     )
     return RoomResult(
         all_objects=structure + ceiling.backs + ceiling.sills + skirting,
-        cameras=[framing.camera_in_room_corner(shape.floor, float(shape.dimensions.z))],
+        cameras=shape.cameras,
         lights=pf.control.choice(
             rng_ceiling,
             [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
@@ -531,7 +530,7 @@ def room_livingroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=[framing.camera_in_room_corner(shape.floor, float(shape.dimensions.z))],
+        cameras=shape.cameras,
         lights=pf.control.choice(
             rng_ceiling,
             [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
@@ -667,7 +666,7 @@ def room_diningroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=[framing.camera_in_room_corner(shape.floor, float(shape.dimensions.z))],
+        cameras=shape.cameras,
         lights=pf.control.choice(
             rng_ceiling,
             [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
@@ -855,7 +854,7 @@ def room_bedroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=[framing.camera_in_room_corner(shape.floor, float(shape.dimensions.z))],
+        cameras=shape.cameras,
         lights=pf.control.choice(
             rng_ceiling,
             [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
@@ -992,7 +991,7 @@ def room_bathroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=[framing.camera_in_room_corner(shape.floor, float(shape.dimensions.z))],
+        cameras=shape.cameras,
         lights=pf.control.choice(
             rng_ceiling,
             [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],

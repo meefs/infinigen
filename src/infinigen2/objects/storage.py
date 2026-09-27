@@ -938,7 +938,7 @@ def storage_with_legs_rand(
         back_width=back_width,
         desired_slot_aspect=desired_slot_aspect,
     )
-    pf.ops.object.set_transform(body_result.mesh, location=(0.0, 0.0, leg_height))
+    pf.ops.mesh.transform(body_result.mesh, location=(0.0, 0.0, leg_height))
     legs = stable_legs_rand(rng_legs, dimensions, leg_height, close_edges=close_edges)
     pf.ops.object.join(body_result.mesh, legs)
     return StorageResult(mesh=body_result.mesh)
