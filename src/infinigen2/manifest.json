@@ -681,6 +681,10 @@
   },
   {
     "category": "Scene",
+    "name": "infinigen2.scenes.indoor_space.indoor_space_rand"
+  },
+  {
+    "category": "Scene",
     "name": "infinigen2.scenes.room.room.livingroom_rand",
     "num_seeds": 0
   },
