@@ -548,6 +548,11 @@
     "name": "infinigen2.shaders.functionality_lists.ceiling_material_rand"
   },
   {
+    "category": "Material",
+    "name": "infinigen2.shaders.functionality_lists.terrain_material_rand",
+    "integration_test_string": "terrain_material_rand material_plane_horizontal_uv render_cycles"
+  },
+  {
     "category": "Environment",
     "name": "infinigen2.lighting.sky_lighting.nishita_sky_rand"
   },
@@ -772,6 +777,38 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.random_primitives.primitive_with_effect_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_canyon_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_cliff_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_generalized_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_mesa_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_mountain_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_river_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.ant_landscape.landscape_volcano_rand"
   },
   {
     "category": "Object",

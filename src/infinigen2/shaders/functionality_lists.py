@@ -15,17 +15,25 @@ from infinigen2.shaders.base_materials import (
     carpet,
     ceramic,
     concrete,
+    cracked_ground,
+    dirt,
     fabric,
     glass_colored,
     glass_no_refraction,
     granite,
     gravel_concrete,
+    ice,
     leather,
     marble,
     metal_brushed,
     metal_hammered,
+    mud,
     paint,
     plastic,
+    sand,
+    sandstone,
+    soil,
+    stone,
     stone_smooth,
     terrazzo,
     wood_grain,
@@ -73,10 +81,33 @@ __all__ = [
     "rug_material_rand",
     "skirt_material_rand",
     "table_top_material_rand",
+    "terrain_material_rand",
     "uv_maybe_rotate",
     "uv_maybe_rotate_90",
     "wall_material_rand",
 ]
+
+
+@pf.tracer.grammar
+def terrain_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
+    rng_choice, rng_material = rng.spawn(2)
+    material_func = pf.control.choice(
+        rng_choice,
+        [
+            (cracked_ground.cracked_ground_rand, 1.0),
+            (dirt.dirt_rand, 1.0),
+            (granite.granite_rand, 1.0),
+            (gravel_concrete.gravel_concrete_rand, 1.0),
+            (ice.ice_rand, 1.0),
+            (mud.mud_rand, 1.0),
+            (sand.sand_rand, 1.0),
+            (sandstone.sandstone_rand, 1.0),
+            (soil.soil_rand, 1.0),
+            (stone.stone_rand, 1.0),
+            (stone_smooth.stone_smooth_rand, 1.0),
+        ],
+    )
+    return material_func(rng_material, vector)
 
 
 def uv_maybe_rotate(rng: pf.RNG, vector, rotation_z=None):
