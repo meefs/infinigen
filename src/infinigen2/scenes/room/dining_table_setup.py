@@ -216,12 +216,14 @@ def arrange_dining_chairs(
             offset_seed + 4,
         )
         edge_instances.extend([top, bottom])
-    table_loc = pf.nodes.math.separate_xyz(table_info.location)
-    posed = pf.nodes.geo.transform(
+    bottom_alignment = pf.nodes.math.combine_xyz(z=tbox.min.z - cbox.min.z)
+    aligned = pf.nodes.geo.transform(
         pf.nodes.geo.join_geometry(edge_instances),
-        translation=pf.nodes.math.combine_xyz(
-            x=table_loc.x, y=table_loc.y, z=0.001 - cbox.min.z
-        ),
+        translation=bottom_alignment,
+    )
+    posed = pf.nodes.geo.transform(
+        aligned,
+        translation=table_info.location,
         rotation=table_info.rotation,
     )
     chairs = pf.nodes.to_aliases(posed)

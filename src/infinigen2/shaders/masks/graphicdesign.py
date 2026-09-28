@@ -241,13 +241,7 @@ def art(
     noise_mix: t.SocketOrVal[float] = 0.5,
     uv_mix: t.SocketOrVal[float] = 1.0,
 ) -> pf.ProcNode[pf.Color]:
-    voronoi_a = pf.nodes.texture.voronoi(vector=vector, scale=60.0)
-    voronoi_b = pf.nodes.texture.voronoi(vector=vector, scale=60.0)
-    voronoi_position = pf.nodes.math.mix(
-        factor=0.5,
-        a=voronoi_a.position,
-        b=voronoi_b.position,
-    )
+    voronoi = pf.nodes.texture.voronoi(vector=vector, scale=60.0)
     coarse_noise = pf.nodes.texture.noise(
         vector=vector,
         scale=5.0,
@@ -268,7 +262,7 @@ def art(
     )
     warped_vector = pf.nodes.math.mix(
         factor=0.0417,
-        a=voronoi_position,
+        a=voronoi.position,
         b=noise_vector,
     )
     image_vector = pf.nodes.math.mix(

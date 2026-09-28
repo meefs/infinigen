@@ -1017,8 +1017,9 @@ def room_rand(
     frame_start: int = 1,
     frame_end: int = 1,
 ) -> RoomResult:
+    rng_choice, rng_room = rng.spawn(2)
     room_func = pf.control.choice(
-        rng,
+        rng_choice,
         [
             (room_livingroom_rand, 1.0),
             (room_bathroom_rand, 1.0),
@@ -1027,7 +1028,7 @@ def room_rand(
         ],
     )
     return room_func(
-        rng,
+        rng_room,
         dimensions=dimensions,
         frame_start=frame_start,
         frame_end=frame_end,

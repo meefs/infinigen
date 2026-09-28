@@ -765,7 +765,7 @@ def _pedestal_geometry(
         radius=top_radius * math.sqrt(2.0), depth=height, resolution=4, insets=2
     )
     square = pf.nodes.geo.transform(square, rotation=(0.0, 0.0, math.pi / 4.0))
-    geometry = pf.nodes.func.switch(is_circular, circular, square)
+    geometry = pf.nodes.func.switch(is_circular, square, circular)
     position = pf.nodes.geo.input_position()
     height_fraction = position.z / height + 0.5
     radius = bottom_radius + (top_radius - bottom_radius) * height_fraction

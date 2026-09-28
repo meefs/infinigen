@@ -20,6 +20,8 @@ from infinigen2.util import curve, mesh
 
 __all__ = [
     "TableResult",
+    "base_box_leg",
+    "base_four_leg",
     "base_square",
     "base_square_rand",
     "base_straight",
@@ -33,6 +35,8 @@ __all__ = [
     "dining_table_rand",
     "pedestal_base",
     "pedestal_base_rand",
+    "pedestal_column",
+    "pedestal_column_rand",
     "side_table_dimensions_rand",
     "side_table_rand",
     "table_dimensions_rand",
@@ -479,6 +483,29 @@ def _pedestal_sweep(
 
 
 @pf.nodes.node_function
+def pedestal_column(
+    height: t.SocketOrVal[float],
+    top_radius: t.SocketOrVal[float],
+    bottom_radius: t.SocketOrVal[float],
+    flare: t.SocketOrVal[float],
+    concavity: t.SocketOrVal[float],
+    neck_scale: t.SocketOrVal[float] = 1.0,
+    profile_resolution: t.SocketOrVal[int] = 12,
+    resolution: t.SocketOrVal[int] = 16,
+) -> t.ProcNode[pf.MeshObject]:
+    profile = _pedestal_profile(
+        height=height,
+        top_radius=top_radius,
+        bottom_radius=bottom_radius,
+        flare=flare,
+        concavity=concavity,
+        neck_scale=neck_scale,
+        resolution=profile_resolution,
+    )
+    return _pedestal_sweep(profile, resolution=resolution)
+
+
+@pf.nodes.node_function
 def _leg_square(
     width: t.SocketOrVal[float],
     height: t.SocketOrVal[float],
@@ -638,7 +665,7 @@ def _circular_table_top(
 
 
 @pf.nodes.node_function
-def _base_straight_geometry(
+def base_four_leg(
     dimensions: t.SocketOrVal[pf.Vector],
     leg_diameter: t.SocketOrVal[float],
     leg_inset: t.SocketOrVal[float],
@@ -688,7 +715,7 @@ def _base_straight_geometry(
 
 
 @pf.nodes.node_function
-def _base_square_geometry(
+def base_box_leg(
     dimensions: t.SocketOrVal[pf.Vector],
     leg_diameter: t.SocketOrVal[float],
     leg_placement_top_scale: t.SocketOrVal[float],
@@ -760,7 +787,7 @@ def base_straight(
     """4-leg base with optional stretchers."""
     if dimensions is None:
         dimensions = pf.Vector((1.4, 0.8, 0.75))
-    geo = _base_straight_geometry(
+    geo = base_four_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_inset=leg_inset,
@@ -800,7 +827,7 @@ def base_straight_rand(
     leg_inset = 0.0
     if leg_inset_range is not None and not close_edges:
         leg_inset = pf.random.uniform(rng_inset, *leg_inset_range)
-    geo = _base_straight_geometry(
+    geo = base_four_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_inset=leg_inset,
@@ -831,27 +858,27 @@ def pedestal_base(
 ) -> TableResult:
     """Rotationally symmetric pedestal: stays skinny then flares out low
     (flare/concavity); neck_scale bulges or waists the upper column."""
-    radius_curve = _pedestal_profile(
+    geo = pedestal_column(
         height=height,
         top_radius=top_radius,
         bottom_radius=bottom_radius,
         flare=flare,
         concavity=concavity,
         neck_scale=neck_scale,
+        profile_resolution=resolution,
         resolution=resolution,
     )
-    geo = _pedestal_sweep(radius_curve, resolution=resolution)
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
     pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
     return TableResult(mesh=obj)
 
 
-def _pedestal_profile_rand(
+def pedestal_column_rand(
     rng: pf.RNG, height: float, top_radius: float, bottom_radius: float
-) -> pf.ProcNode[pf.CurveObject]:
+) -> pf.ProcNode[pf.MeshObject]:
     rng_flare, rng_concavity, rng_neck = rng.spawn(3)
-    return _pedestal_profile(
+    return pedestal_column(
         height=height,
         top_radius=top_radius,
         bottom_radius=bottom_radius,
@@ -884,8 +911,7 @@ def pedestal_base_rand(
         bottom_radius_range = (0.30 * footprint, 0.55 * footprint)
     top_radius = pf.random.uniform(rng, *top_radius_range)
     bottom_radius = pf.random.uniform(rng, *bottom_radius_range)
-    radius_curve = _pedestal_profile_rand(rng_profile, z, top_radius, bottom_radius)
-    geo = _pedestal_sweep(radius_curve)
+    geo = pedestal_column_rand(rng_profile, z, top_radius, bottom_radius)
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
     if material is None:
@@ -907,7 +933,7 @@ def base_square(
     """2 box-frame legs."""
     if dimensions is None:
         dimensions = pf.Vector((1.4, 0.8, 0.75))
-    geo = _base_square_geometry(
+    geo = base_box_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_placement_top_scale=leg_placement_top_scale,
@@ -940,7 +966,7 @@ def base_square_rand(
         leg_diameter = sampled_diameter
     if leg_placement_bottom_scale is None:
         leg_placement_bottom_scale = 0.98 if close_edges else 1.0
-    geo = _base_square_geometry(
+    geo = base_box_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_placement_top_scale=0.94 if close_edges else leg_placement_top_scale,

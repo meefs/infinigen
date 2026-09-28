@@ -789,18 +789,18 @@ def _grid_legs(
     width: t.SocketOrVal[float],
     height: t.SocketOrVal[float],
     margin_frac: t.SocketOrVal[float],
-    spacing_frac: t.SocketOrVal[float],
+    spacing: t.SocketOrVal[float],
     diameter: t.SocketOrVal[float],
 ) -> pf.ProcNode:
     margin_x = depth * margin_frac
     margin_y = width * margin_frac
     n_x = pf.nodes.math.clamp(
-        pf.nodes.math.floor((depth - 2.0 * margin_x) / spacing_frac) + 1.0,
+        pf.nodes.math.floor((depth - 2.0 * margin_x) / spacing) + 1.0,
         2.0,
         5.0,
     ).astype(dtype=int)
     n_y = pf.nodes.math.clamp(
-        pf.nodes.math.floor((width - 2.0 * margin_y) / spacing_frac) + 1.0,
+        pf.nodes.math.floor((width - 2.0 * margin_y) / spacing) + 1.0,
         2.0,
         5.0,
     ).astype(dtype=int)
@@ -857,11 +857,12 @@ def grid_legs_rand(
         margin_frac = pf.random.uniform(rng_margin, 0.04, 0.08)
     else:
         margin_frac = pf.random.uniform(rng_margin, 0.08, 0.16)
-    max_spacing = pf.nodes.math.maximum(depth, width) * 0.55
-    spacing_frac = pf.random.clip_gaussian(rng_spacing, 0.5, 0.3, 0.25, max_spacing)
+    spacing = pf.random.clip_gaussian(rng_spacing, 0.5, 0.3, low=0.25)
+    max_spacing = max(depth, width) * 0.55
+    spacing = min(spacing, max_spacing)
     if diameter is None:
         diameter = pf.random.uniform(rng_diameter, 0.025, 0.14)
-    geo = _grid_legs(depth, width, leg_height, margin_frac, spacing_frac, diameter)
+    geo = _grid_legs(depth, width, leg_height, margin_frac, spacing, diameter)
     geo = mesh_util.crease_sharp(geo, threshold_degrees=30.0)
     return pf.nodes.to_mesh_object(geo)
 

@@ -23,7 +23,7 @@ from infinigen2.scenes.room.wall_base import (
     name_objects,
 )
 from infinigen2.scenes.room.wall_cutouts import (
-    _arrange_window_portals,
+    arrange_window_portals,
     cutout_spaced_instances,
 )
 from infinigen2.shaders.functionality_lists import (
@@ -251,7 +251,7 @@ def ceiling_skylights_rand(
 
     portals: list[pf.LightObject] = []
     if window_result.light is not None and skylight_aliases:
-        portals = _arrange_window_portals(skylight_aliases, win, window_result.light)
+        portals = arrange_window_portals(skylight_aliases, win, window_result.light)
 
     backs = [lightblocker] if lightblocker is not None else []
     sills = [sill] if sill is not None else []

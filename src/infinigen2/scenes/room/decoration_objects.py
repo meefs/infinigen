@@ -29,7 +29,6 @@ from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
-    BareMeshResult,
     MeshResult,
     back_face_grounded,
     retry_place,
@@ -608,9 +607,8 @@ class DecorationObjectsResult(NamedTuple):
 def _sample_surface_collection(
     rng: pf.RNG,
     count: int,
-) -> tuple[list[pf.MeshObject], list[pf.LightObject]]:
-    meshes = []
-    lights = []
+) -> list[MeshResult]:
+    results = []
     for rng_object in rng.spawn(count):
         rng_choice, rng_asset = rng_object.spawn(2)
         func = pf.control.choice(
@@ -623,19 +621,15 @@ def _sample_surface_collection(
         )
         result = func(rng_asset)
         result.mesh.item().name = func.__name__
-        meshes.append(result.mesh)
-        light = getattr(result, "light", None)
-        if light is not None:
-            lights.append(light)
-    return meshes, lights
+        results.append(result)
+    return results
 
 
 def _sample_floor_collection(
     rng: pf.RNG,
     count: int,
-) -> tuple[list[pf.MeshObject], list[pf.LightObject]]:
-    meshes = []
-    lights = []
+) -> list[MeshResult]:
+    results = []
     for rng_object in rng.spawn(count):
         rng_choice, rng_asset = rng_object.spawn(2)
         func = pf.control.choice(
@@ -647,11 +641,8 @@ def _sample_floor_collection(
         )
         result = func(rng_asset)
         result.mesh.item().name = func.__name__
-        meshes.append(result.mesh)
-        light = getattr(result, "light", None)
-        if light is not None:
-            lights.append(light)
-    return meshes, lights
+        results.append(result)
+    return results
 
 
 def _place_on_floor(
@@ -790,13 +781,12 @@ def decorate_floor_objects_rand(
     floor: pf.MeshObject,
     wall_planes: list[pf.MeshObject],
     storage: list[pf.MeshObject] | None = None,
-    collection: list[pf.MeshObject] | None = None,
+    collection: list[MeshResult] | None = None,
 ) -> DecorationObjectsResult:
     rng_count, rng_collection, rng_place = rng.spawn(3)
-    lights: list[pf.LightObject] = []
     if collection is None:
         count = int(pf.random.randint(rng_count, 0, 5))
-        collection, lights = _sample_floor_collection(rng_collection, count)
+        collection = _sample_floor_collection(rng_collection, count)
 
     floor_colliders = ccol.collision_set([floor])
     wall_objects = cast(list[pf.Object], wall_planes)
@@ -816,13 +806,13 @@ def decorate_floor_objects_rand(
             eps=0.1,
         )
     ]
-    meshes = []
-    for rng_object, mesh in zip(
+    kept_results: list[MeshResult] = []
+    for rng_object, child in zip(
         rng_place.spawn(len(collection)), collection, strict=True
     ):
         result = retry_place(
             rng_object,
-            BareMeshResult(mesh),
+            child,
             colliders,
             _place_floor_decoration,
             attempts=5,
@@ -832,7 +822,9 @@ def decorate_floor_objects_rand(
             preferred_storage=preferred_storage,
         )
         kept, colliders = keep_non_colliding([result], colliders)
-        meshes.extend(kept_result.mesh for kept_result in kept)
+        kept_results.extend(kept)
+    meshes = [result.mesh for result in kept_results]
+    lights = [result.light for result in kept_results if hasattr(result, "light")]
     return DecorationObjectsResult(
         all_objects=objects + meshes,
         lights=lights,
@@ -906,32 +898,33 @@ def decorate_surface_objects_rand(
     objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
     support_tops: list[pf.MeshObject] | None = None,
-    collection: list[pf.MeshObject] | None = None,
+    collection: list[MeshResult] | None = None,
 ) -> DecorationObjectsResult:
     support_tops = [] if support_tops is None else support_tops
     if not support_tops:
         return DecorationObjectsResult(objects, [], colliders)
 
     rng_count, rng_collection, rng_place = rng.spawn(3)
-    lights: list[pf.LightObject] = []
     if collection is None:
         count = int(pf.random.randint(rng_count, 0, 5))
-        collection, lights = _sample_surface_collection(rng_collection, count)
+        collection = _sample_surface_collection(rng_collection, count)
 
-    meshes = []
-    for rng_object, mesh in zip(
+    kept_results: list[MeshResult] = []
+    for rng_object, child in zip(
         rng_place.spawn(len(collection)), collection, strict=True
     ):
         result = retry_place(
             rng_object,
-            BareMeshResult(mesh),
+            child,
             colliders,
             _place_surface_decoration,
             attempts=5,
             parents=support_tops,
         )
         kept, colliders = keep_non_colliding([result], colliders)
-        meshes.extend(kept_result.mesh for kept_result in kept)
+        kept_results.extend(kept)
+    meshes = [result.mesh for result in kept_results]
+    lights = [result.light for result in kept_results if hasattr(result, "light")]
     return DecorationObjectsResult(
         all_objects=objects + meshes,
         lights=lights,

@@ -559,9 +559,6 @@ def _fixture_result(
     sink_setup = fixtures.sink_setup
     sinks = [result.mesh for result in sink_setup.bathroom_sinks]
     sink_supports = [result.mesh for result in sink_setup.sink_supports]
-    sink_cabinets = [
-        support for support in sink_supports if support.item().name == "sink_cabinet"
-    ]
     wall_storage = [result.mesh for result in sink_setup.wall_storage]
     bathtubs = [result.mesh for result in fixtures.bathtub_setup.bathtubs]
     named_objects = {
@@ -589,8 +586,8 @@ def _fixture_result(
         "bathroom_hardware": [],
     }
     all_objects = [obj for objects in named_objects.values() for obj in objects]
-    storage_containers = sinks + bathtubs + sink_cabinets + wall_storage
-    storage_supports = sink_cabinets + wall_storage
+    storage_supports = [result.mesh for result in sink_setup.storage_supports]
+    storage_containers = sinks + bathtubs + storage_supports
     return BathroomSetupResult(
         named_objects=named_objects,
         all_objects=all_objects,
@@ -870,6 +867,7 @@ class _BathroomSinkSetupParts(NamedTuple):
     sink_supports: list[MeshResult]
     mirrors: list[MeshResult]
     wall_storage: list[MeshResult]
+    storage_supports: list[MeshResult]
 
 
 class BathroomSinkSetupResult(NamedTuple):
@@ -878,6 +876,7 @@ class BathroomSinkSetupResult(NamedTuple):
     sink_supports: list[MeshResult]
     mirrors: list[MeshResult]
     wall_storage: list[MeshResult]
+    storage_supports: list[MeshResult]
     all_objects: list[pf.MeshObject]
 
 
@@ -902,14 +901,18 @@ def _place_sink_over_support(
 
 
 def _bathroom_result(
-    sink_parts: list[MeshResult], supports: list[MeshResult]
+    sink_parts: list[MeshResult],
+    plain_supports: list[MeshResult],
+    storage_supports: list[MeshResult],
 ) -> _BathroomSinkSetupParts:
+    supports = plain_supports + storage_supports
     return _BathroomSinkSetupParts(
         bathroom_sinks=sink_parts[:1],
         sink_taps=sink_parts[1:],
         sink_supports=supports,
         mirrors=[],
         wall_storage=[],
+        storage_supports=storage_supports,
     )
 
 
@@ -1032,7 +1035,7 @@ def _floating_sink_setup_rand(
     )
     minimum, maximum = pf.ops.attr.bbox_min_max(sink_parts[0].mesh, global_coords=False)
     _place_sink_over_support(sink_parts, height - (maximum[2] - minimum[2]))
-    return _bathroom_result(sink_parts, [])
+    return _bathroom_result(sink_parts, [], [])
 
 
 def _pedestal_sink_setup_rand(
@@ -1078,7 +1081,7 @@ def _pedestal_sink_setup_rand(
         location=(sink_depth / 2.0, 0.0, 0.001),
     )
     _place_sink_over_support(sink_parts, support_height)
-    return _bathroom_result(sink_parts, [pedestal])
+    return _bathroom_result(sink_parts, [pedestal], [])
 
 
 def _bathroom_storage_rand(
@@ -1142,6 +1145,7 @@ def _existing_sink_setup_rand(
         [("floating", 1.0), ("pedestal", 1.0), ("cabinet", 1.0)],
     )
     supports: list[MeshResult] = []
+    storage_supports: list[MeshResult] = []
     if support_style == "pedestal":
         rng_dimensions, rng_shape = rng_pedestal.spawn(2)
         pedestal = bathtub.sink_pedestal(
@@ -1178,12 +1182,15 @@ def _existing_sink_setup_rand(
         cabinet.item().name = "sink_cabinet"
         _place_support_under_sink(cabinet, sink_obj)
         supports = [cabinet_result]
+        storage_supports = supports
+    sink_result = BareMeshResult(sink_obj)
     return _BathroomSinkSetupParts(
-        bathroom_sinks=[BareMeshResult(sink_obj)],
+        bathroom_sinks=[sink_result],
         sink_taps=[tap_result],
         sink_supports=supports,
         mirrors=[],
         wall_storage=[],
+        storage_supports=storage_supports,
     )
 
 
@@ -1245,7 +1252,7 @@ def _cabinet_sink_setup_rand(
         location=(0.0, -support_width / 2.0, 0.001),
     )
     _place_sink_over_support(sink_parts, support_height)
-    return _bathroom_result(sink_parts, [cabinet_result])
+    return _bathroom_result(sink_parts, [], [cabinet_result])
 
 
 def _bathroom_with_mirror_rand(
@@ -1299,6 +1306,7 @@ def _bathroom_with_mirror_rand(
         sink_supports=setup.sink_supports,
         mirrors=[mirror],
         wall_storage=setup.wall_storage,
+        storage_supports=setup.storage_supports,
     )
 
 
@@ -1366,6 +1374,7 @@ def _bathroom_with_wall_storage_rand(
         sink_supports=setup.sink_supports,
         mirrors=setup.mirrors,
         wall_storage=[cabinet_result],
+        storage_supports=setup.storage_supports + [cabinet_result],
     )
 
 
@@ -1439,12 +1448,17 @@ def _keep_valid_bathroom_sink_components(
         + [result.mesh for result in mirrors]
         + [result.mesh for result in wall_storage]
     )
+    kept_items = {obj.item() for obj in all_objects}
+    storage_supports = [
+        result for result in setup.storage_supports if result.mesh.item() in kept_items
+    ]
     return BathroomSinkSetupResult(
         bathroom_sinks=setup.bathroom_sinks,
         sink_taps=setup.sink_taps,
         sink_supports=sink_supports,
         mirrors=mirrors,
         wall_storage=wall_storage,
+        storage_supports=storage_supports,
         all_objects=all_objects,
     )
 
@@ -1465,6 +1479,7 @@ def _bathroom_sink_result(
         sink_supports=setup.sink_supports,
         mirrors=setup.mirrors,
         wall_storage=setup.wall_storage,
+        storage_supports=setup.storage_supports,
         all_objects=all_objects,
     )
 
@@ -1608,7 +1623,15 @@ def _place_bathroom_sink_setup_rand(
         component_matrices=component_matrices,
     )
     if placed_sink is None:
-        return BathroomSinkSetupResult([], [], [], [], [], [])
+        return BathroomSinkSetupResult(
+            bathroom_sinks=[],
+            sink_taps=[],
+            sink_supports=[],
+            mirrors=[],
+            wall_storage=[],
+            storage_supports=[],
+            all_objects=[],
+        )
     feature_colliders = ccol.collision_set(
         colliders.objs + [result.mesh for result in setup.sink_supports],
         cache=colliders,
@@ -1678,6 +1701,7 @@ def _add_bathroom_demo_ground(
         sink_supports=setup.sink_supports,
         mirrors=setup.mirrors,
         wall_storage=setup.wall_storage,
+        storage_supports=setup.storage_supports,
         all_objects=setup.all_objects + [ground],
     )
 

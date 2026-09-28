@@ -50,8 +50,8 @@ def test_art_color_preserves_image_warping_without_bsdf():
     ]
     assert len(images) == 1
     assert images[0].image == bpy.data.images[0]
-    assert len(voronoi) == 2
-    assert all(node.inputs["Scale"].default_value == 60.0 for node in voronoi)
+    assert len(voronoi) == 1
+    assert voronoi[0].inputs["Scale"].default_value == 60.0
     assert len(noise) == 2
     assert not principled
 

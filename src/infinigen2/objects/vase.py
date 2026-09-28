@@ -26,6 +26,7 @@ from infinigen2.util import mesh as mesh_util
 __all__ = [
     "VaseResult",
     "vase",
+    "vase_body",
     "vase_material_rand",
     "vase_rand",
 ]
@@ -277,7 +278,7 @@ def _vase_profile(
 
 
 @pf.nodes.node_function
-def _vase_geometry(
+def vase_body(
     u_resolution: t.SocketOrVal[int],
     v_resolution: t.SocketOrVal[int],
     height: t.SocketOrVal[float],
@@ -350,7 +351,7 @@ def vase(
     if material is None:
         material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
 
-    geo = _vase_geometry(
+    geo = vase_body(
         u_resolution=u_resolution,
         v_resolution=v_resolution,
         height=height,
@@ -431,7 +432,7 @@ def vase_rand(rng: pf.RNG) -> VaseResult:
     foot_scale = pf.random.uniform(rng, 0.4, 0.6)
     foot_height = pf.random.uniform(rng, 0.01, 0.1)
 
-    geo = _vase_geometry(
+    geo = vase_body(
         u_resolution=u_resolution,
         v_resolution=v_resolution,
         height=z,

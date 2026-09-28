@@ -36,7 +36,7 @@ def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
         curve=np.array([[0.0, 0.975], [1.0, 0.1625]], dtype=np.float64),
     )
     curve = pf.nodes.geo.set_curve_radius(curve=curve, radius=radius * 1.3)
-    profile = pf.nodes.geo.curve_circle(radius=0.08)
+    profile = pf.nodes.geo.curve_circle(resolution=16, radius=0.08)
     handle = curve_to_mesh_with_uv(
         curve=curve,
         profile=profile,
@@ -61,7 +61,7 @@ def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
         position=position,
         offset=(0.0, 0.0, 0.0),
     )
-    handle = pf.nodes.geo.subdivision_surface(mesh=handle, level=2)
+    handle = pf.nodes.geo.subdivision_surface(mesh=handle)
     return pf.nodes.geo.set_shade_smooth(handle)
 
 
@@ -86,13 +86,13 @@ def _tap_geometry(
     base_curve = pf.nodes.geo.fillet_curve_poly(
         curve=base_curve,
         radius=base_radius,
-        count=19,
+        count=6,
     )
     base = pf.nodes.geo.fill_curve(base_curve)
     base = pf.nodes.geo.extrude_mesh(mesh=base, offset_scale=0.02)
     base_mesh = metric_box_uv(base.mesh)
 
-    stem_cap_curve = pf.nodes.geo.curve_circle(radius=0.02)
+    stem_cap_curve = pf.nodes.geo.curve_circle(resolution=24, radius=0.02)
     stem_cap = pf.nodes.geo.fill_curve(stem_cap_curve)
     stem_cap = pf.nodes.geo.extrude_mesh(mesh=stem_cap, offset_scale=0.06)
     stem_cap_mesh = metric_box_uv(stem_cap.mesh)
@@ -113,8 +113,8 @@ def _tap_geometry(
     lever_handles = pf.nodes.geo.join_geometry([lever_left, lever_right])
 
     thin_handle = pf.nodes.geo.mesh_cylinder(
-        vertices=41,
-        side_segments=39,
+        vertices=8,
+        side_segments=1,
         radius=0.002,
         depth=0.04,
     )
@@ -155,8 +155,8 @@ def _tap_geometry(
     thin_handles = pf.nodes.geo.join_geometry([thin_right, thin_left])
 
     thick_handle = pf.nodes.geo.mesh_cylinder(
-        vertices=41,
-        side_segments=39,
+        vertices=16,
+        side_segments=1,
         radius=0.012,
         depth=0.04,
     )
@@ -192,7 +192,7 @@ def _tap_geometry(
         data_type=NodeDataType.GEOMETRY,
     )
 
-    arc = pf.nodes.geo.curve_circle(radius=0.08)
+    arc = pf.nodes.geo.curve_circle(resolution=48, radius=0.08)
     arc = pf.nodes.geo.transform(
         geometry=arc,
         translation=(0.0, 0.08, 0.0),
@@ -207,7 +207,7 @@ def _tap_geometry(
         start_handle=(0.0, 0.48, 0.0),
         end_handle=pf.nodes.math.combine_xyz(x=0.08, y=curl),
         end=(-0.02, 0.04, 0.0),
-        resolution=177,
+        resolution=32,
     )
     curve = pf.nodes.geo.trim_curve(curve=curve, end=0.6625)
     curve = pf.nodes.geo.transform(
@@ -215,7 +215,7 @@ def _tap_geometry(
         rotation=(1.5708, 0.0, 2.522),
         scale=(5.2, 0.5, 7.8),
     )
-    profile = pf.nodes.geo.curve_circle(radius=0.012)
+    profile = pf.nodes.geo.curve_circle(resolution=16, radius=0.012)
     arc_spout = curve_to_mesh_with_uv(curve=arc, profile=profile).mesh
     curved_spout = curve_to_mesh_with_uv(
         curve=curve,
@@ -263,13 +263,13 @@ def _tap_geometry(
     )
     standard = pf.nodes.geo.join_geometry([stem_cap_mesh, handles, spout])
 
-    vessel_tip = pf.nodes.geo.mesh_cylinder(vertices=318, radius=0.008, depth=0.012)
+    vessel_tip = pf.nodes.geo.mesh_cylinder(vertices=16, radius=0.008, depth=0.012)
     vessel_tip = pf.nodes.geo.transform(
         geometry=vessel_tip.mesh,
         translation=(0.238, 0.0, 0.152),
     )
     vessel_tip = metric_box_uv(vessel_tip)
-    vessel_tube = pf.nodes.geo.mesh_cylinder(vertices=100, radius=0.004, depth=0.28)
+    vessel_tube = pf.nodes.geo.mesh_cylinder(vertices=16, radius=0.004, depth=0.28)
     vessel_tube = pf.nodes.geo.set_position(
         geometry=vessel_tube.mesh,
         offset=(0.0, 0.0, 0.0),
@@ -287,7 +287,7 @@ def _tap_geometry(
         scale=(0.9, 1.0, 1.0),
     )
 
-    vessel_base_curve = pf.nodes.geo.curve_circle(resolution=307, radius=0.022)
+    vessel_base_curve = pf.nodes.geo.curve_circle(resolution=24, radius=0.022)
     vessel_base = pf.nodes.geo.fill_curve(vessel_base_curve)
     vessel_base = pf.nodes.geo.extrude_mesh(mesh=vessel_base, offset_scale=0.06)
     vessel_base_mesh = metric_box_uv(vessel_base.mesh)
@@ -296,7 +296,7 @@ def _tap_geometry(
         start_handle=(0.0, 0.0, 0.28),
         end_handle=(0.08, 0.0, 0.28),
         end=(0.4, 0.0, 0.36),
-        resolution=54,
+        resolution=16,
     )
     spline_parameter = pf.nodes.geo.spline_parameter()
     vessel_radius = pf.nodes.math.float_curve(
@@ -311,7 +311,7 @@ def _tap_geometry(
         curve=vessel_handle_curve,
         radius=vessel_radius * 1.3,
     )
-    vessel_profile = pf.nodes.geo.curve_circle(radius=0.04)
+    vessel_profile = pf.nodes.geo.curve_circle(resolution=24, radius=0.04)
     vessel_handle = curve_to_mesh_with_uv(
         curve=vessel_handle_curve,
         profile=vessel_profile,
@@ -336,7 +336,6 @@ def _tap_geometry(
         position=vessel_position,
         offset=(0.0, 0.0, 0.0),
     )
-    vessel_handle = pf.nodes.geo.subdivision_surface(vessel_handle)
     vessel_handle = pf.nodes.geo.set_shade_smooth(vessel_handle)
     vessel_handle = pf.nodes.geo.transform(
         geometry=vessel_handle,

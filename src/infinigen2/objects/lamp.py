@@ -371,7 +371,7 @@ def _lamp_vase_base_geometry_rand(
         rngs[1],
         [(1.0, 0.5), (pf.random.uniform(rngs[2], 0.8, 1.0), 0.5)],
     )
-    geometry = vase._vase_geometry(
+    geometry = vase.vase_body(
         u_resolution=resolution,
         v_resolution=resolution,
         height=base_height,
@@ -404,7 +404,7 @@ def _lamp_table_straight_base_rand(
 ) -> pf.ProcNode[pf.MeshObject]:
     rng_width, rng_bottom_scale, rng_stretcher, rng_stretcher_position = rng.spawn(4)
     leg_diameter = _lamp_table_member_width_rand(rng_width)
-    return table._base_straight_geometry(
+    return table.base_four_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_inset=0.1 * (dimensions[0] - leg_diameter),
@@ -433,13 +433,9 @@ def _lamp_table_pedestal_base_rand(
         max(1.75 * stand_radius, 0.32 * width),
         max(2.25 * stand_radius, 0.48 * width),
     )
-    profile = table._pedestal_profile_rand(
-        rng_profile,
-        height=dimensions[2],
-        top_radius=top_radius,
-        bottom_radius=bottom_radius,
+    return table.pedestal_column_rand(
+        rng_profile, dimensions[2], top_radius, bottom_radius
     )
-    return table._pedestal_sweep(profile)
 
 
 def _lamp_table_square_base_rand(
@@ -448,7 +444,7 @@ def _lamp_table_square_base_rand(
     dimensions: pf.Vector,
 ) -> pf.ProcNode[pf.MeshObject]:
     rng_width, rng_connector = rng.spawn(2)
-    return table._base_square_geometry(
+    return table.base_box_leg(
         dimensions=dimensions,
         leg_diameter=_lamp_table_member_width_rand(rng_width),
         leg_placement_top_scale=0.8,
@@ -464,16 +460,7 @@ def _lamp_table_base_geometry_rand(
     stand_radius: float,
     dimensions: pf.Vector,
 ) -> pf.ProcNode[pf.MeshObject]:
-    rng_choice, rng_straight, rng_pedestal, rng_square = rng.spawn(4)
-    base_fn = pf.control.choice(
-        rng_choice,
-        [
-            (partial(_lamp_table_straight_base_rand, rng_straight), 1.0),
-            (partial(_lamp_table_pedestal_base_rand, rng_pedestal), 1.0),
-            (partial(_lamp_table_square_base_rand, rng_square), 1.0),
-        ],
-    )
-    return base_fn(stand_radius, dimensions)
+    return _lamp_table_pedestal_base_rand(rng, stand_radius, dimensions)
 
 
 def _lamp_cylinder_base_rand(

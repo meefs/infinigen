@@ -40,6 +40,7 @@ from infinigen2.uv_surface import grid_placement
 
 __all__ = [
     "CutoutResult",
+    "arrange_window_portals",
     "cutout_spaced_instances",
     "cutout_trim_rand",
     "wall_cubby_rand",
@@ -233,8 +234,8 @@ def cutout_trim_rand(
     return obj
 
 
-def _arrange_window_portals(
-    walls_window_aliases: list[pf.MeshObject],
+def arrange_window_portals(
+    window_aliases: list[pf.MeshObject],
     window_obj: pf.MeshObject,
     window_portal: pf.LightObject,
 ) -> list[pf.LightObject]:
@@ -246,14 +247,14 @@ def _arrange_window_portals(
         @ window_obj.item().rotation_euler.to_quaternion().inverted()
     )
     light_locations = np.array(
-        [obj.item().matrix_world @ relative_location for obj in walls_window_aliases]
+        [obj.item().matrix_world @ relative_location for obj in window_aliases]
     )
     light_rotations = np.array(
         [
             (
                 Euler(obj.item().rotation_euler).to_quaternion() @ relative_rot_quat
             ).to_euler()
-            for obj in walls_window_aliases
+            for obj in window_aliases
         ]
     )
     return duplicates(window_portal, light_locations, light_rotations)
@@ -406,7 +407,7 @@ def wall_windows_rand(
     )
     portals = []
     if window_portal is not None and res.aliases:
-        portals = _arrange_window_portals(res.aliases, window_obj, window_portal)
+        portals = arrange_window_portals(res.aliases, window_obj, window_portal)
 
     trims = []
     if res.trim_edges is not None and res.aliases:
@@ -869,7 +870,7 @@ def wall_full_window_rand(
 
     portals = []
     if win_result.light is not None and win_aliases:
-        portals = _arrange_window_portals(win_aliases, win_obj, win_result.light)
+        portals = arrange_window_portals(win_aliases, win_obj, win_result.light)
     return WallResult(
         all_objects=[geom, wall_back, *win_aliases],
         wall_planes=[geom],

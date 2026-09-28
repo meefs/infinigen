@@ -116,39 +116,35 @@ def random_bbox_poses_animation_rand(
 
 @pf.tracer.grammar
 def side_table_object_rand(rng: pf.RNG) -> MeshResult:
+    rng_choice, rng_asset = rng.spawn(2)
     func = pf.control.choice(
-        rng,
+        rng_choice,
         [
             (table.side_table_rand, 1.0),
             (storage.storage_side_table_rand, 1.0),
         ],
     )
-    result = func(rng)
+    result = func(rng_asset)
     result.mesh.item().name = func.__name__
     return result
 
 
 def sofa_object_rand(rng: pf.RNG) -> MeshResult:
+    rng_choice, rng_asset = rng.spawn(2)
     func = pf.control.choice(
-        rng,
+        rng_choice,
         [
             (sofa.sofa_rand, 1.0),
             (sofa.sofa_with_base_rand, 1.0),
         ],
     )
-    return func(rng)
+    return func(rng_asset)
 
 
 @pf.tracer.grammar
 def storage_object_rand(rng: pf.RNG) -> MeshResult:
-    func = pf.control.choice(
-        rng,
-        [
-            (storage.storage_rand, 1.0),
-        ],
-    )
-    result = func(rng)
-    result.mesh.item().name = func.__name__
+    result = storage.storage_rand(rng)
+    result.mesh.item().name = storage.storage_rand.__name__
     return result
 
 

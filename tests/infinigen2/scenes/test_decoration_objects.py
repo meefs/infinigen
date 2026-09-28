@@ -6,6 +6,8 @@
 import procfunc as pf
 
 from infinigen2.objects import random_primitives
+from infinigen2.objects.lamp import LampResult
+from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.room import decoration_objects
 
 
@@ -43,3 +45,57 @@ def test_small_objects_are_never_labelled_after_the_wrapper(rng: pf.RNG) -> None
 def test_small_objects_label_survives_alias_copy_suffix() -> None:
     label = "cube_rand_effect_twist"
     assert decoration_objects._smallobj_label(f"{label}_004.003") == label
+
+
+def test_rejected_surface_lamp_does_not_return_light(monkeypatch, rng: pf.RNG) -> None:
+    lamp_result = LampResult(
+        mesh=pf.ops.primitives.mesh_cube(size=0.2),
+        light=pf.ops.primitives.point_lamp(energy=1000),
+    )
+    support = pf.ops.primitives.mesh_cube(size=1.0)
+    monkeypatch.setattr(
+        decoration_objects,
+        "_sample_surface_collection",
+        lambda *_: [lamp_result],
+    )
+    monkeypatch.setattr(decoration_objects, "retry_place", lambda *_, **__: None)
+
+    result = decoration_objects.decorate_surface_objects_rand(
+        rng,
+        objects=[support],
+        colliders=ccol.collision_set([]),
+        support_tops=[support],
+    )
+
+    assert lamp_result.mesh not in result.all_objects
+    assert lamp_result.light not in result.lights
+
+
+def test_kept_surface_lamp_preserves_original_result(monkeypatch, rng: pf.RNG) -> None:
+    lamp_result = LampResult(
+        mesh=pf.ops.primitives.mesh_cube(size=0.2),
+        light=pf.ops.primitives.point_lamp(energy=1000),
+    )
+    support = pf.ops.primitives.mesh_cube(size=1.0)
+    seen = []
+    monkeypatch.setattr(
+        decoration_objects,
+        "_sample_surface_collection",
+        lambda *_: [lamp_result],
+    )
+
+    def keep_original(_rng, child, *_args, **_kwargs):
+        seen.append(child)
+        return child
+
+    monkeypatch.setattr(decoration_objects, "retry_place", keep_original)
+    result = decoration_objects.decorate_surface_objects_rand(
+        rng,
+        objects=[support],
+        colliders=ccol.collision_set([]),
+        support_tops=[support],
+    )
+
+    assert seen == [lamp_result]
+    assert lamp_result.mesh in result.all_objects
+    assert result.lights == [lamp_result.light]
