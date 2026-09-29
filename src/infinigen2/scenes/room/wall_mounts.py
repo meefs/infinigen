@@ -140,6 +140,7 @@ def wall_board_shelf_rand(
         storage_supports=shelf_aliases,
         lights=[],
         decorations={"wall_board_shelf": shelf_aliases},
+        storages=shelf_aliases,
     )
 
 
@@ -225,4 +226,5 @@ def wall_storage_flush_rand(
         storage_supports=aliases,
         lights=[],
         decorations={"wall_storage": aliases},
+        storages=aliases,
     )

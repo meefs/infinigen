@@ -59,7 +59,7 @@ def ceiling_light_placement_rand(
     ceiling: pf.MeshObject,
     dimensions: pf.Vector,
 ) -> tuple[list[pf.MeshObject], list[pf.LightObject]]:
-    lumens = dimensions.x * dimensions.y * pf.random.uniform(rng, 100, 500)
+    lumens = dimensions.x * dimensions.y * pf.random.uniform(rng, 300, 700)
     total_energy = lumens / 177
 
     spacing_x = pf.random.uniform(rng, 1.5, 2.5)
@@ -329,7 +329,7 @@ def ceiling_light_bars_rand(
 
     bar_ceiling_locs = [np.array(alias.item().location) for alias in bar_aliases]
 
-    lumens = dimensions.x * dimensions.y * pf.random.uniform(rng, 100, 500)
+    lumens = dimensions.x * dimensions.y * pf.random.uniform(rng, 300, 700)
     per_energy = lumens / 177 / max(1, len(bar_aliases))
 
     # shared blackbody temperature, indoor range

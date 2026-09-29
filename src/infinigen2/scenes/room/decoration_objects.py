@@ -31,6 +31,7 @@ from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
     MeshResult,
     back_face_grounded,
+    bbox_face_grounded,
     retry_place,
     snap_back_front,
     snap_on_top,
@@ -38,14 +39,17 @@ from infinigen2.scenes.setup_utils import (
 
 __all__ = [
     "DecorationObjectsResult",
+    "MIN_PLACEABLE_AREA",
+    "container_faces",
+    "decoration_primitives_collection_rand",
     "decorate_floor_objects_rand",
-    "decorate_small_objects_rand",
     "decorate_surface_objects_rand",
     "objects_scatter_rand",
     "objects_scattered_on_surface",
+    "placeable_faces",
     "scatter_small_objects_on_containers",
     "scatter_small_objects_on_support_tops",
-    "small_objects_collection_rand",
+    "support_top_faces",
 ]
 
 logger = logging.getLogger(__name__)
@@ -55,6 +59,7 @@ _WALL_MARGIN_MAX = 0.10
 _ADJACENT_MARGIN_MIN = 0.03
 _ADJACENT_MARGIN_MAX = 0.15
 _SURFACE_INSET = 0.2032
+MIN_PLACEABLE_AREA = 0.005
 
 
 def _smallobj_label(data_name: str) -> str:
@@ -95,6 +100,25 @@ def _scatter_region(
 
 
 @pf.nodes.node_function
+def placeable_faces(
+    parent: pf.ProcNode[pf.MeshObject],
+    selection: t.SocketOrVal[bool],
+) -> pf.ProcNode[pf.MeshObject]:
+    """The selected faces, minus connected islands smaller than
+    MIN_PLACEABLE_AREA, so small details never receive objects."""
+    region = pf.nodes.geo.separate_geometry(
+        geometry=parent, selection=selection, domain="FACE"
+    ).selection
+    island_area = pf.nodes.geo.accumulate_field(
+        value=pf.nodes.geo.input_mesh_face_area(),
+        group_id=pf.nodes.geo.input_mesh_island().island_index,
+        domain="FACE",
+    ).total
+    too_small = pf.nodes.func.less_than(a=island_area, b=MIN_PLACEABLE_AREA)
+    return pf.nodes.geo.delete_geometry(region, selection=too_small, domain="FACE")
+
+
+@pf.nodes.node_function
 def _smallobj_scatter_selected(
     parent: pf.ProcNode[pf.MeshObject],
     child: pf.ProcNode[pf.Collection],
@@ -107,8 +131,7 @@ def _smallobj_scatter_selected(
     instance_index: t.SocketOrVal[int] = 0,
 ) -> pf.ProcNode[t.Instances]:
     points = pf.nodes.geo.distribute_points_on_faces_poisson(
-        mesh=parent,
-        selection=selection,
+        mesh=placeable_faces(parent, selection),
         seed=seed,
         density_factor=1.0,
         density_max=density,
@@ -137,7 +160,7 @@ def _upward_faces(
 
 
 @pf.nodes.node_function
-def _support_top_faces(
+def support_top_faces(
     parent: pf.ProcNode[pf.MeshObject],
 ) -> pf.ProcNode[bool]:
     upward = pf.nodes.func.greater_than(a=pf.nodes.geo.input_normal().z, b=0.98)
@@ -149,7 +172,7 @@ def _support_top_faces(
 
 
 @pf.nodes.node_function
-def _container_faces(
+def container_faces(
     parent: pf.ProcNode[pf.MeshObject],
 ) -> pf.ProcNode[bool]:
     upward = pf.nodes.func.greater_than(a=pf.nodes.geo.input_normal().z, b=0.98)
@@ -198,7 +221,7 @@ def _smallobj_scatter_support_tops(
     return _smallobj_scatter_selected(
         parent=parent,
         child=child,
-        selection=_support_top_faces(parent),
+        selection=support_top_faces(parent),
         seed=seed,
         density=density,
         distance_min=distance_min,
@@ -222,7 +245,7 @@ def _smallobj_scatter_containers(
     return _smallobj_scatter_selected(
         parent=parent,
         child=child,
-        selection=_container_faces(parent),
+        selection=container_faces(parent),
         seed=seed,
         density=density,
         distance_min=distance_min,
@@ -389,6 +412,7 @@ def _scatter_on_target(
     parent: pf.MeshObject,
     pool: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
+    density: float | None = None,
     spacing_factor: float | None = None,
     scatter_func: Callable = _smallobj_scatter,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
@@ -404,14 +428,15 @@ def _scatter_on_target(
     if spacing_factor is None:
         spacing_factor = pf.random.uniform(rng, 0.7, 1.1)
     distance_min = typ * spacing_factor
-    area_fill = pf.random.clip_gaussian(rng, 1.5, 0.5, 0.0, 2.5)
-    density = min(area_fill / typ**2, 300.0)
+    if density is None:
+        density = pf.random.clip_gaussian(rng, 1.5, 0.5, 0.0, 2.5)
+    point_density = min(density / typ**2, 300.0)
 
     geometry = scatter_func(
         parent=parent,
         child=child,
         seed=int(pf.random.randint(rng, 0, 2**31 - 1)),
-        density=density,
+        density=point_density,
         distance_min=distance_min,
         rotation_randomness=pf.random.uniform(rng, 0.0, 1.0),
         offset=(0, 0, 0.002),
@@ -480,15 +505,15 @@ def _mixed_on_target(
     return on_target(rng_place, parent, pool, colliders)
 
 
-def small_objects_collection_rand(rng: pf.RNG) -> pf.Collection:
-    """One room-wide pool of small primitives to draw from per target. Each
-    primitive's origin is dropped to its base so instances sit on the surface."""
+def decoration_primitives_collection_rand(rng: pf.RNG) -> pf.Collection:
+    """Draw reusable decoration primitives with origins seated at their bases."""
     n_pool = int(pf.random.randint(rng, 8, 17))
     meshes = []
     for i, rng_mesh in enumerate(rng.spawn(n_pool)):
+        target_size = pf.random.clip_gaussian(rng_mesh, 0.13, 0.105, 0.08, 0.45)
         mesh = random_primitives.primitive_with_effect_rand(
             rng_mesh,
-            target_size=pf.random.clip_gaussian(rng_mesh, 0.13, 0.07, 0.08, 0.3),
+            target_size=target_size,
             max_subsurf_levels=1,
         ).mesh
         pf.ops.mesh.transform_apply(mesh)
@@ -507,7 +532,7 @@ def _place_on_targets(
     targets: list[pf.MeshObject],
     pool: pf.Collection,
     colliders: ccol.CollisionSet,
-    coverage: float,
+    fraction: float,
     on_target: Callable[
         [pf.RNG, pf.MeshObject, list[pf.MeshObject], ccol.CollisionSet],
         tuple[list[pf.MeshObject], ccol.CollisionSet],
@@ -517,7 +542,7 @@ def _place_on_targets(
     instances: list[pf.MeshObject] = []
     for rng_target, parent in zip(rng.spawn(len(targets)), targets, strict=True):
         rng_active, rng_place = rng_target.spawn(2)
-        if pf.random.uniform(rng_active, 0.0, 1.0) >= coverage:
+        if pf.random.uniform(rng_active, 0.0, 1.0) >= fraction:
             continue
         placed, colliders = on_target(rng_place, parent, pool_list, colliders)
         instances.extend(placed)
@@ -571,31 +596,51 @@ def objects_scatter_rand(
 def scatter_small_objects_on_containers(
     rng: pf.RNG,
     targets: list[pf.MeshObject],
-    pool: pf.Collection,
     colliders: ccol.CollisionSet,
-    coverage: float,
+    collection: pf.Collection | None = None,
+    density: float | None = None,
+    fraction: float | None = None,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
+    """Scatter on recessed upward faces, drawing a collection when omitted."""
+    rng_fraction, rng_place, rng_collection = rng.spawn(3)
+    if collection is None:
+        collection = decoration_primitives_collection_rand(rng_collection)
+    if fraction is None:
+        fraction = pf.random.uniform(rng_fraction, 0.0, 1.0)
     on_target = functools.partial(
         _scatter_on_target,
+        density=density,
         spacing_factor=None,
         scatter_func=_smallobj_scatter_containers,
     )
-    return _place_on_targets(rng, targets, pool, colliders, coverage, on_target)
+    return _place_on_targets(
+        rng_place, targets, collection, colliders, fraction, on_target
+    )
 
 
 def scatter_small_objects_on_support_tops(
     rng: pf.RNG,
     targets: list[pf.MeshObject],
-    pool: pf.Collection,
     colliders: ccol.CollisionSet,
-    coverage: float,
+    collection: pf.Collection | None = None,
+    density: float | None = None,
+    fraction: float | None = None,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
+    """Scatter on topmost upward faces, drawing a collection when omitted."""
+    rng_fraction, rng_place, rng_collection = rng.spawn(3)
+    if collection is None:
+        collection = decoration_primitives_collection_rand(rng_collection)
+    if fraction is None:
+        fraction = pf.random.uniform(rng_fraction, 0.0, 1.0)
     on_target = functools.partial(
         _scatter_on_target,
+        density=density,
         spacing_factor=None,
         scatter_func=_smallobj_scatter_support_tops,
     )
-    return _place_on_targets(rng, targets, pool, colliders, coverage, on_target)
+    return _place_on_targets(
+        rng_place, targets, collection, colliders, fraction, on_target
+    )
 
 
 class DecorationObjectsResult(NamedTuple):
@@ -677,16 +722,12 @@ def _bottom_grounded(
     obj: pf.MeshObject,
     floor_colliders: ccol.CollisionSet,
 ) -> bool:
-    bmin, bmax = pf.ops.attr.bbox_min_max(obj, global_coords=False)
-    sample_local = np.array(
-        [(bmin[0] + bmax[0]) * 0.5, (bmin[1] + bmax[1]) * 0.5, bmin[2]]
+    return bbox_face_grounded(
+        obj,
+        floor_colliders,
+        side="bottom",
+        max_distance=0.01,
     )
-    matrix = np.array(obj.item().matrix_world)
-    sample_world = sample_local @ matrix[:3, :3].T + matrix[:3, 3]
-    origins = np.array([sample_world])
-    directions = np.array([[0.0, 0.0, -1.0]])
-    hits, _, _ = ccol.raycast(floor_colliders, origins, directions)
-    return bool(len(hits) and np.linalg.norm(hits[0] - sample_world) <= 0.01)
 
 
 def _floor_and_wall_grounded(
@@ -832,49 +873,6 @@ def decorate_floor_objects_rand(
     )
 
 
-@pf.tracer.grammar
-def decorate_small_objects_rand(
-    rng: pf.RNG,
-    objects: list[pf.MeshObject],
-    colliders: ccol.CollisionSet,
-    containers: list[pf.MeshObject] | None = None,
-    support_tops: list[pf.MeshObject] | None = None,
-    collection: list[pf.MeshObject] | None = None,
-) -> DecorationObjectsResult:
-    containers = [] if containers is None else containers
-    support_tops = [] if support_tops is None else support_tops
-    if not containers and not support_tops:
-        return DecorationObjectsResult(objects, [], colliders)
-
-    rng_collection, rng_coverage, rng_containers, rng_tops = rng.spawn(4)
-    if collection is None:
-        pool = small_objects_collection_rand(rng_collection)
-    else:
-        pool = pf.Collection(collection)
-    coverage = pf.random.uniform(rng_coverage, 0.0, 1.0)
-
-    placed_containers, colliders = scatter_small_objects_on_containers(
-        rng_containers,
-        containers,
-        pool,
-        colliders,
-        coverage,
-    )
-    placed_tops, colliders = scatter_small_objects_on_support_tops(
-        rng_tops,
-        support_tops,
-        pool,
-        colliders,
-        coverage,
-    )
-    placed = placed_containers + placed_tops
-    return DecorationObjectsResult(
-        all_objects=objects + placed,
-        lights=[],
-        colliders=colliders,
-    )
-
-
 def _place_surface_decoration(
     rng: pf.RNG,
     child: MeshResult,
@@ -898,10 +896,14 @@ def decorate_surface_objects_rand(
     objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
     support_tops: list[pf.MeshObject] | None = None,
+    storages: list[pf.MeshObject] | None = None,
     collection: list[MeshResult] | None = None,
 ) -> DecorationObjectsResult:
     support_tops = [] if support_tops is None else support_tops
-    if not support_tops:
+    storages = support_tops if storages is None else storages
+    storage_items = {obj.item() for obj in storages}
+    parents = [obj for obj in support_tops if obj.item() in storage_items]
+    if not parents:
         return DecorationObjectsResult(objects, [], colliders)
 
     rng_count, rng_collection, rng_place = rng.spawn(3)
@@ -909,6 +911,13 @@ def decorate_surface_objects_rand(
         count = int(pf.random.randint(rng_count, 0, 5))
         collection = _sample_surface_collection(rng_collection, count)
 
+    support_colliders = ccol.collision_set(parents, cache=colliders)
+    fully_supported = functools.partial(
+        bbox_face_grounded,
+        colliders=support_colliders,
+        side="bottom",
+        max_distance=0.005,
+    )
     kept_results: list[MeshResult] = []
     for rng_object, child in zip(
         rng_place.spawn(len(collection)), collection, strict=True
@@ -919,7 +928,8 @@ def decorate_surface_objects_rand(
             colliders,
             _place_surface_decoration,
             attempts=5,
-            parents=support_tops,
+            accept_fn=fully_supported,
+            parents=parents,
         )
         kept, colliders = keep_non_colliding([result], colliders)
         kept_results.extend(kept)

@@ -44,6 +44,7 @@ class WallResult(NamedTuple):
         str, list[pf.MeshObject]
     ]  # window/painting/shelf/door instances by type
     corner_walls: list[pf.MeshObject] = []
+    storages: list[pf.MeshObject] = []
 
 
 def _standalone_wall_rand(

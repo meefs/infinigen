@@ -50,6 +50,7 @@ class DiningTableSetupResult(NamedTuple):
     dining_chairs: list[pf.MeshObject]
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
+    storages: list[pf.MeshObject]
 
 
 def _place_on_floor(rng: pf.RNG, child: MR, room_dimensions: pf.Vector) -> None:
@@ -404,4 +405,5 @@ def dining_table_setup_rand(
         dining_chairs=chair_objs,
         storage_containers=[],
         storage_supports=[],
+        storages=[],
     )

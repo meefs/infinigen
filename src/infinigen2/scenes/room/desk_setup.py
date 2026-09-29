@@ -31,6 +31,7 @@ class DeskSetupResult(NamedTuple):
     all_objects: list[pf.MeshObject]
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
+    storages: list[pf.MeshObject]
 
 
 def _chair_pose_rand(rng: pf.RNG) -> tuple[float, float, float]:
@@ -139,4 +140,5 @@ def desk_setup_rand(
         all_objects=[desk, chair_obj],
         storage_containers=[],
         storage_supports=[desk],
+        storages=[desk],
     )

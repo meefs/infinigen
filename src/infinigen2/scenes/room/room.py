@@ -16,9 +16,12 @@ from infinigen2.scenes.room.bathroom_setup import bathroom_setup_rand
 from infinigen2.scenes.room.bed_setup import bed_setup_rand
 from infinigen2.scenes.room.ceiling_features import ceiling_feature_rand
 from infinigen2.scenes.room.decoration_objects import (
+    DecorationObjectsResult,
     decorate_floor_objects_rand,
-    decorate_small_objects_rand,
     decorate_surface_objects_rand,
+    decoration_primitives_collection_rand,
+    scatter_small_objects_on_containers,
+    scatter_small_objects_on_support_tops,
 )
 from infinigen2.scenes.room.desk_setup import desk_setup_rand
 from infinigen2.scenes.room.dining_table_setup import dining_table_setup_rand
@@ -82,6 +85,7 @@ class RoomResult(NamedTuple):
     floor: pf.MeshObject
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
+    storages: list[pf.MeshObject]
     wall_planes: list[pf.MeshObject]
 
 
@@ -277,6 +281,7 @@ def room_walls_rand(
         storage_supports=[o for result in results for o in result.storage_supports],
         lights=[light for result in results for light in result.lights],
         decorations=decorations,
+        storages=[o for result in results for o in result.storages],
     )
 
 
@@ -376,6 +381,7 @@ def room_unfurnished_rand(
         floor=shape.floor,
         storage_containers=walls.storage_containers,
         storage_supports=walls.storage_supports,
+        storages=walls.storages,
         wall_planes=walls.wall_planes,
     )
 
@@ -388,6 +394,83 @@ def _with_objects(
         colliders.objs + objects,
         cache=colliders,
     )
+
+
+@pf.tracer.grammar
+def _decorate_room_small_objects_rand(
+    rng: pf.RNG,
+    objects: list[pf.MeshObject],
+    colliders: ccol.CollisionSet,
+    containers: list[pf.MeshObject],
+    support_tops: list[pf.MeshObject],
+    storages: list[pf.MeshObject],
+) -> DecorationObjectsResult:
+    (
+        rng_collection,
+        rng_storage_supports,
+        rng_storage_containers,
+        rng_nonstorage_support_density,
+        rng_nonstorage_support_scale,
+        rng_nonstorage_support_fraction,
+        rng_nonstorage_supports,
+        rng_nonstorage_container_density,
+        rng_nonstorage_container_fraction,
+        rng_nonstorage_containers,
+    ) = rng.spawn(10)
+    storage_objects = set(storages)
+    support_storages = [obj for obj in support_tops if obj in storage_objects]
+    support_nonstorages = [obj for obj in support_tops if obj not in storage_objects]
+    container_storages = [obj for obj in containers if obj in storage_objects]
+    container_nonstorages = [obj for obj in containers if obj not in storage_objects]
+
+    collection = decoration_primitives_collection_rand(rng_collection)
+    placed_storage_supports, colliders = scatter_small_objects_on_support_tops(
+        rng_storage_supports,
+        support_storages,
+        colliders,
+        collection=collection,
+    )
+    placed_storage_containers, colliders = scatter_small_objects_on_containers(
+        rng_storage_containers,
+        container_storages,
+        colliders,
+        collection=collection,
+    )
+    nonstorage_support_density = pf.random.clip_gaussian(
+        rng_nonstorage_support_density, 1.5, 0.5, 0.0, 2.5
+    ) * pf.random.uniform(rng_nonstorage_support_scale, 0.1, 0.5)
+    nonstorage_support_fraction = (
+        pf.random.uniform(rng_nonstorage_support_fraction, 0.0, 1.0) ** 2
+    )
+    placed_nonstorage_supports, colliders = scatter_small_objects_on_support_tops(
+        rng_nonstorage_supports,
+        support_nonstorages,
+        colliders,
+        collection=collection,
+        density=nonstorage_support_density,
+        fraction=nonstorage_support_fraction,
+    )
+    nonstorage_container_density = pf.random.clip_gaussian(
+        rng_nonstorage_container_density, 0.75, 0.25, 0.0, 1.25
+    )
+    nonstorage_container_fraction = (
+        pf.random.uniform(rng_nonstorage_container_fraction, 0.0, 1.0) ** 2
+    )
+    placed_nonstorage_containers, colliders = scatter_small_objects_on_containers(
+        rng_nonstorage_containers,
+        container_nonstorages,
+        colliders,
+        collection=collection,
+        density=nonstorage_container_density,
+        fraction=nonstorage_container_fraction,
+    )
+    placed = (
+        placed_storage_supports
+        + placed_storage_containers
+        + placed_nonstorage_supports
+        + placed_nonstorage_containers
+    )
+    return DecorationObjectsResult(objects + placed, [], colliders)
 
 
 @pf.tracer.grammar
@@ -453,6 +536,7 @@ def room_livingroom_rand(
     desk_objects = []
     desk_containers = []
     desk_supports = []
+    desk_storages = []
     rng_desk_active, rng_desk_setup = rng_desk.spawn(2)
     if pf.control.choice(rng_desk_active, [(False, 2.0), (True, 1.0)]):
         desk_setup = desk_setup_rand(
@@ -466,6 +550,7 @@ def room_livingroom_rand(
             desk_objects = desk_setup.all_objects
             desk_containers = desk_setup.storage_containers
             desk_supports = desk_setup.storage_supports
+            desk_storages = desk_setup.storages
             colliders = _with_objects(colliders, desk_objects)
 
     storage_setup = wall_storage_setup_rand(
@@ -504,6 +589,9 @@ def room_livingroom_rand(
         + desk_supports
         + storage_setup.storage_supports
     )
+    storages = (
+        walls.storages + sofa_setup.storages + desk_storages + storage_setup.storages
+    )
     rng_floor, rng_surface, rng_small = rng_decor.spawn(3)
     floor_result = decorate_floor_objects_rand(
         rng_floor,
@@ -518,13 +606,15 @@ def room_livingroom_rand(
         objects=floor_result.all_objects,
         colliders=floor_result.colliders,
         support_tops=storage_supports,
+        storages=storages,
     )
-    small_result = decorate_small_objects_rand(
+    small_result = _decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
         containers=storage_containers,
         support_tops=storage_supports,
+        storages=storages,
     )
 
     all_objects = small_result.all_objects
@@ -543,6 +633,7 @@ def room_livingroom_rand(
         floor=shape.floor,
         storage_containers=storage_containers,
         storage_supports=storage_supports,
+        storages=storages,
         wall_planes=walls.wall_planes,
     )
 
@@ -640,6 +731,7 @@ def room_diningroom_rand(
         + dining_setup.storage_supports
         + storage_setup.storage_supports
     )
+    storages = walls.storages + dining_setup.storages + storage_setup.storages
     rng_floor, rng_surface, rng_small = rng_decor.spawn(3)
     floor_result = decorate_floor_objects_rand(
         rng_floor,
@@ -654,13 +746,15 @@ def room_diningroom_rand(
         objects=floor_result.all_objects,
         colliders=floor_result.colliders,
         support_tops=storage_supports,
+        storages=storages,
     )
-    small_result = decorate_small_objects_rand(
+    small_result = _decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
         containers=storage_containers,
         support_tops=storage_supports,
+        storages=storages,
     )
 
     all_objects = small_result.all_objects
@@ -679,6 +773,7 @@ def room_diningroom_rand(
         floor=shape.floor,
         storage_containers=storage_containers,
         storage_supports=storage_supports,
+        storages=storages,
         wall_planes=walls.wall_planes,
     )
 
@@ -763,16 +858,19 @@ def room_bedroom_rand(
     sofa_objects = []
     sofa_containers = []
     sofa_supports = []
+    sofa_storages = []
     if sofa_setup is not None:
         name_objects([result.mesh for result in sofa_setup.sofas], "sofa")
         sofa_objects = sofa_setup.all_objects
         sofa_containers = sofa_setup.storage_containers
         sofa_supports = sofa_setup.storage_supports
+        sofa_storages = sofa_setup.storages
         colliders = _with_objects(colliders, sofa_objects)
 
     desk_objects = []
     desk_containers = []
     desk_supports = []
+    desk_storages = []
     rng_desk_active, rng_desk_setup = rng_desk.spawn(2)
     if pf.control.choice(rng_desk_active, [(False, 1.0), (True, 1.0)]):
         desk_setup = desk_setup_rand(
@@ -786,6 +884,7 @@ def room_bedroom_rand(
             desk_objects = desk_setup.all_objects
             desk_containers = desk_setup.storage_containers
             desk_supports = desk_setup.storage_supports
+            desk_storages = desk_setup.storages
             colliders = _with_objects(colliders, desk_objects)
 
     storage_setup = wall_storage_setup_rand(
@@ -828,6 +927,13 @@ def room_bedroom_rand(
         + desk_supports
         + storage_setup.storage_supports
     )
+    storages = (
+        walls.storages
+        + bed_setup.storages
+        + sofa_storages
+        + desk_storages
+        + storage_setup.storages
+    )
     rng_floor, rng_surface, rng_small = rng_decor.spawn(3)
     floor_result = decorate_floor_objects_rand(
         rng_floor,
@@ -842,13 +948,15 @@ def room_bedroom_rand(
         objects=floor_result.all_objects,
         colliders=floor_result.colliders,
         support_tops=storage_supports,
+        storages=storages,
     )
-    small_result = decorate_small_objects_rand(
+    small_result = _decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
         containers=storage_containers,
         support_tops=storage_supports,
+        storages=storages,
     )
 
     all_objects = small_result.all_objects
@@ -868,6 +976,7 @@ def room_bedroom_rand(
         floor=shape.floor,
         storage_containers=storage_containers,
         storage_supports=storage_supports,
+        storages=storages,
         wall_planes=walls.wall_planes,
     )
 
@@ -931,6 +1040,7 @@ def room_bathroom_rand(
     storage_objects = []
     storage_containers = []
     storage_supports = []
+    storage_storages = []
     rng_storage_active, rng_storage_setup = rng_storage.spawn(2)
     if pf.control.choice(rng_storage_active, [(False, 1.0), (True, 1.0)]):
         storage_setup = wall_storage_setup_rand(
@@ -942,6 +1052,7 @@ def room_bathroom_rand(
         storage_objects = storage_setup.all_objects
         storage_containers = storage_setup.storage_containers
         storage_supports = storage_setup.storage_supports
+        storage_storages = storage_setup.storages
     furniture = bathroom_setup.all_objects + storage_objects
 
     walls = room_walls_rand(
@@ -969,6 +1080,7 @@ def room_bathroom_rand(
         walls.storage_supports + bathroom_setup.storage_supports + storage_supports
     )
     clearances = bathroom_setup.temporary_objects
+    storages = walls.storages + bathroom_setup.storages + storage_storages
     rng_surface, rng_small = rng_decor.spawn(2)
     surface_result = decorate_surface_objects_rand(
         rng_surface,
@@ -977,13 +1089,15 @@ def room_bathroom_rand(
             cast(list[pf.Object], structure + furniture + clearances)
         ),
         support_tops=supports,
+        storages=storages,
     )
-    small_result = decorate_small_objects_rand(
+    small_result = _decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
         containers=containers,
         support_tops=supports,
+        storages=storages,
     )
     for clearance in clearances:
         delete_object(clearance.item())
@@ -1003,6 +1117,7 @@ def room_bathroom_rand(
         floor=shape.floor,
         storage_containers=containers,
         storage_supports=supports,
+        storages=storages,
         wall_planes=walls.wall_planes,
     )
 

@@ -9,7 +9,6 @@
 
 from typing import Literal, NamedTuple
 
-import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 
@@ -1630,7 +1629,7 @@ def toilet_rand(
     tank_cap_extrude: float | None = None,
     cover_rotation: float | None = None,
 ) -> ToiletResult:
-    rng_size, rng_shape, rng_lid, rng_variant, rng_body, rng_seat, rng_hardware = (
+    rng_size, rng_shape, _rng_lid, rng_variant, rng_body, rng_seat, rng_hardware = (
         rng.spawn(7)
     )
     if size is None:
@@ -1640,7 +1639,7 @@ def toilet_rand(
     if height is None:
         height = size * pf.random.uniform(rng_shape, 0.8, 0.9)
     if cover_rotation is None:
-        cover_rotation = -pf.random.uniform(rng_lid, 0.0, np.pi / 2.0)
+        cover_rotation = 0.0
     if hardware_type is None:
         hardware_type = pf.control.choice(
             rng_variant, [("button", 1.0), ("handle", 1.0)]

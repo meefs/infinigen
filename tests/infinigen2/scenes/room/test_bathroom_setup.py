@@ -30,7 +30,8 @@ def test_sink_storage_capabilities_do_not_depend_on_names() -> None:
     result = _fixture_result(bathroom_setup._bathroom_sink_result(parts))
 
     assert result.storage_containers == [sink, cabinet]
-    assert result.storage_supports == [cabinet]
+    assert result.storage_supports == [sink, cabinet]
+    assert result.storages == [cabinet]
 
 
 def test_culled_sink_support_loses_storage_capabilities(monkeypatch) -> None:
@@ -57,4 +58,5 @@ def test_culled_sink_support_loses_storage_capabilities(monkeypatch) -> None:
     result = _fixture_result(culled)
 
     assert result.storage_containers == [sink]
-    assert result.storage_supports == []
+    assert result.storage_supports == [sink]
+    assert result.storages == []

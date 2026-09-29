@@ -609,6 +609,7 @@ def wall_storage_shelf_rand(
         storage_supports=cabinet_aliases,
         lights=[],
         decorations={"wall_storage": cabinet_aliases},
+        storages=cabinet_aliases,
     )
 
 
@@ -690,6 +691,7 @@ def wall_cubby_rand(
             storage_supports=cabinet_aliases,
             lights=[],
             decorations={"wall_cubby": cabinet_aliases},
+            storages=cabinet_aliases,
         )
 
     def _drop_cabinets() -> WallResult:

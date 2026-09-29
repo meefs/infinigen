@@ -17,6 +17,7 @@ __all__ = [
     "BareMeshResult",
     "MeshResult",
     "back_face_grounded",
+    "bbox_face_grounded",
     "jitter_object_rotation_rand",
     "random_bbox_poses_animation_rand",
     "retry_place",
@@ -226,30 +227,36 @@ def snap_back_front(
     )
 
 
-def back_face_grounded(
+def bbox_face_grounded(
     obj: pf.MeshObject,
     colliders: ccol.CollisionSet,
-    margin: float,
-    eps: float = 0.5,
-    side: str = "back",
+    side: str,
+    max_distance: float,
 ) -> bool:
-    """True iff the corners and center of a named local bbox face have a collider
-    directly beyond it within (1 + eps) * margin. Rejects placements where part
-    of the face overhangs a window or door opening.
-    """
     bmin, bmax = pf.ops.attr.bbox_min_max(obj, global_coords=False)
     axis, sign = {
         "back": (0, -1.0),
         "front": (0, 1.0),
         "left": (1, -1.0),
         "right": (1, 1.0),
+        "bottom": (2, -1.0),
     }[side]
-    across = 1 - axis
+    face_axes = [index for index in range(3) if index != axis]
     center = (np.asarray(bmin) + np.asarray(bmax)) / 2.0
     samples_local = np.tile(center, (5, 1))
     samples_local[:, axis] = bmin[axis] if sign < 0 else bmax[axis]
-    samples_local[:4, across] = [bmin[across], bmin[across], bmax[across], bmax[across]]
-    samples_local[:4, 2] = [bmin[2], bmax[2], bmin[2], bmax[2]]
+    samples_local[:4, face_axes[0]] = [
+        bmin[face_axes[0]],
+        bmin[face_axes[0]],
+        bmax[face_axes[0]],
+        bmax[face_axes[0]],
+    ]
+    samples_local[:4, face_axes[1]] = [
+        bmin[face_axes[1]],
+        bmax[face_axes[1]],
+        bmin[face_axes[1]],
+        bmax[face_axes[1]],
+    ]
     mw = np.array(obj.item().matrix_world)
     samples_world = samples_local @ mw[:3, :3].T + mw[:3, 3]
     face_normal_local = np.zeros(3)
@@ -260,12 +267,26 @@ def back_face_grounded(
     hits, ray_idx, _ = ccol.raycast(
         colliders, samples_world, np.tile(face_normal, (len(samples_world), 1))
     )
-    threshold = (1.0 + eps) * margin
     grounded = np.zeros(len(samples_world), dtype=bool)
     for loc, ri in zip(hits, ray_idx, strict=False):
-        if np.linalg.norm(loc - samples_world[ri]) <= threshold:
+        if np.linalg.norm(loc - samples_world[ri]) <= max_distance:
             grounded[ri] = True
     return bool(grounded.all())
+
+
+def back_face_grounded(
+    obj: pf.MeshObject,
+    colliders: ccol.CollisionSet,
+    margin: float,
+    eps: float = 0.5,
+    side: str = "back",
+) -> bool:
+    return bbox_face_grounded(
+        obj,
+        colliders,
+        side=side,
+        max_distance=(1.0 + eps) * margin,
+    )
 
 
 def snap_side_by_side(rng: pf.RNG, child: MR, parents: list[pf.MeshObject]) -> None:

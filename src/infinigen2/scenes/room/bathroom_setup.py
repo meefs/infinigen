@@ -77,6 +77,7 @@ class BathroomSetupResult(NamedTuple):
     temporary_objects: list[pf.MeshObject]
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
+    storages: list[pf.MeshObject]
 
 
 def _snap_fixture_against_wall(
@@ -587,14 +588,15 @@ def _fixture_result(
     }
     all_objects = [obj for objects in named_objects.values() for obj in objects]
     storage_supports = [result.mesh for result in sink_setup.storage_supports]
-    storage_containers = sinks + bathtubs + storage_supports
+    toilets = [result.mesh for result in fixtures.toilets]
     return BathroomSetupResult(
         named_objects=named_objects,
         all_objects=all_objects,
         colliders=colliders,
         temporary_objects=[],
-        storage_containers=storage_containers,
-        storage_supports=storage_supports,
+        storage_containers=sinks + bathtubs + storage_supports,
+        storage_supports=sinks + bathtubs + toilets + storage_supports,
+        storages=storage_supports,
     )
 
 
@@ -741,6 +743,7 @@ def _finalize_bathroom_setup_rand(
         temporary_objects=clearances,
         storage_containers=setup.storage_containers,
         storage_supports=setup.storage_supports,
+        storages=setup.storages,
     )
 
 

@@ -3,7 +3,10 @@
 
 # Authors: Alexander Raistrick
 
+from collections.abc import Callable
+
 import procfunc as pf
+import pytest
 
 from infinigen2.objects import random_primitives
 from infinigen2.objects.lamp import LampResult
@@ -20,7 +23,7 @@ def _resolve_label(label: str) -> tuple[object, object]:
 
 
 def test_small_objects_pool_has_unique_stems_and_sampler_labels(rng: pf.RNG) -> None:
-    pool = decoration_objects.small_objects_collection_rand(rng)
+    pool = decoration_objects.decoration_primitives_collection_rand(rng)
     data_names = [obj.item().data.name for obj in pool]
     labels = [decoration_objects._smallobj_label(name) for name in data_names]
 
@@ -34,7 +37,7 @@ def test_small_objects_pool_has_unique_stems_and_sampler_labels(rng: pf.RNG) -> 
 
 
 def test_small_objects_are_never_labelled_after_the_wrapper(rng: pf.RNG) -> None:
-    pool = decoration_objects.small_objects_collection_rand(rng)
+    pool = decoration_objects.decoration_primitives_collection_rand(rng)
     labels = {decoration_objects._smallobj_label(obj.item().data.name) for obj in pool}
 
     assert random_primitives.primitive_with_effect_rand.__name__ not in labels
@@ -45,6 +48,41 @@ def test_small_objects_are_never_labelled_after_the_wrapper(rng: pf.RNG) -> None
 def test_small_objects_label_survives_alias_copy_suffix() -> None:
     label = "cube_rand_effect_twist"
     assert decoration_objects._smallobj_label(f"{label}_004.003") == label
+
+
+@pytest.mark.parametrize(
+    "scatter",
+    [
+        decoration_objects.scatter_small_objects_on_containers,
+        decoration_objects.scatter_small_objects_on_support_tops,
+    ],
+)
+def test_small_object_scatter_collection_default_and_override(
+    monkeypatch: pytest.MonkeyPatch, rng: pf.RNG, scatter: Callable
+) -> None:
+    calls: list[pf.RNG] = []
+
+    def collection_rand(_rng: pf.RNG) -> pf.Collection:
+        calls.append(_rng)
+        return pf.Collection([pf.ops.primitives.mesh_cube(size=0.1)])
+
+    monkeypatch.setattr(
+        decoration_objects,
+        "decoration_primitives_collection_rand",
+        collection_rand,
+    )
+    target = pf.ops.primitives.mesh_cube(size=1.0)
+    scatter(rng, [target], ccol.collision_set([target]), fraction=0.0)
+    assert len(calls) == 1
+    collection = pf.Collection([pf.ops.primitives.mesh_cube(size=0.1)])
+    scatter(
+        rng,
+        [target],
+        ccol.collision_set([target]),
+        collection=collection,
+        fraction=0.0,
+    )
+    assert len(calls) == 1
 
 
 def test_rejected_surface_lamp_does_not_return_light(monkeypatch, rng: pf.RNG) -> None:

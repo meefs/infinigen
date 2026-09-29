@@ -34,6 +34,7 @@ class BedSetupResult(NamedTuple):
     colliders: collision.CollisionSet
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
+    storages: list[pf.MeshObject]
 
 
 _WALL_MARGIN_MIN = 0.0254
@@ -311,5 +312,6 @@ def bed_setup_rand(
         all_objects=objects,
         colliders=setup_colliders,
         storage_containers=[],
-        storage_supports=bedside_tables,
+        storage_supports=bedside_tables + ([mattress] if mattress is not None else []),
+        storages=bedside_tables,
     )

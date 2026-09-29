@@ -31,6 +31,7 @@ class WallStorageSetupResult(NamedTuple):
     colliders: ccol.CollisionSet
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
+    storages: list[pf.MeshObject]
 
 
 @pf.tracer.grammar
@@ -86,4 +87,5 @@ def wall_storage_setup_rand(
         colliders=colliders,
         storage_containers=storage_meshes,
         storage_supports=storage_meshes,
+        storages=storage_meshes,
     )

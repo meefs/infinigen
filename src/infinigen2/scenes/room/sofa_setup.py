@@ -40,6 +40,7 @@ class SofaSetupResult(NamedTuple):
     sofas: list[MeshResult]
     storage_containers: list[pf.MeshObject]
     storage_supports: list[pf.MeshObject]
+    storages: list[pf.MeshObject]
 
 
 def _rug_rand(
@@ -162,8 +163,9 @@ def centered_sofa_setup_rand(
     return SofaSetupResult(
         all_objects=all_objects,
         sofas=sofa_objs,
-        storage_containers=[],
-        storage_supports=[r.mesh for r in center_coffee],
+        storage_containers=[r.mesh for r in sofa_objs],
+        storage_supports=[r.mesh for r in center_coffee] + out_rugs,
+        storages=[r.mesh for r in center_coffee],
     )
 
 
@@ -210,8 +212,9 @@ def wall_sofa_setup_rand(
     return SofaSetupResult(
         all_objects=standalone_walls + [r.mesh for r in sofa_objs] + rug_objs,
         sofas=sofa_objs,
-        storage_containers=[],
-        storage_supports=[],
+        storage_containers=[r.mesh for r in sofa_objs],
+        storage_supports=rug_objs,
+        storages=[],
     )
 
 
@@ -267,4 +270,5 @@ def sofa_setup_rand(
         sofas=arrangement.sofas,
         storage_containers=list(arrangement.storage_containers),
         storage_supports=arrangement.storage_supports + [r.mesh for r in side_tables],
+        storages=arrangement.storages + [r.mesh for r in side_tables],
     )

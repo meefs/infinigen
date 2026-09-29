@@ -329,6 +329,8 @@ def bathtub_shell(
         z=profile_z,
     )
     shell = pf.nodes.geo.set_position(cylinder.mesh, position=position)
+    # rings are read bottom-up from a top-down cylinder, which inverts the winding
+    shell = pf.nodes.geo.flip_faces(shell)
     shell = mesh.metric_box_uv(shell)
     shell = pf.nodes.geo.set_shade_smooth(shell)
     shell = pf.nodes.geo.set_material(shell, surface_material)
