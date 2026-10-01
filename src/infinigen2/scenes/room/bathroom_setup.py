@@ -640,6 +640,27 @@ def _bathroom_fixtures_rand(
     include_bathtub: bool,
 ) -> _BathroomFixtures | None:
     rng_sink, rng_bathtub, rng_toilet = rng.spawn(3)
+    bathtub_colliders = colliders
+    if sink_obj is not None:
+        bathtub_colliders = ccol.collision_set(
+            colliders.objs + [sink_obj], cache=colliders
+        )
+    if include_bathtub:
+        bathtub_setup = _bathtub_against_wall_rand(
+            rng_bathtub, wall_planes, bathtub_colliders
+        )
+    else:
+        bathtub_setup = _no_bathtub_setup_rand(
+            rng_bathtub, wall_planes, bathtub_colliders
+        )
+    if bathtub_setup is None:
+        return None
+    bathtub_objects = (
+        [result.mesh for result in bathtub_setup.bathtubs]
+        + [result.mesh for result in bathtub_setup.taps]
+        + [result.mesh for result in bathtub_setup.hardware]
+    )
+    colliders = ccol.collision_set(colliders.objs + bathtub_objects, cache=colliders)
     sink_setup = _bathroom_sink_components_rand(
         rng_sink,
         sink_obj=sink_obj,
@@ -648,24 +669,11 @@ def _bathroom_fixtures_rand(
         colliders=colliders,
     )
     if not sink_setup.bathroom_sinks:
-        _delete_objects(sink_setup.all_objects, sink_obj)
+        _delete_objects(sink_setup.all_objects + bathtub_objects, sink_obj)
         return None
     colliders = ccol.collision_set(
         colliders.objs + sink_setup.all_objects, cache=colliders
     )
-    if include_bathtub:
-        bathtub_setup = _bathtub_against_wall_rand(rng_bathtub, wall_planes, colliders)
-    else:
-        bathtub_setup = _no_bathtub_setup_rand(rng_bathtub, wall_planes, colliders)
-    if bathtub_setup is None:
-        _delete_objects(sink_setup.all_objects, sink_obj)
-        return None
-    bathtub_objects = (
-        [result.mesh for result in bathtub_setup.bathtubs]
-        + [result.mesh for result in bathtub_setup.taps]
-        + [result.mesh for result in bathtub_setup.hardware]
-    )
-    colliders = ccol.collision_set(colliders.objs + bathtub_objects, cache=colliders)
     toilets = _toilet_against_wall_rand(
         rng_toilet,
         wall_planes,

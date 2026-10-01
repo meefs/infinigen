@@ -37,7 +37,6 @@ from infinigen2.scenes.room.wall_base import (
     extrude_for_thickness,
     name_objects,
     overlap_wall_plane_edges,
-    plane_to_posed_canonical_mesh,
     resolve_wall_inputs,
     wall_plain_rand,
 )
@@ -180,10 +179,9 @@ def room_walls_rand(
     door: WallResult,
     open_walls: list[pf.MeshObject],
     wall_materials: list[pf.Material],
-    colliders: ccol.CollisionSet,
 ) -> WallResult:
     """Arrange `open_walls` and merge them with the `door` wall. Mounted features
-    hitting `colliders` or earlier walls' decorations are dropped by each feature."""
+    hitting earlier walls' decorations are dropped by each feature."""
     rng_window, rng_walls = rng.spawn(2)
 
     pf.ops.object.set_material(
@@ -233,7 +231,7 @@ def room_walls_rand(
     window_spacing = pf.random.uniform(rng_window, 0.1, 0.25) * _width
 
     results = [door]
-    colliders = _with_objects(colliders, _decoration_objects(door))
+    colliders = ccol.collision_set(cast(list[pf.Object], _decoration_objects(door)))
     rngs_wall = rng_walls.spawn(len(open_walls))
     for wall, rng_wall in zip(open_walls, rngs_wall, strict=True):
         rng_material, rng_arrangement = rng_wall.spawn(2)
@@ -316,12 +314,13 @@ def _bedroom_dimensions_rand(rng: pf.RNG) -> pf.Vector:
 
 
 def _bathroom_dimensions_rand(rng: pf.RNG) -> pf.Vector:
-    rng_area, rng_aspect, rng_height = rng.spawn(3)
+    rng_area, rng_aspect, rng_width_scale, rng_height = rng.spawn(4)
     area = pf.random.clip_gaussian(rng_area, 5.2, 1.3, 3.7, 9.0)
     maximum_aspect = min(2.1, area / 1.5**2)
     aspect = pf.random.clip_gaussian(rng_aspect, 1.55, 0.25, 1.2, maximum_aspect)
-    width = math.sqrt(area / aspect)
-    depth = area / width
+    base_width = math.sqrt(area / aspect)
+    depth = area / base_width
+    width = base_width * pf.random.uniform(rng_width_scale, 1.0, 1.33)
     height = pf.random.clip_gaussian(rng_height, 2.45, 0.15, 2.2, 2.8)
     return pf.Vector((width, depth, height))
 
@@ -357,9 +356,7 @@ def room_unfurnished_rand(
     open_walls = shape.flat_walls[:door_idx] + shape.flat_walls[door_idx + 1 :]
     ceiling = ceiling_feature_rand(rng_ceiling, shape)
 
-    walls = room_walls_rand(
-        rng_walls, shape, door, open_walls, wall_materials, ccol.collision_set([])
-    )
+    walls = room_walls_rand(rng_walls, shape, door, open_walls, wall_materials)
     skirting = skirting_rand(rng_skirting, walls=walls.wall_planes + [shape.walls])
     for wall_plane in walls.wall_planes:
         overlap_wall_plane_edges(wall_plane, ROOM_WALL_THICKNESS)
@@ -438,9 +435,9 @@ def _decorate_room_small_objects_rand(
     )
     nonstorage_support_density = pf.random.clip_gaussian(
         rng_nonstorage_support_density, 1.5, 0.5, 0.0, 2.5
-    ) * pf.random.uniform(rng_nonstorage_support_scale, 0.1, 0.5)
-    nonstorage_support_fraction = (
-        pf.random.uniform(rng_nonstorage_support_fraction, 0.0, 1.0) ** 2
+    ) * pf.random.uniform(rng_nonstorage_support_scale, 0.75, 1.25)
+    nonstorage_support_fraction = pf.random.uniform(
+        rng_nonstorage_support_fraction, 0.75, 1.0
     )
     placed_nonstorage_supports, colliders = scatter_small_objects_on_support_tops(
         rng_nonstorage_supports,
@@ -453,8 +450,8 @@ def _decorate_room_small_objects_rand(
     nonstorage_container_density = pf.random.clip_gaussian(
         rng_nonstorage_container_density, 0.75, 0.25, 0.0, 1.25
     )
-    nonstorage_container_fraction = (
-        pf.random.uniform(rng_nonstorage_container_fraction, 0.0, 1.0) ** 2
+    nonstorage_container_fraction = pf.random.uniform(
+        rng_nonstorage_container_fraction, 0.0, 1.0
     )
     placed_nonstorage_containers, colliders = scatter_small_objects_on_containers(
         rng_nonstorage_containers,
@@ -480,58 +477,32 @@ def room_livingroom_rand(
     frame_start: int = 1,
     frame_end: int = 1,
 ) -> RoomResult:
-    del frame_start, frame_end
     (
         rng_dimensions,
-        rng_shape,
-        rng_materials,
-        rng_door,
-        rng_ceiling,
+        rng_room,
         rng_sofa,
         rng_desk,
         rng_storage,
-        rng_walls,
-        rng_skirting,
-        rng_sky,
         rng_decor,
-    ) = rng.spawn(12)
+    ) = rng.spawn(6)
     if dimensions is None:
         dimensions = _livingroom_dimensions_rand(rng_dimensions)
 
-    shape = room_shape_rand(rng_shape, dimensions=dimensions)
-    vec_wall = pf.nodes.shader.coord().uv
-    wall_materials = [wall_material_rand(r, vec_wall) for r in rng_materials.spawn(2)]
-    door_idx = pf.random.randint(rng_door, 0, len(shape.flat_walls))
-    door = wall_doors_rand(
-        rng_door,
-        shape.flat_walls[door_idx],
-        wall_materials[0],
-        wall_thickness=ROOM_WALL_THICKNESS,
-    )
-    open_walls = shape.flat_walls[:door_idx] + shape.flat_walls[door_idx + 1 :]
-    ceiling = ceiling_feature_rand(rng_ceiling, shape)
-    setup_walls = [
-        plane_to_posed_canonical_mesh(
-            pf.nodes.to_mesh_object(pf.nodes.geo.object_info(wall).geometry)
-        )
-        for wall in open_walls
-    ]
-    wall_planes = door.wall_planes + setup_walls
-    colliders = ccol.collision_set(
-        door.all_objects
-        + setup_walls
-        + [shape.floor, shape.walls, ceiling.ceiling]
-        + ceiling.light_meshes
+    room = room_unfurnished_rand(
+        rng_room,
+        dimensions,
+        frame_start=frame_start,
+        frame_end=frame_end,
     )
 
     sofa_setup = sofa_setup_rand(
         rng_sofa,
-        wall_planes=wall_planes,
+        wall_planes=room.wall_planes,
         room_dimensions=dimensions,
-        colliders=colliders,
+        colliders=room.colliders,
     )
     name_objects([result.mesh for result in sofa_setup.sofas], "sofa")
-    colliders = _with_objects(colliders, sofa_setup.all_objects)
+    colliders = _with_objects(room.colliders, sofa_setup.all_objects)
 
     desk_objects = []
     desk_containers = []
@@ -541,7 +512,7 @@ def room_livingroom_rand(
     if pf.control.choice(rng_desk_active, [(False, 2.0), (True, 1.0)]):
         desk_setup = desk_setup_rand(
             rng_desk_setup,
-            wall_planes=wall_planes,
+            wall_planes=room.wall_planes,
             colliders=colliders,
         )
         if desk_setup is not None:
@@ -555,50 +526,33 @@ def room_livingroom_rand(
 
     storage_setup = wall_storage_setup_rand(
         rng_storage,
-        wall_planes=wall_planes,
+        wall_planes=room.wall_planes,
         room_dimensions=dimensions,
         colliders=colliders,
     )
     furniture = sofa_setup.all_objects + desk_objects + storage_setup.all_objects
-
-    walls = room_walls_rand(
-        rng_walls,
-        shape,
-        door,
-        open_walls,
-        wall_materials,
-        ccol.collision_set(cast(list[pf.Object], furniture)),
-    )
-    skirting = skirting_rand(rng_skirting, walls=walls.wall_planes + [shape.walls])
-    for wall_plane in walls.wall_planes:
-        overlap_wall_plane_edges(wall_plane, ROOM_WALL_THICKNESS)
-    sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
-
-    structure = (
-        walls.all_objects + [shape.floor, ceiling.ceiling] + ceiling.light_meshes
-    )
     storage_containers = (
-        walls.storage_containers
+        room.storage_containers
         + sofa_setup.storage_containers
         + desk_containers
         + storage_setup.storage_containers
     )
     storage_supports = (
-        walls.storage_supports
+        room.storage_supports
         + sofa_setup.storage_supports
         + desk_supports
         + storage_setup.storage_supports
     )
     storages = (
-        walls.storages + sofa_setup.storages + desk_storages + storage_setup.storages
+        room.storages + sofa_setup.storages + desk_storages + storage_setup.storages
     )
     rng_floor, rng_surface, rng_small = rng_decor.spawn(3)
     floor_result = decorate_floor_objects_rand(
         rng_floor,
-        objects=structure + ceiling.backs + ceiling.sills + skirting + furniture,
-        colliders=ccol.collision_set(cast(list[pf.Object], structure + furniture)),
-        floor=shape.floor,
-        wall_planes=walls.wall_planes,
+        objects=room.all_objects + furniture,
+        colliders=storage_setup.colliders,
+        floor=room.floor,
+        wall_planes=room.wall_planes,
         storage=storage_supports,
     )
     surface_result = decorate_surface_objects_rand(
@@ -620,21 +574,14 @@ def room_livingroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=shape.cameras,
-        lights=pf.control.choice(
-            rng_ceiling,
-            [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
-        )
-        + walls.lights
-        + sky.lights
-        + floor_result.lights
-        + surface_result.lights,
+        cameras=room.cameras,
+        lights=room.lights + floor_result.lights + surface_result.lights,
         colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
-        floor=shape.floor,
+        floor=room.floor,
         storage_containers=storage_containers,
         storage_supports=storage_supports,
         storages=storages,
-        wall_planes=walls.wall_planes,
+        wall_planes=room.wall_planes,
     )
 
 
@@ -645,100 +592,57 @@ def room_diningroom_rand(
     frame_start: int = 1,
     frame_end: int = 1,
 ) -> RoomResult:
-    del frame_start, frame_end
     (
         rng_dimensions,
-        rng_shape,
-        rng_materials,
-        rng_door,
-        rng_ceiling,
+        rng_room,
         rng_dining,
         rng_storage,
-        rng_walls,
-        rng_skirting,
-        rng_sky,
         rng_decor,
-    ) = rng.spawn(11)
+    ) = rng.spawn(5)
     if dimensions is None:
         dimensions = _diningroom_dimensions_rand(rng_dimensions)
 
-    shape = room_shape_rand(rng_shape, dimensions=dimensions)
-    vec_wall = pf.nodes.shader.coord().uv
-    wall_materials = [wall_material_rand(r, vec_wall) for r in rng_materials.spawn(2)]
-    door_idx = pf.random.randint(rng_door, 0, len(shape.flat_walls))
-    door = wall_doors_rand(
-        rng_door,
-        shape.flat_walls[door_idx],
-        wall_materials[0],
-        wall_thickness=ROOM_WALL_THICKNESS,
-    )
-    open_walls = shape.flat_walls[:door_idx] + shape.flat_walls[door_idx + 1 :]
-    ceiling = ceiling_feature_rand(rng_ceiling, shape)
-    setup_walls = [
-        plane_to_posed_canonical_mesh(
-            pf.nodes.to_mesh_object(pf.nodes.geo.object_info(wall).geometry)
-        )
-        for wall in open_walls
-    ]
-    wall_planes = door.wall_planes + setup_walls
-    colliders = ccol.collision_set(
-        door.all_objects
-        + setup_walls
-        + [shape.floor, shape.walls, ceiling.ceiling]
-        + ceiling.light_meshes
+    room = room_unfurnished_rand(
+        rng_room,
+        dimensions,
+        frame_start=frame_start,
+        frame_end=frame_end,
     )
 
     dining_setup = dining_table_setup_rand(
         rng_dining,
-        wall_planes=wall_planes,
+        wall_planes=room.wall_planes,
         room_dimensions=dimensions,
-        colliders=colliders,
+        colliders=room.colliders,
     )
     name_objects([r.mesh for r in dining_setup.dining_tables], "dining_table")
     name_objects(dining_setup.dining_chairs, "dining_chair")
-    colliders = _with_objects(colliders, dining_setup.all_objects)
+    colliders = _with_objects(room.colliders, dining_setup.all_objects)
     storage_setup = wall_storage_setup_rand(
         rng_storage,
-        wall_planes=wall_planes,
+        wall_planes=room.wall_planes,
         room_dimensions=dimensions,
         colliders=colliders,
     )
     furniture = dining_setup.all_objects + storage_setup.all_objects
-
-    walls = room_walls_rand(
-        rng_walls,
-        shape,
-        door,
-        open_walls,
-        wall_materials,
-        ccol.collision_set(cast(list[pf.Object], furniture)),
-    )
-    skirting = skirting_rand(rng_skirting, walls=walls.wall_planes + [shape.walls])
-    for wall_plane in walls.wall_planes:
-        overlap_wall_plane_edges(wall_plane, ROOM_WALL_THICKNESS)
-    sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
-
-    structure = (
-        walls.all_objects + [shape.floor, ceiling.ceiling] + ceiling.light_meshes
-    )
     storage_containers = (
-        walls.storage_containers
+        room.storage_containers
         + dining_setup.storage_containers
         + storage_setup.storage_containers
     )
     storage_supports = (
-        walls.storage_supports
+        room.storage_supports
         + dining_setup.storage_supports
         + storage_setup.storage_supports
     )
-    storages = walls.storages + dining_setup.storages + storage_setup.storages
+    storages = room.storages + dining_setup.storages + storage_setup.storages
     rng_floor, rng_surface, rng_small = rng_decor.spawn(3)
     floor_result = decorate_floor_objects_rand(
         rng_floor,
-        objects=structure + ceiling.backs + ceiling.sills + skirting + furniture,
-        colliders=ccol.collision_set(cast(list[pf.Object], structure + furniture)),
-        floor=shape.floor,
-        wall_planes=walls.wall_planes,
+        objects=room.all_objects + furniture,
+        colliders=storage_setup.colliders,
+        floor=room.floor,
+        wall_planes=room.wall_planes,
         storage=storage_supports,
     )
     surface_result = decorate_surface_objects_rand(
@@ -760,21 +664,14 @@ def room_diningroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=shape.cameras,
-        lights=pf.control.choice(
-            rng_ceiling,
-            [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
-        )
-        + walls.lights
-        + sky.lights
-        + floor_result.lights
-        + surface_result.lights,
+        cameras=room.cameras,
+        lights=room.lights + floor_result.lights + surface_result.lights,
         colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
-        floor=shape.floor,
+        floor=room.floor,
         storage_containers=storage_containers,
         storage_supports=storage_supports,
         storages=storages,
-        wall_planes=walls.wall_planes,
+        wall_planes=room.wall_planes,
     )
 
 
@@ -785,56 +682,30 @@ def room_bedroom_rand(
     frame_start: int = 1,
     frame_end: int = 1,
 ) -> RoomResult:
-    del frame_start, frame_end
     (
         rng_dimensions,
-        rng_shape,
-        rng_materials,
-        rng_door,
-        rng_ceiling,
+        rng_room,
         rng_bed,
         rng_sofa,
         rng_desk,
         rng_storage,
-        rng_walls,
-        rng_skirting,
-        rng_sky,
         rng_decor,
-    ) = rng.spawn(13)
+    ) = rng.spawn(7)
     if dimensions is None:
         dimensions = _bedroom_dimensions_rand(rng_dimensions)
 
-    shape = room_shape_rand(rng_shape, dimensions=dimensions)
-    vec_wall = pf.nodes.shader.coord().uv
-    wall_materials = [wall_material_rand(r, vec_wall) for r in rng_materials.spawn(2)]
-    door_idx = pf.random.randint(rng_door, 0, len(shape.flat_walls))
-    door = wall_doors_rand(
-        rng_door,
-        shape.flat_walls[door_idx],
-        wall_materials[0],
-        wall_thickness=ROOM_WALL_THICKNESS,
-    )
-    open_walls = shape.flat_walls[:door_idx] + shape.flat_walls[door_idx + 1 :]
-    ceiling = ceiling_feature_rand(rng_ceiling, shape)
-    setup_walls = [
-        plane_to_posed_canonical_mesh(
-            pf.nodes.to_mesh_object(pf.nodes.geo.object_info(wall).geometry)
-        )
-        for wall in open_walls
-    ]
-    wall_planes = door.wall_planes + setup_walls
-    colliders = ccol.collision_set(
-        door.all_objects
-        + setup_walls
-        + [shape.floor, shape.walls, ceiling.ceiling]
-        + ceiling.light_meshes
+    room = room_unfurnished_rand(
+        rng_room,
+        dimensions,
+        frame_start=frame_start,
+        frame_end=frame_end,
     )
 
     bed_setup = bed_setup_rand(
         rng_bed,
-        wall_planes=wall_planes,
+        wall_planes=room.wall_planes,
         room_dimensions=dimensions,
-        colliders=colliders,
+        colliders=room.colliders,
     )
     colliders = bed_setup.colliders
 
@@ -844,7 +715,7 @@ def room_bedroom_rand(
     def wall_sofa():
         return wall_sofa_setup_rand(
             rng_sofa_setup,
-            wall_planes=wall_planes,
+            wall_planes=room.wall_planes,
             room_dimensions=dimensions,
             colliders=colliders,
         )
@@ -875,7 +746,7 @@ def room_bedroom_rand(
     if pf.control.choice(rng_desk_active, [(False, 1.0), (True, 1.0)]):
         desk_setup = desk_setup_rand(
             rng_desk_setup,
-            wall_planes=wall_planes,
+            wall_planes=room.wall_planes,
             colliders=colliders,
         )
         if desk_setup is not None:
@@ -889,7 +760,7 @@ def room_bedroom_rand(
 
     storage_setup = wall_storage_setup_rand(
         rng_storage,
-        wall_planes=wall_planes,
+        wall_planes=room.wall_planes,
         room_dimensions=dimensions,
         colliders=colliders,
     )
@@ -897,38 +768,22 @@ def room_bedroom_rand(
         bed_setup.all_objects + sofa_objects + desk_objects + storage_setup.all_objects
     )
 
-    walls = room_walls_rand(
-        rng_walls,
-        shape,
-        door,
-        open_walls,
-        wall_materials,
-        ccol.collision_set(cast(list[pf.Object], furniture)),
-    )
-    skirting = skirting_rand(rng_skirting, walls=walls.wall_planes + [shape.walls])
-    for wall_plane in walls.wall_planes:
-        overlap_wall_plane_edges(wall_plane, ROOM_WALL_THICKNESS)
-    sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
-
-    structure = (
-        walls.all_objects + [shape.floor, ceiling.ceiling] + ceiling.light_meshes
-    )
     storage_containers = (
-        walls.storage_containers
+        room.storage_containers
         + bed_setup.storage_containers
         + sofa_containers
         + desk_containers
         + storage_setup.storage_containers
     )
     storage_supports = (
-        walls.storage_supports
+        room.storage_supports
         + bed_setup.storage_supports
         + sofa_supports
         + desk_supports
         + storage_setup.storage_supports
     )
     storages = (
-        walls.storages
+        room.storages
         + bed_setup.storages
         + sofa_storages
         + desk_storages
@@ -937,10 +792,10 @@ def room_bedroom_rand(
     rng_floor, rng_surface, rng_small = rng_decor.spawn(3)
     floor_result = decorate_floor_objects_rand(
         rng_floor,
-        objects=structure + ceiling.backs + ceiling.sills + skirting + furniture,
-        colliders=ccol.collision_set(cast(list[pf.Object], structure + furniture)),
-        floor=shape.floor,
-        wall_planes=walls.wall_planes,
+        objects=room.all_objects + furniture,
+        colliders=storage_setup.colliders,
+        floor=room.floor,
+        wall_planes=room.wall_planes,
         storage=storage_supports,
     )
     surface_result = decorate_surface_objects_rand(
@@ -962,22 +817,17 @@ def room_bedroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=shape.cameras,
-        lights=pf.control.choice(
-            rng_ceiling,
-            [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
-        )
-        + walls.lights
-        + sky.lights
+        cameras=room.cameras,
+        lights=room.lights
         + bed_setup.lights
         + floor_result.lights
         + surface_result.lights,
         colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
-        floor=shape.floor,
+        floor=room.floor,
         storage_containers=storage_containers,
         storage_supports=storage_supports,
         storages=storages,
-        wall_planes=walls.wall_planes,
+        wall_planes=room.wall_planes,
     )
 
 
@@ -988,55 +838,30 @@ def room_bathroom_rand(
     frame_start: int = 1,
     frame_end: int = 1,
 ) -> RoomResult:
-    del frame_start, frame_end
     (
         rng_dimensions,
-        rng_shape,
-        rng_materials,
-        rng_door,
-        rng_ceiling,
+        rng_room,
         rng_setup,
         rng_storage,
-        rng_walls,
-        rng_skirting,
-        rng_sky,
         rng_decor,
-    ) = rng.spawn(11)
+    ) = rng.spawn(5)
     if dimensions is None:
         dimensions = _bathroom_dimensions_rand(rng_dimensions)
 
-    shape = room_shape_rand(rng_shape, dimensions=dimensions)
-    vec_wall = pf.nodes.shader.coord().uv
-    wall_materials = [wall_material_rand(r, vec_wall) for r in rng_materials.spawn(2)]
-    door_idx = pf.random.randint(rng_door, 0, len(shape.flat_walls))
-    door = wall_doors_rand(
-        rng_door,
-        shape.flat_walls[door_idx],
-        wall_materials[0],
-        wall_thickness=ROOM_WALL_THICKNESS,
-    )
-    open_walls = shape.flat_walls[:door_idx] + shape.flat_walls[door_idx + 1 :]
-    ceiling = ceiling_feature_rand(rng_ceiling, shape)
-    setup_walls = [
-        plane_to_posed_canonical_mesh(
-            pf.nodes.to_mesh_object(pf.nodes.geo.object_info(wall).geometry)
-        )
-        for wall in open_walls
-    ]
-    wall_planes = door.wall_planes + setup_walls
-    colliders = ccol.collision_set(
-        door.all_objects
-        + setup_walls
-        + [shape.floor, shape.walls, ceiling.ceiling]
-        + ceiling.light_meshes
+    room = room_unfurnished_rand(
+        rng_room,
+        dimensions,
+        frame_start=frame_start,
+        frame_end=frame_end,
     )
 
     bathroom_setup = bathroom_setup_rand(
         rng_setup,
-        wall_planes=wall_planes,
+        wall_planes=room.wall_planes,
         room_dimensions=dimensions,
-        colliders=colliders,
+        colliders=room.colliders,
     )
+    colliders = bathroom_setup.colliders
     storage_objects = []
     storage_containers = []
     storage_supports = []
@@ -1045,7 +870,7 @@ def room_bathroom_rand(
     if pf.control.choice(rng_storage_active, [(False, 1.0), (True, 1.0)]):
         storage_setup = wall_storage_setup_rand(
             rng_storage_setup,
-            wall_planes=wall_planes,
+            wall_planes=room.wall_planes,
             room_dimensions=dimensions,
             colliders=bathroom_setup.colliders,
         )
@@ -1053,40 +878,24 @@ def room_bathroom_rand(
         storage_containers = storage_setup.storage_containers
         storage_supports = storage_setup.storage_supports
         storage_storages = storage_setup.storages
+        colliders = storage_setup.colliders
     furniture = bathroom_setup.all_objects + storage_objects
 
-    walls = room_walls_rand(
-        rng_walls,
-        shape,
-        door,
-        open_walls,
-        wall_materials,
-        ccol.collision_set(cast(list[pf.Object], furniture)),
-    )
-    skirting = skirting_rand(rng_skirting, walls=walls.wall_planes + [shape.walls])
-    for wall_plane in walls.wall_planes:
-        overlap_wall_plane_edges(wall_plane, ROOM_WALL_THICKNESS)
-    sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
-
-    structure = (
-        walls.all_objects + [shape.floor, ceiling.ceiling] + ceiling.light_meshes
-    )
     containers = (
-        walls.storage_containers
-        + bathroom_setup.storage_containers
-        + storage_containers
+        room.storage_containers + bathroom_setup.storage_containers + storage_containers
     )
     supports = (
-        walls.storage_supports + bathroom_setup.storage_supports + storage_supports
+        room.storage_supports + bathroom_setup.storage_supports + storage_supports
     )
     clearances = bathroom_setup.temporary_objects
-    storages = walls.storages + bathroom_setup.storages + storage_storages
+    storages = room.storages + bathroom_setup.storages + storage_storages
     rng_surface, rng_small = rng_decor.spawn(2)
     surface_result = decorate_surface_objects_rand(
         rng_surface,
-        objects=structure + ceiling.backs + ceiling.sills + skirting + furniture,
+        objects=room.all_objects + furniture,
         colliders=ccol.collision_set(
-            cast(list[pf.Object], structure + furniture + clearances)
+            colliders.objs + clearances,
+            cache=colliders,
         ),
         support_tops=supports,
         storages=storages,
@@ -1105,20 +914,14 @@ def room_bathroom_rand(
     all_objects = small_result.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=shape.cameras,
-        lights=pf.control.choice(
-            rng_ceiling,
-            [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
-        )
-        + walls.lights
-        + sky.lights
-        + surface_result.lights,
+        cameras=room.cameras,
+        lights=room.lights + surface_result.lights,
         colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
-        floor=shape.floor,
+        floor=room.floor,
         storage_containers=containers,
         storage_supports=supports,
         storages=storages,
-        wall_planes=walls.wall_planes,
+        wall_planes=room.wall_planes,
     )
 
 

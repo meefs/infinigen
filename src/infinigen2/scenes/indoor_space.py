@@ -10,29 +10,18 @@ import bpy
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.lighting import sky_lighting
 from infinigen2.objects import chair
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
-from infinigen2.scenes.room.ceiling_features import ceiling_feature_rand
 from infinigen2.scenes.room.cocktail_table_setup import cocktail_table_setup_rand
 from infinigen2.scenes.room.desk_setup import desk_setup_rand
 from infinigen2.scenes.room.dining_table_setup import dining_setup_rand
 from infinigen2.scenes.room.room import (
-    ROOM_WALL_THICKNESS,
     RoomResult,
-    room_walls_rand,
+    room_unfurnished_rand,
 )
-from infinigen2.scenes.room.room_shape import room_shape_rand
-from infinigen2.scenes.room.skirting import skirting_rand
 from infinigen2.scenes.room.sofa_setup import centered_sofa_setup_rand
-from infinigen2.scenes.room.wall_base import (
-    overlap_wall_plane_edges,
-    plane_to_posed_canonical_mesh,
-)
-from infinigen2.scenes.room.wall_cutouts import wall_doors_rand
 from infinigen2.scenes.setup_utils import sofa_object_rand, storage_object_rand
-from infinigen2.shaders.functionality_lists import wall_material_rand
 
 __all__ = [
     "SetupGridInstancesResult",
@@ -489,42 +478,15 @@ def indoor_space_rand(
     frame_end: int = 1,
 ) -> RoomResult:
     """A broad indoor shell filled by a repeated furniture-setup grid."""
-    del frame_start, frame_end
-    rng_dimensions, rng_shell, rng_grid, rng_sky = rng.spawn(4)
+    rng_dimensions, rng_room, rng_grid = rng.spawn(3)
     if dimensions is None:
         dimensions = _indoor_space_dimensions_rand(rng_dimensions)
 
-    (
-        rng_shape,
-        rng_materials,
-        rng_door,
-        rng_ceiling,
-        rng_walls,
-        rng_skirting,
-    ) = rng_shell.spawn(6)
-    shape = room_shape_rand(rng_shape, dimensions=dimensions)
-    vec_wall = pf.nodes.shader.coord().uv
-    wall_materials = [wall_material_rand(r, vec_wall) for r in rng_materials.spawn(2)]
-    door_idx = pf.random.randint(rng_door, 0, len(shape.flat_walls))
-    door = wall_doors_rand(
-        rng_door,
-        shape.flat_walls[door_idx],
-        wall_materials[0],
-        wall_thickness=ROOM_WALL_THICKNESS,
-    )
-    open_walls = shape.flat_walls[:door_idx] + shape.flat_walls[door_idx + 1 :]
-    ceiling = ceiling_feature_rand(rng_ceiling, shape)
-    setup_walls = [
-        plane_to_posed_canonical_mesh(
-            pf.nodes.to_mesh_object(pf.nodes.geo.object_info(wall).geometry)
-        )
-        for wall in open_walls
-    ]
-    setup_colliders = ccol.collision_set(
-        door.all_objects
-        + setup_walls
-        + [shape.floor, shape.walls, ceiling.ceiling]
-        + ceiling.light_meshes
+    room = room_unfurnished_rand(
+        rng_room,
+        dimensions,
+        frame_start=frame_start,
+        frame_end=frame_end,
     )
     rng_grid_choice, rng_grid_generate = rng_grid.spawn(2)
     grid_func = pf.control.choice(
@@ -542,39 +504,18 @@ def indoor_space_rand(
     )
     grid = grid_func(
         rng_grid_generate,
-        shape.dimensions,
-        setup_colliders,
+        dimensions,
+        room.colliders,
     )
-    walls = room_walls_rand(
-        rng_walls,
-        shape,
-        door,
-        open_walls,
-        wall_materials,
-        ccol.collision_set(cast("list[pf.Object]", grid.all_objects)),
-    )
-    skirting = skirting_rand(rng_skirting, walls=walls.wall_planes + [shape.walls])
-    for wall_plane in walls.wall_planes:
-        overlap_wall_plane_edges(wall_plane, ROOM_WALL_THICKNESS)
-    sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
-    structure = (
-        walls.all_objects + [shape.floor, ceiling.ceiling] + ceiling.light_meshes
-    )
-    all_objects = (
-        structure + ceiling.backs + ceiling.sills + skirting + grid.all_objects
-    )
+    all_objects = room.all_objects + grid.all_objects
     return RoomResult(
         all_objects=all_objects,
-        cameras=shape.cameras,
-        lights=pf.control.choice(
-            rng_ceiling,
-            [(ceiling.lights, 5.0), ([] if walls.lights else ceiling.lights, 1.0)],
-        )
-        + walls.lights
-        + sky.lights,
+        cameras=room.cameras,
+        lights=room.lights,
         colliders=ccol.collision_set(cast("list[pf.Object]", all_objects)),
-        floor=shape.floor,
-        storage_containers=walls.storage_containers,
-        storage_supports=walls.storage_supports,
-        wall_planes=walls.wall_planes,
+        floor=room.floor,
+        storage_containers=room.storage_containers,
+        storage_supports=room.storage_supports,
+        storages=room.storages,
+        wall_planes=room.wall_planes,
     )
