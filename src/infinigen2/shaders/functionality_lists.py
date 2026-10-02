@@ -63,6 +63,7 @@ from infinigen2.shaders.masks.tile_shapes import (
 
 __all__ = [
     "all_materials_rand",
+    "boulder_material_rand",
     "castor_wheel_material_rand",
     "ceiling_material_rand",
     "decorative_material_rand",
@@ -105,6 +106,23 @@ def terrain_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mat
             (soil.soil_rand, 1.0),
             (stone.stone_rand, 1.0),
             (stone_smooth.stone_smooth_rand, 1.0),
+        ],
+    )
+    return material_func(rng_material, vector)
+
+
+@pf.tracer.grammar
+def boulder_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
+    rng_choice, rng_material = rng.spawn(2)
+    material_func = pf.control.choice(
+        rng_choice,
+        [
+            (cracked_ground.cracked_ground_rand, 0.75),
+            (granite.granite_rand, 4.0),
+            (gravel_concrete.gravel_concrete_rand, 1.5),
+            (sandstone.sandstone_rand, 2.5),
+            (stone.stone_rand, 2.0),
+            (stone_smooth.stone_smooth_rand, 4.0),
         ],
     )
     return material_func(rng_material, vector)
