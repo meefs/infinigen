@@ -1154,13 +1154,13 @@ def bricks_paint_worn_preset(
         b=brick_concrete_result_1.surface,
     )
     surface = pf.nodes.shader.mix_shader(
-        factor=wear_and_tear_result,
+        factor=wear_and_tear_result.mask,
         a=surface_1,
         b=paint_result.surface,
     )
 
     displacement = pf.nodes.math.mix(
-        factor=wear_and_tear_result,
+        factor=wear_and_tear_result.mask,
         a=(0.0, 0.0, 0.0),
         b=displacement_1,
     )

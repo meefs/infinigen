@@ -451,7 +451,7 @@ def _max_layers(*layers: pf.ProcNode[float]) -> pf.ProcNode[float]:
 
 def scratches_brushed_mask_preset(
     vector: t.SocketOrVal[pf.Vector],
-) -> pf.ProcNode[float]:
+) -> ScratchesMaskResult:
     fine_a = _random_texture(
         vector,
         scratch_spacing=0.02,
@@ -524,12 +524,13 @@ def scratches_brushed_mask_preset(
         distortion_strength=0.3,
         distortion_detail=1.0,
     )
-    return _max_layers(fine_a, fine_b, hairline, grain_a, grain_b, grain_c, coarse)
+    mask = _max_layers(fine_a, fine_b, hairline, grain_a, grain_b, grain_c, coarse)
+    return ScratchesMaskResult(mask=mask)
 
 
 def scratches_dense_mask_preset(
     vector: t.SocketOrVal[pf.Vector],
-) -> pf.ProcNode[float]:
+) -> ScratchesMaskResult:
     fine_a = _random_texture(
         vector,
         random_seed=-11.199999,
@@ -572,12 +573,13 @@ def scratches_dense_mask_preset(
         distortion_strength=1.0,
         distortion_detail=1.0,
     )
-    return _max_layers(fine_a, fine_b, fine_c, fine_d, hairline)
+    mask = _max_layers(fine_a, fine_b, fine_c, fine_d, hairline)
+    return ScratchesMaskResult(mask=mask)
 
 
 def scratches_deep_dirty_mask_preset(
     vector: t.SocketOrVal[pf.Vector],
-) -> pf.ProcNode[float]:
+) -> ScratchesMaskResult:
     gouge = _linear_texture(
         vector,
         random_seed=12.399999,
@@ -629,12 +631,13 @@ def scratches_deep_dirty_mask_preset(
         distortion_strength=0.68999994,
         distortion_detail=5.9999995,
     )
-    return _max_layers(gouge, seam, cross, coarse)
+    mask = _max_layers(gouge, seam, cross, coarse)
+    return ScratchesMaskResult(mask=mask)
 
 
 def scratches_light_varnish_mask_preset(
     vector: t.SocketOrVal[pf.Vector],
-) -> pf.ProcNode[float]:
+) -> ScratchesMaskResult:
     sparse = _random_texture(vector, distortion_detail=1.0)
     wide = _random_texture(
         vector,
@@ -651,12 +654,13 @@ def scratches_light_varnish_mask_preset(
         distortion_strength=0.3,
         distortion_detail=1.0,
     )
-    return _max_layers(sparse, wide, fine)
+    mask = _max_layers(sparse, wide, fine)
+    return ScratchesMaskResult(mask=mask)
 
 
 def scratches_shallow_mask_preset(
     vector: t.SocketOrVal[pf.Vector],
-) -> pf.ProcNode[float]:
+) -> ScratchesMaskResult:
     broad = _linear_texture(
         vector,
         scratch_rotation=(1.5707964, 0.34906584, 0.0),
@@ -712,4 +716,5 @@ def scratches_shallow_mask_preset(
         distortion_strength=0.5,
         distortion_detail=2.0,
     )
-    return _max_layers(broad, medium, fine_a, fine_b)
+    mask = _max_layers(broad, medium, fine_a, fine_b)
+    return ScratchesMaskResult(mask=mask)

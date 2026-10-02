@@ -21,13 +21,13 @@ fi
 MATERIAL_PARALLEL=${MATERIAL_PARALLEL:-1}
 MATERIAL_XARGS="-t -I {} -P $MATERIAL_PARALLEL"
 
-MATERIALS=${MATERIALS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Material --missing_values drop --columns shortname $REST_ARGS)}
-OBJECTS=${OBJECTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Object --missing_values drop --columns shortname $REST_ARGS)}
-MASKS=${MASKS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Mask --missing_values drop --columns shortname $REST_ARGS)}
-DISPLACEMENTS=${DISPLACEMENTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Displacement --missing_values drop --columns shortname $REST_ARGS)}
-PRESETS=${PRESETS-$(uv run python -m infinigen2.list $LIST_ARGS --presets --missing_values drop --columns shortname $REST_ARGS)}
-ENVIRONMENTS=${ENVIRONMENTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Environment --missing_values drop --columns shortname $REST_ARGS)}
-CAMERAS=${CAMERAS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Cameras --missing_values drop --columns shortname $REST_ARGS)}
+MATERIALS=${MATERIALS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Material --missing_values drop --columns shortname $REST_ARGS)}
+OBJECTS=${OBJECTS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Object --missing_values drop --columns shortname $REST_ARGS)}
+MASKS=${MASKS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Mask --missing_values drop --columns shortname $REST_ARGS)}
+DISPLACEMENTS=${DISPLACEMENTS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Displacement --missing_values drop --columns shortname $REST_ARGS)}
+PRESETS=${PRESETS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --presets --missing_values drop --columns shortname $REST_ARGS)}
+ENVIRONMENTS=${ENVIRONMENTS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Environment --missing_values drop --columns shortname $REST_ARGS)}
+CAMERAS=${CAMERAS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Cameras --missing_values drop --columns shortname $REST_ARGS)}
 
 # store git info (for display purposes)
 mkdir -p "$OUTPUT_PATH"
@@ -54,7 +54,7 @@ cp src/infinigen2/manifest.json $OUTPUT_PATH
 
 # store the preset -> parent-generator map so the viewer can group presets beneath
 # their _rand without importing infinigen2 (the web server runs a minimal env)
-uv run python -c "import json, sys; from infinigen2.list import preset_parents; sys.stdout.write(json.dumps(preset_parents()))" > $OUTPUT_PATH/preset_parents.json
+uv run --no-sync python -c "import json, sys; from infinigen2.list import preset_parents; sys.stdout.write(json.dumps(preset_parents()))" > $OUTPUT_PATH/preset_parents.json
 
 GEN_ARGS="--loglevel WARNING --sampling_noise_threshold 0.02 --cpu_threads 8"
 if [ -n "${RENDER_RUNNER:-}" ]; then
@@ -63,9 +63,9 @@ if [ -n "${RENDER_RUNNER:-}" ]; then
     CAM_RUNNER_ARGS=("$PY_BIN" scripts/integration_v2/run_and_index.py --index-root "$OUTPUT_PATH" -- "$PY_BIN" scripts/integration_v2/render_trajectory_video.py)
     EXAMPLE_RUNNER_ARGS=("$PY_BIN" scripts/integration_v2/run_and_index.py --index-root "$OUTPUT_PATH" -- "$PY_BIN")
 else
-    RENDER_RUNNER_ARGS=(uv run infinigen)
-    CAM_RUNNER_ARGS=(uv run python scripts/integration_v2/render_trajectory_video.py)
-    EXAMPLE_RUNNER_ARGS=(uv run python)
+    RENDER_RUNNER_ARGS=(uv run --no-sync infinigen)
+    CAM_RUNNER_ARGS=(uv run --no-sync python scripts/integration_v2/render_trajectory_video.py)
+    EXAMPLE_RUNNER_ARGS=(uv run --no-sync python)
 fi
 
 # nothing else puts the plain example scripts under the tracer, so coverage stays empty
@@ -102,10 +102,10 @@ fi
 NORMAL_STEPS="render_cycles_ground_truth visualize_gt"
 
 # integration_test_string = full command tail; few materials set it, rest default to the cube.
-MATERIAL_CMDS=$(uv run python -m infinigen2.list $LIST_ARGS --categories Material \
+MATERIAL_CMDS=$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Material \
     --columns shortname integration_test_string --missing_values drop \
     --separator $'\t' $REST_ARGS)
-DISPLACEMENT_CMDS=$(uv run python -m infinigen2.list $LIST_ARGS --categories Displacement \
+DISPLACEMENT_CMDS=$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Displacement \
     --columns shortname integration_test_string --missing_values drop \
     --separator $'\t' $REST_ARGS)
 
@@ -113,7 +113,7 @@ DISPLACEMENT_CMDS=$(uv run python -m infinigen2.list $LIST_ARGS --categories Dis
 PRESET_CMDS=$(awk -F'\t' 'NR==FNR{split($2,a," "); g[$1]=a[2]; next}
     ($2 in g){print $1"\t"$1" "g[$2]" render_cycles"}' \
     <(printf '%s\n' "$MATERIAL_CMDS" "$DISPLACEMENT_CMDS") \
-    <(uv run python -c "from infinigen2.list import preset_parents
+    <(uv run --no-sync python -c "from infinigen2.list import preset_parents
 for k, v in preset_parents().items():
     print(f'{k}\t{v}')"))
 
@@ -202,7 +202,7 @@ for i in {0..5}; do
 done
 
 # \x1f-separated: cmd can be an empty middle field, and tab-IFS read collapses those
-SCENE_CMDS=${SCENE_CMDS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Scene \
+SCENE_CMDS=${SCENE_CMDS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Scene \
     --columns shortname integration_test_string num_seeds --missing_values keep \
     --separator $'\x1f' $REST_ARGS)}
 

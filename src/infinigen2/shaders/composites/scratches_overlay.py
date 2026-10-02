@@ -149,7 +149,7 @@ def scratches_brushed_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
         color=pf.Color((0.4035122, 0.4035122, 0.4035122)),
         roughness=0.38627362,
     )
-    mask = scratches.scratches_brushed_mask_preset(vector)
+    mask = scratches.scratches_brushed_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.anisotropic_bsdf(
         color=pf.Color((0.4975732, 0.4975732, 0.4975732)),
         roughness=0.4076923,
@@ -166,7 +166,7 @@ def scratches_dense_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
         color_variation=0.57465065,
         roughness=0.3,
     )
-    mask = scratches.scratches_dense_mask_preset(vector)
+    mask = scratches.scratches_dense_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.anisotropic_bsdf(
         color=pf.Color((0.351809, 0.351809, 0.351809)),
         roughness=0.4,
@@ -176,7 +176,7 @@ def scratches_dense_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
 
 def scratches_deep_dirty_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     base = wood_grain.wood_grain_brown_preset(vector)
-    mask = scratches.scratches_deep_dirty_mask_preset(vector)
+    mask = scratches.scratches_deep_dirty_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.diffuse_bsdf(
         color=pf.Color((0.01, 0.005, 0.003)),
         roughness=0.95,
@@ -186,7 +186,7 @@ def scratches_deep_dirty_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material
 
 def scratches_light_varnish_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     base = wood_grain.wood_grain_varnished_preset(vector)
-    mask = scratches.scratches_light_varnish_mask_preset(vector)
+    mask = scratches.scratches_light_varnish_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.diffuse_bsdf(
         color=pf.Color((0.80003154, 0.4295859, 0.16547439)),
     )
@@ -195,7 +195,7 @@ def scratches_light_varnish_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Mater
 
 def scratches_shallow_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     base = wood_grain.wood_grain_brown_preset(vector)
-    mask = scratches.scratches_shallow_mask_preset(vector)
+    mask = scratches.scratches_shallow_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.principled_bsdf(
         base_color=pf.Color((0.35, 0.16, 0.06)),
         roughness=0.7,

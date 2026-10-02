@@ -48,7 +48,7 @@ def _paint_weartear_flakes(
         color=pf.Color((0.029, 0.022, 0.019)),
     )
     surface = pf.nodes.shader.mix_shader(
-        factor=wear_and_tear_result,
+        factor=wear_and_tear_result.mask,
         a=surface_1,
         b=paint_result.surface,
     )
@@ -58,7 +58,7 @@ def _paint_weartear_flakes(
         midlevel=0.0,
     )
     displacement = pf.nodes.math.mix(
-        factor=wear_and_tear_result,
+        factor=wear_and_tear_result.mask,
         a=displacement_1,
         b=paint_result.displacement,
     )

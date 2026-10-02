@@ -114,6 +114,9 @@ CYCLES_GPUTYPES_PREFERENCE = [
 def configure_cycles_devices(
     device_type: str = "BEST_AVAILABLE",
 ):
+    if device_type == "BEST_AVAILABLE":
+        device_type = os.environ.get("INFINIGEN_CYCLES_DEVICE_TYPE", device_type)
+
     if device_type == "CPU":
         logger.info(f"Job will use CPU-only due to {device_type=}")
         bpy.context.scene.cycles.device = "CPU"
