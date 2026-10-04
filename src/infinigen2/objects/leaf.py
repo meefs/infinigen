@@ -13,6 +13,7 @@ from procfunc.nodes import types as t
 from procfunc.nodes.util.bpy_node_info import NodeDataType
 
 from infinigen2.objects.leaf_broadleaf import leaf_broadleaf_rand
+from infinigen2.objects.leaf_coord import leaf_coord, normalize_leaf_coord
 from infinigen2.objects.leaf_ginko import leaf_ginko_rand
 from infinigen2.objects.leaf_maple import leaf_maple_rand
 from infinigen2.shaders.base_materials.leaf import leaf_rand as leaf_material_rand
@@ -481,15 +482,7 @@ def leaf_simple(
     obj = pf.nodes.to_mesh_object_with_attributes(
         geo.geometry, attributes={"coordinate": geo.coordinate}
     )[0]
-
-    coordinate = pf.ops.attr.read_attribute(obj, "coordinate", domain="POINT")
-    planar = coordinate[:, :2]
-    span = planar.max(axis=0) - planar.min(axis=0)
-    span = span + (span == 0.0)
-    uv_per_vertex = (planar - planar.min(axis=0)) / span
-    loop_vertices = pf.ops.attr.loop_vertex_indices(obj)
-    pf.ops.attr.uv_coords_new(obj, "UVMap", do_init=False)
-    pf.ops.attr.write_uv_coords(obj, uv_per_vertex[loop_vertices])
+    normalize_leaf_coord(obj)
 
     pf.ops.object.set_material(obj, material=material)
     pf.ops.object.set_transform(obj, scale=(size, size, size))
@@ -505,7 +498,7 @@ def leaf_simple_rand(
     rngs = rng.spawn(2)
 
     if material is None:
-        material = leaf_material_rand(rngs[0], vector=pf.nodes.shader.coord().uv)
+        material = leaf_material_rand(rngs[0], vector=leaf_coord())
 
     rng_geo = rngs[1]
     return leaf_simple(

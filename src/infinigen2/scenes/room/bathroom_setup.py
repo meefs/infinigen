@@ -1178,18 +1178,6 @@ def _existing_sink_setup_rand(
             pf.Vector((support_depth, support_width, support_height)),
         )
         cabinet = cabinet_result.mesh
-        cabinet_minimum, cabinet_maximum = pf.ops.attr.bbox_min_max(
-            cabinet, global_coords=False
-        )
-        cabinet_dimensions = cabinet_maximum - cabinet_minimum
-        pf.ops.mesh.transform(
-            cabinet,
-            scale=(
-                support_depth / cabinet_dimensions[0],
-                support_width / cabinet_dimensions[1],
-                support_height / cabinet_dimensions[2],
-            ),
-        )
         cabinet.item().name = "sink_cabinet"
         _place_support_under_sink(cabinet, sink_obj)
         supports = [cabinet_result]
@@ -1244,19 +1232,6 @@ def _cabinet_sink_setup_rand(
         dimensions=pf.Vector((support_depth, support_width, support_height)),
     )
     cabinet = cabinet_result.mesh
-    cabinet_minimum, cabinet_maximum = pf.ops.attr.bbox_min_max(
-        cabinet,
-        global_coords=False,
-    )
-    cabinet_dimensions = cabinet_maximum - cabinet_minimum
-    pf.ops.mesh.transform(
-        cabinet,
-        scale=(
-            support_depth / cabinet_dimensions[0],
-            support_width / cabinet_dimensions[1],
-            1.0,
-        ),
-    )
     cabinet.item().name = "sink_cabinet"
     pf.ops.object.set_transform(
         cabinet,
@@ -1351,18 +1326,6 @@ def _bathroom_with_wall_storage_rand(
         dimensions=pf.Vector((depth, sink_width, height)),
     )
     cabinet = cabinet_result.mesh
-    cabinet_minimum, cabinet_maximum = pf.ops.attr.bbox_min_max(
-        cabinet, global_coords=False
-    )
-    cabinet_dimensions = cabinet_maximum - cabinet_minimum
-    pf.ops.mesh.transform(
-        cabinet,
-        scale=(
-            depth / cabinet_dimensions[0],
-            sink_width / cabinet_dimensions[1],
-            1.0,
-        ),
-    )
     cabinet.item().name = "bathroom_wall_storage"
     cabinet_minimum, cabinet_maximum = pf.ops.attr.bbox_min_max(
         cabinet, global_coords=False

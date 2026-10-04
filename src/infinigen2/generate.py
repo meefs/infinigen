@@ -635,7 +635,7 @@ def execute_generators(
                 continue
             mesh = item.data
             base_tris += len(mesh.loops) - 2 * len(mesh.polygons)
-        subdiv_tris = sum(estimated_eval_tricount(obj) for obj in objects)
+        subdiv_tris, _ = estimated_eval_tricount(objects)
     except Exception as e:
         logger.warning(f"Could not count triangles for render metrics: {e}")
         base_tris, subdiv_tris = 0, 0

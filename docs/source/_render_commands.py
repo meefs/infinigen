@@ -21,7 +21,7 @@ _DEFAULT_PIPELINES = {
 }
 
 _OPTIONS = {
-    "Material": "--passes rgb --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128",
+    "Material": "--passes rgb --displacement_mode DISPLACEMENT -r 192 192 -s 128",
     "Mask": "--passes rgb -r 384 384 -s 128",
     "Displacement": "--passes rgb --displacement_mode DISPLACEMENT -r 384 384 -s 128",
     "Object": "--passes rgb -r 512 512 -s 128",

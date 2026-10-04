@@ -514,6 +514,7 @@ def indoor_space_rand(
         lights=room.lights,
         colliders=ccol.collision_set(cast("list[pf.Object]", all_objects)),
         floor=room.floor,
+        dimensions=room.dimensions,
         storage_containers=room.storage_containers,
         storage_supports=room.storage_supports,
         storages=room.storages,

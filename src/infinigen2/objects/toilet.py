@@ -420,14 +420,7 @@ def _toilet_bowl(
     stand_result = pf.nodes.geo.merge_by_distance(stand_mesh, distance=1e-06)
     back_back_length = size * (1.0 - size_mid)
     back_rear = -back_back_length - back_size
-    back_selected = pf.nodes.func.boolean_and(
-        loft_position.x < back_thickness - back_back_length,
-        pf.nodes.geo.input_normal().x < -0.1,
-    )
-    back_region = pf.nodes.geo.separate_geometry(
-        shell_rim_2, selection=back_selected, domain="FACE"
-    ).selection
-    back_bottom = pf.nodes.geo.bound_box(back_region).min.z + thickness * 0.1
+    back_bottom = -depth + thickness * 0.1
     back_top = extrude_height * 0.25
     back_height = (
         back_bottom
@@ -436,19 +429,7 @@ def _toilet_bowl(
         / 31.0
     )
     back_height_2 = pf.nodes.func.switch(shell_index == 33, back_height, back_bottom)
-    back_ray = pf.nodes.geo.raycast(
-        shell_rim_2,
-        source_position=pf.nodes.math.combine_xyz(
-            x=back_rear - 0.01, y=tank_width * 0.25, z=back_height_2
-        ),
-        ray_direction=(1.0, 0.0, 0.0),
-        ray_length=back_size + 0.5,
-    )
-    back_front = pf.nodes.func.switch(
-        back_ray.is_hit,
-        -back_back_length - thickness,
-        back_ray.hit_position.x + 0.004,
-    )
+    back_front = -back_back_length + back_thickness
     back_x = pf.nodes.func.switch(shell_index < 32, back_rear, back_front)
     back_loop = pf.nodes.geo.mesh_circle(vertices=34)
     back_loop_2 = pf.nodes.geo.set_position(

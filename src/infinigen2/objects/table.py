@@ -814,27 +814,31 @@ def base_straight_rand(
 ) -> TableResult:
     """4-leg base with optional stretchers. leg_placement_bottom_scale > 1 splays
     the legs outward; pass 1.0 for an upright base to sit under a carcass."""
-    rng, rng_dims, rng_mat, rng_inset = rng.spawn(4)
+    rng_parameters, rng_dims, rng_mat, rng_inset, rng_stretcher = rng.spawn(5)
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
     # drawn unconditionally so explicit overrides do not shift the stream
-    sampled_diameter = pf.random.uniform(rng, *leg_diameter_range)
+    sampled_diameter = pf.random.uniform(rng_parameters, *leg_diameter_range)
     if leg_diameter is None:
         leg_diameter = sampled_diameter
-    sampled_bottom_scale = pf.random.uniform(rng, 0.95, 1.25)
+    sampled_bottom_scale = pf.random.uniform(rng_parameters, 0.95, 1.25)
     if leg_placement_bottom_scale is None:
         leg_placement_bottom_scale = 1.0 if close_edges else sampled_bottom_scale
     leg_inset = 0.0
     if leg_inset_range is not None and not close_edges:
         leg_inset = pf.random.uniform(rng_inset, *leg_inset_range)
+    stretcher_increment = pf.control.choice(
+        rng_stretcher, [(0, 1.0), (1, 1.0), (2, 1.0)]
+    )
+    stretcher_relative_pos = pf.random.uniform(rng_parameters, 0.2, 0.6)
     geo = base_four_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_inset=leg_inset,
         leg_placement_top_scale=1.0 if close_edges else leg_placement_top_scale,
         leg_placement_bottom_scale=leg_placement_bottom_scale,
-        stretcher_increment=pf.control.choice(rng, [(0, 1.0), (1, 1.0), (2, 1.0)]),
-        stretcher_relative_pos=pf.random.uniform(rng, 0.2, 0.6),
+        stretcher_increment=stretcher_increment,
+        stretcher_relative_pos=stretcher_relative_pos,
     )
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)
@@ -957,21 +961,22 @@ def base_square_rand(
     close_edges: bool = False,
 ) -> TableResult:
     """2 box-frame legs. leg_placement_bottom_scale > 1 splays the frames outward."""
-    rng, rng_dims, rng_mat = rng.spawn(3)
+    rng_parameters, rng_dims, rng_mat, rng_connector = rng.spawn(4)
     if dimensions is None:
         dimensions = table_dimensions_rand(rng_dims)
     # drawn unconditionally so an explicit leg_diameter does not shift the stream
-    sampled_diameter = pf.random.uniform(rng, *leg_diameter_range)
+    sampled_diameter = pf.random.uniform(rng_parameters, *leg_diameter_range)
     if leg_diameter is None:
         leg_diameter = sampled_diameter
     if leg_placement_bottom_scale is None:
         leg_placement_bottom_scale = 0.98 if close_edges else 1.0
+    has_bottom_connector = pf.control.choice(rng_connector, [(True, 2.0), (False, 1.0)])
     geo = base_box_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_placement_top_scale=0.94 if close_edges else leg_placement_top_scale,
         leg_placement_bottom_scale=leg_placement_bottom_scale,
-        has_bottom_connector=pf.control.choice(rng, [(True, 2.0), (False, 1.0)]),
+        has_bottom_connector=has_bottom_connector,
     )
     geo = mesh.crease_sharp(geo, threshold_degrees=40.0)
     obj = pf.nodes.to_mesh_object(geo)

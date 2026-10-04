@@ -101,7 +101,8 @@ def test_landscape_maps_dimensions_to_operator(
         mesh_resolution=0.5,
     )
 
-    assert result is expected
+    assert isinstance(result, ant_landscape.LandscapeResult)
+    assert result.mesh is expected
     assert captured["subdivision_x"] == 8
     assert captured["subdivision_y"] == 12
     assert captured["mesh_size_x"] == 4
@@ -153,7 +154,7 @@ def test_isotropic_dimensions_are_a_similarity_transform(
 
 def test_noise_offsets_stay_within_float32_precision() -> None:
     subdivisions = 400
-    mesh = ant_landscape.landscape_rand_from_params(
+    result = ant_landscape.landscape_rand_from_params(
         np.random.default_rng(0),
         dimensions=pf.Vector((120, 120, 120)),
         mesh_resolution=0.3,
@@ -161,7 +162,7 @@ def test_noise_offsets_stay_within_float32_precision() -> None:
         maximum=1e6,
         minimum=-1e6,
     )
-    heights = _vertex_positions(mesh)[:, 2].reshape(subdivisions, subdivisions)
+    heights = _vertex_positions(result.mesh)[:, 2].reshape(subdivisions, subdivisions)
     interior = heights[80:320, 80:320]
     for axis in (0, 1):
         assert np.mean(np.diff(interior, axis=axis) == 0.0) < 0.01
@@ -198,7 +199,7 @@ def test_landscape_rand_from_params_repeats_for_one_seed() -> None:
         np.random.default_rng(3), **kwargs
     )
 
-    assert np.array_equal(_vertex_positions(first), _vertex_positions(second))
+    assert np.array_equal(_vertex_positions(first.mesh), _vertex_positions(second.mesh))
 
 
 @pytest.mark.parametrize("generator", _LANDSCAPE_GENERATORS)

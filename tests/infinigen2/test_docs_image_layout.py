@@ -102,6 +102,7 @@ def test_docs_commands_use_category_default_without_override() -> None:
     name = "infinigen2.shaders.base_materials.fabric.fabric_rand"
     command = conf._replicate_command("Material", name, 0)
     assert command.startswith("infinigen2 fabric_rand material_cube render_cycles ")
+    assert "--displacement_mode DISPLACEMENT " in command
 
 
 def test_docs_preset_commands_inherit_owner_integration_geometry() -> None:

@@ -183,7 +183,7 @@ def landscape_rand_from_params(
     vert_group: str = "",
     material: pf.Material | None = None,
     **parameters: Unpack[LandscapeParameters],
-) -> pf.MeshObject:
+) -> LandscapeResult:
     rng_landscape, rng_material = rng.spawn(2)
     if material is None:
         vector = pf.nodes.shader.coord().object
@@ -234,7 +234,8 @@ def landscape_rand_from_params(
         ant_terrain_name=landscape.__name__,
         vert_group=vert_group,
     )
-    return landscape(material=material, **operator_kwargs)
+    mesh = landscape(material=material, **operator_kwargs)
+    return LandscapeResult(mesh=mesh)
 
 
 def landscape_generalized_rand(
@@ -271,14 +272,13 @@ def landscape_generalized_rand(
         "strata": pf.random.uniform(rng_params, 1.0, 11.0),
     }
     params.update(overrides)
-    mesh = landscape_rand_from_params(
+    return landscape_rand_from_params(
         rng_landscape,
         dimensions=dimensions,
         mesh_resolution=mesh_resolution,
         material=material,
         **params,
     )
-    return LandscapeResult(mesh=mesh)
 
 
 def landscape_canyon_rand(
@@ -288,7 +288,7 @@ def landscape_canyon_rand(
     material: pf.Material | None = None,
 ) -> LandscapeResult:
     rng_landscape, rng_params = rng.spawn(2)
-    mesh = landscape_rand_from_params(
+    return landscape_rand_from_params(
         rng_landscape,
         dimensions=dimensions,
         mesh_resolution=mesh_resolution,
@@ -318,7 +318,6 @@ def landscape_canyon_rand(
         strata_type="2",
         strata=pf.random.randint(rng_params, 6, 12),
     )
-    return LandscapeResult(mesh=mesh)
 
 
 def landscape_cliff_rand(
@@ -328,7 +327,7 @@ def landscape_cliff_rand(
     material: pf.Material | None = None,
 ) -> LandscapeResult:
     rng_landscape, rng_params = rng.spawn(2)
-    mesh = landscape_rand_from_params(
+    return landscape_rand_from_params(
         rng_landscape,
         dimensions=dimensions,
         mesh_resolution=mesh_resolution,
@@ -352,7 +351,6 @@ def landscape_cliff_rand(
         minimum=0,
         strata=11,
     )
-    return LandscapeResult(mesh=mesh)
 
 
 def landscape_mesa_rand(
@@ -362,7 +360,7 @@ def landscape_mesa_rand(
     material: pf.Material | None = None,
 ) -> LandscapeResult:
     rng_landscape, rng_params = rng.spawn(2)
-    mesh = landscape_rand_from_params(
+    return landscape_rand_from_params(
         rng_landscape,
         dimensions=dimensions,
         mesh_resolution=mesh_resolution,
@@ -386,7 +384,6 @@ def landscape_mesa_rand(
         strata=2.25,
         strata_type="2",
     )
-    return LandscapeResult(mesh=mesh)
 
 
 def landscape_river_rand(
@@ -396,7 +393,7 @@ def landscape_river_rand(
     material: pf.Material | None = None,
 ) -> LandscapeResult:
     rng_landscape, rng_params = rng.spawn(2)
-    mesh = landscape_rand_from_params(
+    return landscape_rand_from_params(
         rng_landscape,
         dimensions=dimensions,
         mesh_resolution=mesh_resolution,
@@ -415,7 +412,6 @@ def landscape_river_rand(
         strata=pf.random.uniform(rng_params, 1, 1.5),
         strata_type="1",
     )
-    return LandscapeResult(mesh=mesh)
 
 
 def landscape_volcano_rand(
@@ -425,7 +421,7 @@ def landscape_volcano_rand(
     material: pf.Material | None = None,
 ) -> LandscapeResult:
     rng_landscape, rng_params = rng.spawn(2)
-    mesh = landscape_rand_from_params(
+    return landscape_rand_from_params(
         rng_landscape,
         dimensions=dimensions,
         mesh_resolution=mesh_resolution,
@@ -457,7 +453,6 @@ def landscape_volcano_rand(
         minimum=-1,
         strata=pf.random.randint(rng_params, 4, 6),
     )
-    return LandscapeResult(mesh=mesh)
 
 
 def landscape_mountain_rand(
@@ -467,7 +462,7 @@ def landscape_mountain_rand(
     material: pf.Material | None = None,
 ) -> LandscapeResult:
     rng_landscape, rng_params = rng.spawn(2)
-    mesh = landscape_rand_from_params(
+    return landscape_rand_from_params(
         rng_landscape,
         dimensions=dimensions,
         mesh_resolution=mesh_resolution,
@@ -478,7 +473,6 @@ def landscape_mountain_rand(
         minimum=-1,
         strata=pf.random.randint(rng_params, 5, 10),
     )
-    return LandscapeResult(mesh=mesh)
 
 
 def landscape_rand(
