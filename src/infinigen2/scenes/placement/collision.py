@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -164,7 +165,7 @@ def n_colliders(col: CollisionSet) -> int:
 
 
 def collision_set(
-    objs: list[pf.Object], cache: CollisionSet | None = None
+    objs: Sequence[pf.Object], cache: CollisionSet | None = None
 ) -> CollisionSet:
     mesh_colliders: dict[int, trimesh.Trimesh] = (
         {} if cache is None else dict(cache.mesh_colliders)

@@ -5,6 +5,7 @@ import numpy as np
 import procfunc as pf
 import pytest
 
+from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.room import room
 
 
@@ -44,3 +45,44 @@ def test_room_rand_returns_a_default_camera_facing_inward() -> None:
     direction = camera.matrix_world.to_quaternion() @ pf.Vector((0, 0, -1))
     center = pf.Vector((dimensions.x / 2, dimensions.y / 2, camera.location.z))
     assert direction.dot(center - camera.location) > 0
+    affordances = [
+        obj
+        for obj in result.colliders.objs
+        if obj.item().name.startswith("door_affordance")
+    ]
+    assert affordances
+    assert all(obj not in result.all_objects for obj in affordances)
+    assert all(obj.item().hide_render for obj in affordances)
+
+
+def test_room_uses_door_affordance_only_for_placement() -> None:
+    dimensions = pf.Vector((4.5, 5.5, 2.7))
+    result = room.room_unfurnished_rand(
+        np.random.default_rng(19), dimensions=dimensions
+    )
+
+    affordances = [
+        obj
+        for obj in result.colliders.objs
+        if obj.item().name.startswith("door_affordance")
+    ]
+    assert affordances
+    assert all(obj not in result.all_objects for obj in affordances)
+
+    collider = affordances[0]
+    collider_item = collider.item()
+    center = collider_item.matrix_world @ pf.Vector((0.0, 0.0, 0.0))
+    normal = collider_item.matrix_world.to_3x3() @ pf.Vector((1.0, 0.0, 0.0))
+    normal.normalize()
+    collider_min, collider_max = pf.ops.attr.bbox_min_max(collider, global_coords=False)
+    extent = collider_max - collider_min
+    probe = pf.ops.primitives.mesh_cube(size=0.1)
+    probe_location = center + normal * float(extent[0] * 0.375)
+    pf.ops.object.set_transform(
+        probe,
+        location=probe_location,
+    )
+
+    assert ccol.intersection_test(result.colliders, probe)
+    physical_colliders = ccol.collision_set(result.all_objects)
+    assert not ccol.intersection_test(physical_colliders, probe)

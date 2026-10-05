@@ -8,6 +8,7 @@ from typing import NamedTuple
 import numpy as np
 import procfunc as pf
 
+from infinigen2.scenes.placement import collision as ccol
 from infinigen2.shaders.functionality_lists import wall_material_rand
 from infinigen2.util import mesh as mesh_util
 
@@ -45,6 +46,7 @@ class WallResult(NamedTuple):
     ]  # window/painting/shelf/door instances by type
     corner_walls: list[pf.MeshObject] = []
     storages: list[pf.MeshObject] = []
+    colliders: ccol.CollisionSet | None = None
 
 
 def _standalone_wall_rand(

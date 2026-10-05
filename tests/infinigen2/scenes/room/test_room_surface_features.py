@@ -118,6 +118,36 @@ def test_wall_cutouts_fall_back_on_narrow_wall(
     assert result.decorations == {}
 
 
+def test_wall_doors_add_invisible_affordance_colliders() -> None:
+    rng = np.random.default_rng(42)
+    wall = wall_base._standalone_wall_rand(rng, width=3.0, height=2.5)
+    material = functionality_lists.wall_material_rand(
+        np.random.default_rng(100), pf.nodes.shader.coord().uv
+    )
+
+    result = wall_cutouts.wall_doors_rand(rng, wall=wall, wall_material=material)
+
+    doors = result.decorations["door"]
+    assert result.colliders is not None
+    affordances = [
+        obj
+        for obj in result.colliders.objs
+        if obj.item().name.startswith("door_affordance")
+    ]
+    assert len(affordances) == len(doors)
+    assert all(obj not in result.all_objects for obj in affordances)
+    for collider in affordances:
+        collider_min, collider_max = pf.ops.attr.bbox_min_max(
+            collider, global_coords=False
+        )
+        collider_extent = collider_max - collider_min
+        np.testing.assert_allclose(collider_extent[0], 2 * collider_extent[1])
+        assert 0.85 <= collider_extent[1] <= 1.2
+        np.testing.assert_allclose(collider_extent[2], 2.5)
+        assert collider.item().hide_render
+        assert collider.item().display_type == "WIRE"
+
+
 def _wall_with_opening(opening_bottom: float) -> pf.MeshObject:
     rectangles = [
         (0.0, 1.0, 0.0, 2.5),

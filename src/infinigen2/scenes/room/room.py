@@ -232,7 +232,9 @@ def room_walls_rand(
     window_spacing = pf.random.uniform(rng_window, 0.1, 0.25) * _width
 
     results = [door]
-    colliders = ccol.collision_set(cast(list[pf.Object], _decoration_objects(door)))
+    colliders = door.colliders
+    if colliders is None:
+        colliders = ccol.collision_set([])
     rngs_wall = rng_walls.spawn(len(open_walls))
     for wall, rng_wall in zip(open_walls, rngs_wall, strict=True):
         rng_material, rng_arrangement = rng_wall.spawn(2)
@@ -281,6 +283,7 @@ def room_walls_rand(
         lights=[light for result in results for light in result.lights],
         decorations=decorations,
         storages=[o for result in results for o in result.storages],
+        colliders=colliders,
     )
 
 
@@ -379,7 +382,7 @@ def room_unfurnished_rand(
         all_objects=structure + ceiling.backs + ceiling.sills + skirting,
         cameras=shape.cameras,
         lights=lights,
-        colliders=ccol.collision_set(cast(list[pf.Object], structure)),
+        colliders=_with_objects(cast(ccol.CollisionSet, walls.colliders), structure),
         floor=shape.floor,
         dimensions=shape.dimensions,
         storage_containers=walls.storage_containers,
@@ -393,8 +396,10 @@ def _with_objects(
     colliders: ccol.CollisionSet,
     objects: list[pf.MeshObject],
 ) -> ccol.CollisionSet:
+    collider_items = {obj.item() for obj in colliders.objs}
+    new_objects = [obj for obj in objects if obj.item() not in collider_items]
     return ccol.collision_set(
-        colliders.objs + objects,
+        colliders.objs + new_objects,
         cache=colliders,
     )
 
@@ -582,7 +587,7 @@ def room_livingroom_rand(
         all_objects=all_objects,
         cameras=room.cameras,
         lights=room.lights + floor_result.lights + surface_result.lights,
-        colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
+        colliders=small_result.colliders,
         floor=room.floor,
         dimensions=room.dimensions,
         storage_containers=storage_containers,
@@ -673,7 +678,7 @@ def room_diningroom_rand(
         all_objects=all_objects,
         cameras=room.cameras,
         lights=room.lights + floor_result.lights + surface_result.lights,
-        colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
+        colliders=small_result.colliders,
         floor=room.floor,
         dimensions=room.dimensions,
         storage_containers=storage_containers,
@@ -830,7 +835,7 @@ def room_bedroom_rand(
         + bed_setup.lights
         + floor_result.lights
         + surface_result.lights,
-        colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
+        colliders=small_result.colliders,
         floor=room.floor,
         dimensions=room.dimensions,
         storage_containers=storage_containers,
@@ -917,6 +922,15 @@ def room_bathroom_rand(
         support_tops=supports,
         storages=storages,
     )
+    clearance_items = {clearance.item() for clearance in clearances}
+    colliders = ccol.collision_set(
+        [
+            obj
+            for obj in small_result.colliders.objs
+            if obj.item() not in clearance_items
+        ],
+        cache=small_result.colliders,
+    )
     for clearance in clearances:
         delete_object(clearance.item())
 
@@ -925,7 +939,7 @@ def room_bathroom_rand(
         all_objects=all_objects,
         cameras=room.cameras,
         lights=room.lights + surface_result.lights,
-        colliders=ccol.collision_set(cast(list[pf.Object], all_objects)),
+        colliders=colliders,
         floor=room.floor,
         dimensions=room.dimensions,
         storage_containers=containers,

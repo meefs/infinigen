@@ -781,6 +781,10 @@ def wall_doors_rand(
     # a door reveal reaches the floor and is never a placeable sill, so group it with backs
     reveal = [sill] if sill is not None else []
     backs = ([lightblocker] if lightblocker is not None else []) + reveal
+    door_clearances = [
+        _door_affordance_collider(alias, door_width, wall_height, index)
+        for index, alias in enumerate(door_aliases)
+    ]
     return WallResult(
         all_objects=[geom, *backs, *door_aliases],
         wall_planes=[geom],
@@ -790,7 +794,32 @@ def wall_doors_rand(
         storage_supports=[],
         lights=[],
         decorations={"door": door_aliases},
+        colliders=ccol.collision_set(door_aliases + door_clearances),
     )
+
+
+def _door_affordance_collider(
+    door: pf.MeshObject,
+    width: float,
+    height: float,
+    index: int,
+) -> pf.MeshObject:
+    minimum, maximum = pf.ops.attr.bbox_min_max(door, global_coords=False)
+    local_center = pf.Vector((minimum + maximum) / 2)
+    center = door.item().matrix_world @ local_center
+    tangent = door.item().matrix_world.to_3x3() @ pf.Vector((0.0, 1.0, 0.0))
+    angle = float(np.arctan2(tangent.y, tangent.x) - np.pi / 2)
+    collider = pf.ops.primitives.mesh_cube(size=1.0)
+    pf.ops.mesh.transform(collider, scale=(2 * width, width, height))
+    pf.ops.object.set_transform(
+        collider,
+        location=(center.x, center.y, height / 2),
+        rotation_euler=(0.0, 0.0, angle),
+    )
+    collider.item().name = f"door_affordance.{index:02d}"
+    collider.item().hide_render = True
+    collider.item().display_type = "WIRE"
+    return collider
 
 
 @pf.tracer.grammar

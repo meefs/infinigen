@@ -340,10 +340,18 @@ def _cleanup_except_returnvals(return_data: dict) -> list[str]:
     valid_objects.extend(return_data.get("curves", []))
     if "obj" in return_data:
         valid_objects.append(return_data["obj"])
-    valid_objects = [o.item() for o in valid_objects]
-    valid_objects = {
-        child for root in valid_objects for child in (root, *root.children_recursive)
+    visible_objects = [o.item() for o in valid_objects]
+    visible_objects = {
+        child for root in visible_objects for child in (root, *root.children_recursive)
     }
+    colliders = return_data.get("colliders")
+    collider_objects = [] if colliders is None else [o.item() for o in colliders.objs]
+    collider_objects = {
+        child for root in collider_objects for child in (root, *root.children_recursive)
+    }
+    for asset in collider_objects - visible_objects:
+        asset.hide_render = True
+    valid_objects = visible_objects | collider_objects
 
     cleaned = []
     for asset in bpy.data.objects:
