@@ -704,7 +704,7 @@ def _name_objects(
     category: str,
 ) -> list[pf.MeshObject]:
     for i, obj in enumerate(objects):
-        name = f"{category}.{i:02d}"
+        name = f"{category}_{i:02d}"
         obj.item().name = name
         _name_materials(obj, name)
     return objects

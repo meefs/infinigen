@@ -149,7 +149,7 @@ def _name_materials(obj: pf.MeshObject, base: str) -> None:
 
 def name_objects(objs: list[pf.MeshObject], name: str) -> list[pf.MeshObject]:
     for i, obj in enumerate(objs):
-        object_name = f"{name}.{i:02d}"
+        object_name = f"{name}_{i:02d}"
         obj.item().name = object_name
         _name_materials(obj, object_name)
     return objs
