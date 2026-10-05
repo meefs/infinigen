@@ -417,6 +417,7 @@ def _scatter_on_target(
     density: float | None = None,
     spacing_factor: float | None = None,
     scatter_func: Callable = _smallobj_scatter,
+    max_per_area: float | None = None,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
     """spacing_factor scales the Poisson min-distance by the object footprint:
     None randomizes it (sparse, objects never touch); 0 packs them (collision cull
@@ -432,7 +433,9 @@ def _scatter_on_target(
     distance_min = typ * spacing_factor
     if density is None:
         density = pf.random.clip_gaussian(rng, 1.5, 0.5, 0.0, 2.5)
-    point_density = min(density / typ**2, 300.0)
+    if max_per_area is None:
+        max_per_area = pf.random.uniform(rng, 8.0, 25.0)
+    point_density = min(density / typ**2, max_per_area)
 
     geometry = scatter_func(
         parent=parent,
@@ -639,16 +642,18 @@ def scatter_small_objects_on_containers(
     spacing_factor: float | None = None,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
     """Scatter on recessed upward faces, drawing a collection when omitted."""
-    rng_fraction, rng_place, rng_collection = rng.spawn(3)
+    rng_fraction, rng_place, rng_collection, rng_max_per_area = rng.spawn(4)
     if collection is None:
         collection = decoration_collection_primitives_rand(rng_collection)
     if fraction is None:
         fraction = pf.random.uniform(rng_fraction, 0.0, 1.0)
+    max_per_area = pf.random.uniform(rng_max_per_area, 40.0, 80.0)
     on_target = functools.partial(
         _scatter_on_target,
         density=density,
         spacing_factor=spacing_factor,
         scatter_func=_smallobj_scatter_containers,
+        max_per_area=max_per_area,
     )
     return _place_on_targets(
         rng_place, targets, collection, colliders, fraction, on_target

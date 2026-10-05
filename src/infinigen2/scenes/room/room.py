@@ -13,7 +13,7 @@ from infinigen2.lighting import sky_lighting
 from infinigen2.objects import window
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.room.bathroom_setup import bathroom_setup_rand
-from infinigen2.scenes.room.bed_setup import bed_setup_rand
+from infinigen2.scenes.room.bed_setup import bed_setup_rand, multi_bed_setup_rand
 from infinigen2.scenes.room.ceiling_features import ceiling_feature_rand
 from infinigen2.scenes.room.decoration_objects import (
     DecorationObjectsResult,
@@ -425,10 +425,10 @@ def _decorate_room_small_objects_rand(
     (
         rng_collection_primitives,
         rng_collection_primitives_and_real,
+        rng_storage_support_density,
         rng_support_storages,
         rng_storage_containers,
         rng_nonstorage_support_density,
-        rng_nonstorage_support_scale,
         rng_nonstorage_support_fraction,
         rng_support_nonstorages,
         rng_nonstorage_container_density,
@@ -449,22 +449,30 @@ def _decorate_room_small_objects_rand(
         storage_collection = decoration_collection_primitives_and_real_rand(
             rng_collection_primitives_and_real
         )
+    storage_support_density = pf.random.clip_gaussian(
+        rng_storage_support_density, 1.05, 0.35, 0.0, 2.5
+    )
     placed_support_storages, colliders = scatter_small_objects_on_support_tops(
         rng_support_storages,
         support_storages,
         colliders,
         collection=storage_collection,
+        density=storage_support_density,
     )
     (
         rng_storage_container_density,
         rng_storage_container_spacing,
         rng_storage_container_scatter,
-    ) = rng_storage_containers.spawn(3)
+        rng_storage_container_fraction,
+    ) = rng_storage_containers.spawn(4)
     storage_container_density = pf.random.clip_gaussian(
         rng_storage_container_density, 2.5, 0.5, 1.5, 3.5
     )
     storage_container_spacing = pf.random.uniform(
         rng_storage_container_spacing, 0.5, 0.8
+    )
+    storage_container_fraction = pf.random.uniform(
+        rng_storage_container_fraction, 0.5, 1.0
     )
     placed_storage_containers, colliders = scatter_small_objects_on_containers(
         rng_storage_container_scatter,
@@ -472,14 +480,14 @@ def _decorate_room_small_objects_rand(
         colliders,
         collection=storage_collection,
         density=storage_container_density,
-        fraction=1.0,
+        fraction=storage_container_fraction,
         spacing_factor=storage_container_spacing,
     )
     nonstorage_support_density = pf.random.clip_gaussian(
-        rng_nonstorage_support_density, 1.5, 0.5, 0.0, 2.5
-    ) * pf.random.uniform(rng_nonstorage_support_scale, 0.75, 1.25)
+        rng_nonstorage_support_density, 0.525, 0.175, 0.0, 1.25
+    )
     nonstorage_support_fraction = pf.random.uniform(
-        rng_nonstorage_support_fraction, 0.75, 1.0
+        rng_nonstorage_support_fraction, 0.0, 1.0
     )
     placed_support_nonstorages, colliders = scatter_small_objects_on_support_tops(
         rng_support_nonstorages,
@@ -738,13 +746,33 @@ def room_bedroom_rand(
         frame_end=frame_end,
     )
 
-    bed_setup = bed_setup_rand(
-        rng_bed,
-        wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
-        colliders=room.colliders,
-    )
-    colliders = bed_setup.colliders
+    def single_bed():
+        return [
+            bed_setup_rand(
+                rng_bed_setup,
+                wall_planes=room.wall_planes,
+                room_dimensions=dimensions,
+                colliders=room.colliders,
+            )
+        ]
+
+    def multi_bed():
+        return multi_bed_setup_rand(
+            rng_bed_setup,
+            wall_planes=room.wall_planes,
+            room_dimensions=dimensions,
+            colliders=room.colliders,
+        )
+
+    rng_bed_choice, rng_bed_setup = rng_bed.spawn(2)
+    bed_func = pf.control.choice(rng_bed_choice, [(single_bed, 1.0), (multi_bed, 0.5)])
+    bed_setups = bed_func()
+    bed_objects = [obj for setup in bed_setups for obj in setup.all_objects]
+    bed_containers = [obj for setup in bed_setups for obj in setup.storage_containers]
+    bed_supports = [obj for setup in bed_setups for obj in setup.supports]
+    bed_storages = [obj for setup in bed_setups for obj in setup.storages]
+    bed_lights = [light for setup in bed_setups for light in setup.lights]
+    colliders = bed_setups[-1].colliders
 
     def no_sofa():
         return None
@@ -801,27 +829,25 @@ def room_bedroom_rand(
         room_dimensions=dimensions,
         colliders=colliders,
     )
-    furniture = (
-        bed_setup.all_objects + sofa_objects + desk_objects + storage_setup.all_objects
-    )
+    furniture = bed_objects + sofa_objects + desk_objects + storage_setup.all_objects
 
     storage_containers = (
         room.storage_containers
-        + bed_setup.storage_containers
+        + bed_containers
         + sofa_containers
         + desk_containers
         + storage_setup.storage_containers
     )
     supports = (
         room.supports
-        + bed_setup.supports
+        + bed_supports
         + sofa_supports
         + desk_supports
         + storage_setup.supports
     )
     storages = (
         room.storages
-        + bed_setup.storages
+        + bed_storages
         + sofa_storages
         + desk_storages
         + storage_setup.storages
@@ -855,10 +881,7 @@ def room_bedroom_rand(
     return RoomResult(
         all_objects=all_objects,
         cameras=room.cameras,
-        lights=room.lights
-        + bed_setup.lights
-        + floor_result.lights
-        + surface_result.lights,
+        lights=room.lights + bed_lights + floor_result.lights + surface_result.lights,
         colliders=small_result.colliders,
         floor=room.floor,
         dimensions=room.dimensions,

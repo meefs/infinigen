@@ -6,8 +6,10 @@ from functools import partial
 from typing import NamedTuple
 
 import procfunc as pf
+from procfunc.nodes import types as t
 
 from infinigen2.objects import chair, storage, table
+from infinigen2.shaders.composites import fabric_wrinkled
 from infinigen2.shaders.functionality_lists import (
     fabric_general_rand,
     fabric_sturdy_rand,
@@ -184,12 +186,26 @@ def _frame_material_rand(rng: pf.RNG, hard_material: pf.Material) -> pf.Material
     return fn(r_material, vector)
 
 
+def _bedding_rand(rng: pf.RNG, vec: t.SocketOrVal[pf.Vector]) -> pf.Material:
+    """General cloth with an additional chance of large folds."""
+    rng_fabric, rng_choice, rng_wrinkles = rng.spawn(3)
+    material = fabric_general_rand(rng_fabric, vec)
+    wrinkles_func = pf.control.choice(
+        rng_choice,
+        [
+            (lambda r, v, m: m, 1.0),
+            (fabric_wrinkled.wrinkles_big_overlay_rand, 1.0),
+        ],
+    )
+    return wrinkles_func(rng_wrinkles, vec, material)
+
+
 def mattress_rand(
     rng: pf.RNG,
     dimensions: pf.Vector,
     center_z: float,
 ) -> pf.MeshObject:
-    material = fabric_general_rand(rng, pf.nodes.shader.coord().uv)
+    material = _bedding_rand(rng, pf.nodes.shader.coord().uv)
     mattress_geo = mesh.box_with_support_loops(
         size=dimensions,
         vertices_x=30,

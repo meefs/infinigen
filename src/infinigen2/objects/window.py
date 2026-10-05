@@ -1279,8 +1279,8 @@ def window_rand(
     window_fn = pf.control.choice(
         rng_choice,
         [
-            (window_rectangular_rand, 0.75),
-            (window_curved_rand, 0.25),
+            (window_rectangular_rand, 0.92),
+            (window_curved_rand, 0.08),
         ],
     )
     return window_fn(
@@ -1357,8 +1357,8 @@ def window_composite_rand(
     window_fn = pf.control.choice(
         rng_choice,
         [
-            (window_rectangular_composite_rand, 0.75),
-            (window_curved_rand, 0.25),
+            (window_rectangular_composite_rand, 0.92),
+            (window_curved_rand, 0.08),
         ],
     )
     return window_fn(

@@ -335,17 +335,18 @@ def fabric_art_rand(
     )
 
 
-def _fabric_wear_rand(rng: pf.RNG, vec, material: pf.Material) -> pf.Material:
-    rng_choice, rng_wear = rng.spawn(2)
-    wear_func = pf.control.choice(
+def _fabric_finish_rand(rng: pf.RNG, vec, material: pf.Material) -> pf.Material:
+    rng_choice, rng_finish = rng.spawn(2)
+    finish_func = pf.control.choice(
         rng_choice,
         [
             (lambda r, v, m: m, 2.0),
-            (_dark_scratches_overlay, 1.5),
-            (splats_overlay_rand, 2.0),
+            (fabric_wrinkled.wrinkles_small_overlay_rand, 2.0),
+            (_dark_scratches_overlay, 1.0),
+            (splats_overlay_rand, 1.0),
         ],
     )
-    return wear_func(rng_wear, vec, material)
+    return finish_func(rng_finish, vec, material)
 
 
 def _fabric_cloth_rand(
@@ -353,7 +354,7 @@ def _fabric_cloth_rand(
     vec: t.SocketOrVal[pf.Vector],
     translucency: float = 0.0,
 ) -> pf.Material:
-    rng_choice, rng_mat, rng_wrinkles_choice, rng_wrinkles = rng.spawn(4)
+    rng_choice, rng_mat = rng.spawn(2)
     material_func = pf.control.choice(
         rng_choice,
         [
@@ -362,15 +363,7 @@ def _fabric_cloth_rand(
             (fabric_art_rand, 0.5),
         ],
     )
-    material = material_func(rng_mat, vec, translucency=translucency)
-    wrinkles_func = pf.control.choice(
-        rng_wrinkles_choice,
-        [
-            (lambda r, v, m: m, 2.0),
-            (fabric_wrinkled.wrinkles_overlay_rand, 1.0),
-        ],
-    )
-    return wrinkles_func(rng_wrinkles, vec, material)
+    return material_func(rng_mat, vec, translucency=translucency)
 
 
 def fabric_general_rand(
@@ -379,14 +372,14 @@ def fabric_general_rand(
     translucency: float = 0.0,
 ) -> pf.Material:
     """Any cloth, optionally wrinkled and worn: bedding, drapery and lampshades."""
-    rng_cloth, rng_wear = rng.spawn(2)
+    rng_cloth, rng_finish = rng.spawn(2)
     material = _fabric_cloth_rand(rng_cloth, vec, translucency=translucency)
-    return _fabric_wear_rand(rng_wear, vec, material)
+    return _fabric_finish_rand(rng_finish, vec, material)
 
 
 def fabric_sturdy_rand(rng: pf.RNG, vec: t.SocketOrVal[pf.Vector]) -> pf.Material:
     """Upholstery for surfaces that are sat on: cloth, leather or carpet, optionally worn."""
-    rng_choice, rng_mat, rng_wear = rng.spawn(3)
+    rng_choice, rng_mat, rng_finish = rng.spawn(3)
     material_func = pf.control.choice(
         rng_choice,
         [
@@ -397,7 +390,7 @@ def fabric_sturdy_rand(rng: pf.RNG, vec: t.SocketOrVal[pf.Vector]) -> pf.Materia
         ],
     )
     material = material_func(rng_mat, vec)
-    return _fabric_wear_rand(rng_wear, vec, material)
+    return _fabric_finish_rand(rng_finish, vec, material)
 
 
 @pf.tracer.grammar

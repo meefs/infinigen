@@ -1,7 +1,8 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-import functools
+import math
+from collections.abc import Sequence
 from typing import NamedTuple, cast
 
 import procfunc as pf
@@ -16,13 +17,19 @@ from infinigen2.scenes.setup_utils import (
     BareMeshResult,
     MeshResult,
     back_face_grounded,
+    clear_of,
     retry_place,
     snap_back_front,
 )
 from infinigen2.util.errors import RejectedScene
 from infinigen2.util.scene_cleanup import delete_object
 
-__all__ = ["BedSetupResult", "bed_setup_rand"]
+__all__ = [
+    "BedSetupResult",
+    "bed_dimensions_rand",
+    "bed_setup_rand",
+    "multi_bed_setup_rand",
+]
 
 
 class BedSetupResult(NamedTuple):
@@ -44,32 +51,31 @@ _WALL_MARGIN_MAX = 0.127
 _BED_GENERATION_ATTEMPTS = 8
 
 
-def _bed_dimensions_rand(
+def bed_dimensions_rand(
     rng: pf.RNG,
-    room_dimensions: pf.Vector | None,
+    room_dimensions: pf.Vector | None = None,
+    area: float | None = None,
+    aspect: float | None = None,
 ) -> pf.Vector:
-    rng_length, rng_width, rng_thickness = rng.spawn(3)
+    rng_room, rng_size, rng_thickness = rng.spawn(3)
     if room_dimensions is None:
-        width = pf.control.choice(
-            rng_width,
-            [(0.90, 1.0), (1.20, 1.0), (1.40, 1.0), (1.60, 1.0), (1.80, 1.0)],
-        )
-        thickness = pf.random.uniform(rng_thickness, 0.20, 0.24)
-        return pf.Vector((2.0, width, thickness))
-    minimum_span = min(room_dimensions.x, room_dimensions.y)
-    maximum_length = max(1.2, min(2.2, minimum_span - 0.6))
-    minimum_length = min(1.85, maximum_length)
-    length_mean = min(2.0, maximum_length)
-    length = pf.random.clip_gaussian(
-        rng_length, length_mean, 0.08, minimum_length, maximum_length
-    )
-    maximum_width = min(1.8, minimum_span - 0.9)
-    width_options = [
-        (width, 1.0) for width in (0.9, 1.2, 1.4, 1.6, 1.8) if width <= maximum_width
-    ]
-    if not width_options:
-        width_options = [(max(0.6, maximum_width), 1.0)]
-    width = pf.control.choice(rng_width, width_options)
+        room_size = pf.random.uniform(rng_room, 0.0, 1.0)
+    else:
+        room_area = room_dimensions.x * room_dimensions.y
+        room_size = min(max((room_area - 11.0) / 11.0, 0.0), 1.0)
+    size = 0.5 * room_size + pf.random.uniform(rng_size, 0.0, 0.5)
+    nominal_width = 0.97 + 1.06 * size
+    nominal_length = 1.91 + 0.58 * size**2
+    if area is None:
+        area = nominal_width * nominal_length
+    if aspect is None:
+        aspect = nominal_length / nominal_width
+    length = math.sqrt(area * aspect)
+    width = max(0.6, min(math.sqrt(area / aspect), 2.1))
+    if room_dimensions is not None:
+        minimum_span = min(room_dimensions.x, room_dimensions.y)
+        length = min(length, max(1.2, minimum_span - 0.6))
+        width = max(0.6, min(width, minimum_span - 0.9))
     thickness = pf.random.uniform(rng_thickness, 0.20, 0.24)
     return pf.Vector((length, width, thickness))
 
@@ -79,20 +85,23 @@ def _place_bed_against_wall(
     bed_result: MeshResult,
     wall_planes: list[pf.MeshObject],
     colliders: collision.CollisionSet,
+    furniture: Sequence[pf.MeshObject],
 ) -> MeshResult | None:
     margin = pf.random.uniform(rng, _WALL_MARGIN_MIN, _WALL_MARGIN_MAX)
-    grounded = functools.partial(
-        back_face_grounded,
-        colliders=collision.collision_set(cast(list[pf.Object], wall_planes)),
-        margin=margin,
-    )
+    clearance = pf.random.uniform(rng, 0.5, 0.9)
+    walls = collision.collision_set(cast(list[pf.Object], wall_planes))
+
+    def accept(mesh: pf.MeshObject) -> bool:
+        grounded = back_face_grounded(mesh, colliders=walls, margin=margin)
+        return grounded and clear_of(mesh, furniture, clearance)
+
     return retry_place(
         rng,
         bed_result,
         colliders,
         _snap_bed_against_wall,
-        attempts=32,
-        accept_fn=grounded,
+        attempts=64,
+        accept_fn=accept,
         parents=wall_planes,
         margin=margin,
     )
@@ -125,11 +134,14 @@ def _generated_bed_rand(
     dimensions: pf.Vector | None,
     wall_planes: list[pf.MeshObject] | None,
     colliders: collision.CollisionSet,
+    furniture: Sequence[pf.MeshObject],
 ) -> BedResult:
     result = bed_rand(rng_bed, dimensions=dimensions)
     if not wall_planes:
         return result
-    placed = _place_bed_against_wall(rng_place, result, wall_planes, colliders)
+    placed = _place_bed_against_wall(
+        rng_place, result, wall_planes, colliders, furniture
+    )
     if placed is not None:
         return result
     _delete_bed_result(result)
@@ -141,6 +153,7 @@ def _generated_bed_rand(
             result,
             wall_planes,
             colliders,
+            furniture,
         )
         if placed is not None:
             return result
@@ -178,6 +191,8 @@ def bed_setup_rand(
     wall_planes: list[pf.MeshObject] | None = None,
     room_dimensions: pf.Vector | None = None,
     colliders: collision.CollisionSet | None = None,
+    bed_dimensions: pf.Vector | None = None,
+    furniture: Sequence[pf.MeshObject] | None = None,
 ) -> BedSetupResult:
     (
         r_dimensions,
@@ -191,7 +206,11 @@ def bed_setup_rand(
         r_lamp_choices,
         r_pillows,
     ) = rng.spawn(10)
-    dimensions = _bed_dimensions_rand(r_dimensions, room_dimensions)
+    if furniture is None:
+        furniture = []
+    dimensions = bed_dimensions
+    if dimensions is None:
+        dimensions = bed_dimensions_rand(r_dimensions, room_dimensions)
     generated_bed = bed is None
     if colliders is None:
         wall_objects = cast(list[pf.Object], wall_planes or [])
@@ -204,6 +223,7 @@ def bed_setup_rand(
             dimensions,
             wall_planes,
             colliders,
+            furniture,
         )
         bed_mesh = bed_result.mesh
         mattress = bed_result.mattress_child
@@ -234,6 +254,7 @@ def bed_setup_rand(
                 placement_result,
                 wall_planes,
                 colliders,
+                furniture,
             )
         if placed is None:
             bed_mesh.item().matrix_world = original_matrix
@@ -352,3 +373,37 @@ def bed_setup_rand(
         supports=bedside_tables + ([mattress] if mattress is not None else []),
         storages=bedside_tables,
     )
+
+
+def multi_bed_setup_rand(
+    rng: pf.RNG,
+    wall_planes: list[pf.MeshObject],
+    room_dimensions: pf.Vector,
+    colliders: collision.CollisionSet,
+) -> list[BedSetupResult]:
+    rng_count, rng_beds = rng.spawn(2)
+    setups: list[BedSetupResult] = []
+    for bed_rng in rng_beds.spawn(pf.random.randint(rng_count, 2, 4)):
+        rng_area, rng_dimensions, rng_bed, rng_aspect = bed_rng.spawn(4)
+        area = pf.random.uniform(rng_area, 1.8, 2.2)
+        aspect = pf.random.uniform(rng_aspect, 1.85, 2.05)
+        dimensions = bed_dimensions_rand(
+            rng_dimensions, room_dimensions, area=area, aspect=aspect
+        )
+        furniture = [obj for setup in setups for obj in setup.all_objects]
+        try:
+            setup = bed_setup_rand(
+                rng_bed,
+                wall_planes=wall_planes,
+                room_dimensions=room_dimensions,
+                colliders=colliders,
+                bed_dimensions=dimensions,
+                furniture=furniture,
+            )
+        except RejectedScene:
+            if not setups:
+                raise
+            break
+        setups.append(setup)
+        colliders = setup.colliders
+    return setups

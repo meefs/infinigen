@@ -4,10 +4,12 @@
 # Authors: Alexander Raistrick
 
 import logging
+from collections.abc import Sequence
 from typing import Callable, NamedTuple, Protocol, TypeVar, runtime_checkable
 
 import numpy as np
 import procfunc as pf
+import shapely
 
 from infinigen2.objects import sofa, storage, table
 from infinigen2.scenes.placement import collision as ccol
@@ -18,6 +20,7 @@ __all__ = [
     "MeshResult",
     "back_face_grounded",
     "bbox_face_grounded",
+    "clear_of",
     "jitter_object_rotation_rand",
     "random_bbox_poses_animation_rand",
     "retry_place",
@@ -165,6 +168,18 @@ def standalone_wall_planes(
     wall = pf.nodes.to_mesh_object(geometry)
     wall.item().name = "standalone_wall"
     return [wall]
+
+
+def _footprint(obj: pf.MeshObject) -> shapely.Polygon:
+    lower, upper = pf.ops.attr.bbox_min_max(obj, global_coords=True)
+    return shapely.box(lower[0], lower[1], upper[0], upper[1])
+
+
+def clear_of(
+    obj: pf.MeshObject, others: Sequence[pf.MeshObject], distance: float
+) -> bool:
+    footprint = _footprint(obj)
+    return all(footprint.distance(_footprint(o)) >= distance for o in others)
 
 
 def retry_place(

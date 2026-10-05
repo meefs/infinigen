@@ -392,7 +392,7 @@ def rock_material_rand(rng: pf.RNG) -> pf.Material:
 
 def rock_rand(rng: pf.RNG, material: pf.Material | None = None) -> BoulderResult:
     rng_scale, rng_material, rng_boulder = rng.spawn(3)
-    scale = pf.random.uniform(rng_scale, 0.05, 0.09)
+    scale = pf.random.uniform(rng_scale, 0.08, 0.14)
     if material is None:
         material = rock_material_rand(rng_material)
     result = boulder_rand(rng_boulder, material=material, mesh_resolution=0.04)

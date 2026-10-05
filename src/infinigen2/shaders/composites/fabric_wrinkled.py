@@ -14,7 +14,36 @@ from infinigen2.shaders.displacements.wrinkles import (
     wrinkles_rug_rand,
 )
 
-__all__ = ["fabric_wrinkled_rand", "wrinkles_overlay_rand"]
+__all__ = [
+    "fabric_wrinkled_rand",
+    "wrinkles_big_overlay_rand",
+    "wrinkles_overlay_rand",
+    "wrinkles_small_overlay_rand",
+]
+
+
+def wrinkles_small_overlay_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+    material: pf.Material,
+) -> pf.Material:
+    wrinkles = wrinkles_fabric_rand(rng, vector)
+    return pf.Material(
+        surface=material.surface,
+        displacement=material.displacement + wrinkles,
+    )
+
+
+def wrinkles_big_overlay_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+    material: pf.Material,
+) -> pf.Material:
+    wrinkles = wrinkles_rug_rand(rng, vector)
+    return pf.Material(
+        surface=material.surface,
+        displacement=material.displacement + wrinkles,
+    )
 
 
 def wrinkles_overlay_rand(
@@ -26,15 +55,11 @@ def wrinkles_overlay_rand(
     wrinkles_func = pf.control.choice(
         rng_choice,
         [
-            (wrinkles_fabric_rand, 3.0),
-            (wrinkles_rug_rand, 2.0),
+            (wrinkles_small_overlay_rand, 3.0),
+            (wrinkles_big_overlay_rand, 2.0),
         ],
     )
-    wrinkles = wrinkles_func(rng_wrinkles, vector)
-    return pf.Material(
-        surface=material.surface,
-        displacement=material.displacement + wrinkles,
-    )
+    return wrinkles_func(rng_wrinkles, vector, material)
 
 
 def fabric_wrinkled_rand(

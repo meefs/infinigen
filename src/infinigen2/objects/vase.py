@@ -512,5 +512,5 @@ def cup_rand(rng: pf.RNG, material: pf.Material | None = None) -> VaseResult:
     obj.item().name = cup_rand.__name__
     thickness = pf.random.uniform(rng_thickness, 0.002, 0.004)
     pf.ops.modifier.solidify(obj, thickness=thickness)
-    pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=1, _skip_apply=True)
     return VaseResult(mesh=obj)
