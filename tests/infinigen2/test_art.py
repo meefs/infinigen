@@ -124,11 +124,7 @@ def _choice_options(monkeypatch, call, target):
     ("material_rand", "target"),
     [
         (
-            functionality_lists.fabric_sturdy_rand,
-            functionality_lists.fabric_art_rand,
-        ),
-        (
-            functionality_lists.fabric_light_rand,
+            functionality_lists.fabric_general_rand,
             functionality_lists.fabric_art_rand,
         ),
         (

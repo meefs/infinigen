@@ -13,9 +13,8 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 from infinigen2.objects import table, vase
-from infinigen2.shaders.base_materials import fabric
-from infinigen2.shaders.composites import fabric_patterned
 from infinigen2.shaders.functionality_lists import (
+    fabric_general_rand,
     furniture_material_rand,
 )
 from infinigen2.util import mesh as mesh_util
@@ -32,8 +31,6 @@ __all__ = [
     "point_light_indoor_rand",
     "lamp",
     "lamp_rand",
-    "lampshade_color_rand",
-    "lampshade_fabric_rand",
     "lampshade_shape_rand",
 ]
 
@@ -679,126 +676,28 @@ def hanging_lampshade_shape_rand(rng: pf.RNG) -> LampshadeShape:
     )
 
 
-def lampshade_color_rand(rng: pf.RNG) -> pf.Color:
-    rng_hue, rng_saturation, rng_value = rng.spawn(3)
-    hue = pf.random.uniform(rng_hue, 0.0, 0.2)
-    saturation = pf.random.uniform(rng_saturation, 0.0, 0.25)
-    value = pf.random.uniform(rng_value, 0.1, 0.9)
-    return pf.color.hsv_color(hue=hue, saturation=saturation, value=value)
-
-
-def _lampshade_plain_fabric_rand(
+def _lampshade_fabric_rand(
     rng: pf.RNG,
     vector: pf.ProcNode[pf.Vector],
 ) -> pf.Material:
-    rng_translucency, rng_color, rng_material = rng.spawn(3)
-    translucency = pf.random.clip_gaussian(rng_translucency, 0.15, 0.15, 0.0, 0.9)
-    color = fabric.fabric_color_rand(rng_color)
-    return fabric.fabric_translucent_rand(
-        rng_material,
-        vector,
-        base_color=color,
-        translucency=translucency,
-    )
-
-
-def _lampshade_patterned_fabric_rand(
-    rng: pf.RNG,
-    vector: pf.ProcNode[pf.Vector],
-) -> pf.Material:
-    rng_translucency, rng_scale, rng_colors, rng_material = rng.spawn(4)
-    translucency = pf.random.clip_gaussian(rng_translucency, 0.15, 0.15, 0.0, 0.9)
-    pattern_scale = pf.random.uniform(rng_scale, 20.0, 250.0)
-    colors = fabric_patterned.fabric_patterned_colors_rand(rng_colors)
-    return fabric_patterned.fabric_patterned_translucent_rand(
-        rng_material,
-        vector,
-        color1=colors[0],
-        color2=colors[1],
-        color3=colors[2],
-        translucency=translucency,
-        scale=pattern_scale,
-    )
-
-
-def _lampshade_colored_fabric_rand(
-    rng: pf.RNG,
-    vector: pf.ProcNode[pf.Vector],
-) -> pf.Material:
-    rng_translucency, rng_color, rng_material = rng.spawn(3)
-    translucency = pf.random.clip_gaussian(rng_translucency, 0.15, 0.15, 0.0, 0.9)
-    color = lampshade_color_rand(rng_color)
-    return fabric.fabric_translucent_rand(
-        rng_material,
-        vector,
-        base_color=color,
-        translucency=translucency,
-    )
-
-
-def _lampshade_patterned_colored_fabric_rand(
-    rng: pf.RNG,
-    vector: pf.ProcNode[pf.Vector],
-) -> pf.Material:
-    (
-        rng_translucency,
-        rng_scale,
-        rng_color1,
-        rng_color2,
-        rng_color3,
-        rng_material,
-    ) = rng.spawn(6)
-    translucency = pf.random.clip_gaussian(rng_translucency, 0.15, 0.15, 0.0, 0.9)
-    pattern_scale = pf.random.uniform(rng_scale, 20.0, 250.0)
-    return fabric_patterned.fabric_patterned_translucent_rand(
-        rng_material,
-        vector,
-        color1=lampshade_color_rand(rng_color1),
-        color2=lampshade_color_rand(rng_color2),
-        color3=lampshade_color_rand(rng_color3),
-        translucency=translucency,
-        scale=pattern_scale,
-    )
-
-
-def lampshade_fabric_rand(
-    rng: pf.RNG,
-    vector: pf.ProcNode[pf.Vector],
-) -> pf.Material:
-    rng_choice, rng_plain, rng_patterned, rng_colored, rng_patterned_colored = (
-        rng.spawn(5)
-    )
-    option = pf.control.choice(
-        rng_choice,
-        [
-            (partial(_lampshade_plain_fabric_rand, rng_plain), 1.0),
-            (partial(_lampshade_patterned_fabric_rand, rng_patterned), 1.0),
-            (partial(_lampshade_colored_fabric_rand, rng_colored), 1.0),
-            (
-                partial(
-                    _lampshade_patterned_colored_fabric_rand,
-                    rng_patterned_colored,
-                ),
-                1.0,
-            ),
-        ],
-    )
-    return option(vector)
+    rng, rng_fabric = rng.spawn(2)
+    translucency = pf.random.clip_gaussian(rng, 0.15, 0.15, 0.0, 0.9)
+    return fabric_general_rand(rng_fabric, vector, translucency=translucency)
 
 
 def _lampshade_material_rand(
     rng: pf.RNG,
     vector: pf.ProcNode[pf.Vector],
 ) -> pf.Material:
-    rng_choice, rng_fabric, rng_furniture = rng.spawn(3)
+    rng_choice, rng_material = rng.spawn(2)
     material_rand = pf.control.choice(
         rng_choice,
         [
-            (partial(lampshade_fabric_rand, rng_fabric), 1.0),
-            (partial(furniture_material_rand, rng_furniture), 1.0),
+            (_lampshade_fabric_rand, 1.0),
+            (furniture_material_rand, 1.0),
         ],
     )
-    return material_rand(vector)
+    return material_rand(rng_material, vector)
 
 
 class _LampParameters(NamedTuple):

@@ -14,16 +14,26 @@ from infinigen2.shaders.displacements.wrinkles import (
     wrinkles_rug_rand,
 )
 
-__all__ = ["fabric_bedding_wrinkled_rand", "fabric_wrinkled_rand"]
+__all__ = ["fabric_wrinkled_rand", "wrinkles_overlay_rand"]
 
 
-def _combine(
-    fabric: pf.Material,
-    wrinkles: pf.ProcNode[pf.Vector],
+def wrinkles_overlay_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+    material: pf.Material,
 ) -> pf.Material:
+    rng_choice, rng_wrinkles = rng.spawn(2)
+    wrinkles_func = pf.control.choice(
+        rng_choice,
+        [
+            (wrinkles_fabric_rand, 3.0),
+            (wrinkles_rug_rand, 2.0),
+        ],
+    )
+    wrinkles = wrinkles_func(rng_wrinkles, vector)
     return pf.Material(
-        surface=fabric.surface,
-        displacement=fabric.displacement + wrinkles,
+        surface=material.surface,
+        displacement=material.displacement + wrinkles,
     )
 
 
@@ -34,23 +44,4 @@ def fabric_wrinkled_rand(
 ) -> pf.Material:
     rng_fabric, rng_wrinkles = rng.spawn(2)
     material = fabric_rand(rng_fabric, vector, base_color=base_color)
-    wrinkles = wrinkles_fabric_rand(rng_wrinkles, vector)
-    return _combine(material, wrinkles)
-
-
-def fabric_bedding_wrinkled_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_fabric, rng_choice, rng_wrinkles = rng.spawn(3)
-    material = fabric_rand(rng_fabric, vector, base_color=base_color)
-    wrinkles_func = pf.control.choice(
-        rng_choice,
-        [
-            (wrinkles_fabric_rand, 3.0),
-            (wrinkles_rug_rand, 2.0),
-        ],
-    )
-    wrinkles = wrinkles_func(rng_wrinkles, vector)
-    return _combine(material, wrinkles)
+    return wrinkles_overlay_rand(rng_wrinkles, vector, material)

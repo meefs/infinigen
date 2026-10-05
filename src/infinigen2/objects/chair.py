@@ -1938,7 +1938,7 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
     vec = pf.nodes.shader.coord().uv
     material1 = cache(partial(furniture_material_rand, rng_mat1, vec))
     material2 = cache(partial(furniture_material_rand, rng_mat2, vec))
-    fabric = cache(partial(fabric_sturdy_rand, rng_fabric, vec, translucency=0.0))
+    fabric = cache(partial(fabric_sturdy_rand, rng_fabric, vec))
     seat_material_fn = pf.control.choice(
         rng_seat_sel, [(material1, 2.0), (fabric, 1.0)]
     )
@@ -2068,7 +2068,7 @@ def chair_bench_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairR
     vec = pf.nodes.shader.coord().uv
     material1 = cache(partial(furniture_material_rand, rng_mat1, vec))
     material2 = cache(partial(furniture_material_rand, rng_mat2, vec))
-    fabric = cache(partial(fabric_sturdy_rand, rng_fabric, vec, translucency=0.0))
+    fabric = cache(partial(fabric_sturdy_rand, rng_fabric, vec))
     seat_material_fn = pf.control.choice(
         rng_seat_sel, [(material1, 2.0), (fabric, 1.0)]
     )

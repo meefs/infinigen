@@ -13,12 +13,14 @@ import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 
+from infinigen2.objects import cushion
 from infinigen2.objects.table import base_square_rand, base_straight_rand
 from infinigen2.shaders.functionality_lists import (
     decorative_material_rand,
     fabric_sturdy_rand,
 )
 from infinigen2.util import mesh as mesh_util
+from infinigen2.util.instance import instances_on_line
 
 __all__ = [
     "SofaResult",
@@ -28,38 +30,12 @@ __all__ = [
     "sofa_with_base_rand",
 ]
 
-_SUPPORT_HEIGHT_ATTRIBUTE = "sofa_support_height"
-_SUPPORT_DEPTH_ATTRIBUTE = "sofa_support_depth"
-_SUPPORT_CENTER_X_ATTRIBUTE = "sofa_support_center_x"
-_BASE_DEPTH_ATTRIBUTE = "sofa_base_depth"
-_BASE_CENTER_X_ATTRIBUTE = "sofa_base_center_x"
-
 
 class SofaResult(NamedTuple):
     mesh: pf.MeshObject
-
-
-@pf.nodes.node_function
-def _array_fill_line(
-    line_start: t.SocketOrVal[pf.Vector],
-    line_end: t.SocketOrVal[pf.Vector],
-    instance_dimensions: t.SocketOrVal[pf.Vector],
-    count: t.SocketOrVal[int],
-    instance: t.SocketOrVal[pf.MeshObject],
-) -> pf.ProcNode[pf.MeshObject]:
-    line_b = instance_dimensions * (0.0, -0.5, 0.0)
-    line_from_endpoints = pf.nodes.geo.mesh_line_from_endpoints(
-        count=count,
-        start_location=line_end + line_b,
-        end_location=line_start - line_b,
-    )
-
-    instance_on_points = pf.nodes.geo.instance_on_points(
-        points=line_from_endpoints, instance=instance
-    )
-
-    realize_instances = pf.nodes.geo.realize_instances(instance_on_points)
-    return realize_instances
+    back_seat_line_start: pf.Vector
+    back_seat_line_end: pf.Vector
+    back_tilt: float
 
 
 ARM_TYPE_SQUARE = 0
@@ -68,372 +44,15 @@ ARM_TYPE_ANGULAR = 2
 
 
 @pf.nodes.node_function
-def _sofa_geometry(
+def _sofa_arm(
     dimensions: t.SocketOrVal[pf.Vector],
     arm_dimensions: t.SocketOrVal[pf.Vector],
-    back_dimensions: t.SocketOrVal[pf.Vector],
-    seat_dimensions: t.SocketOrVal[pf.Vector],
-    foot_dimensions: t.SocketOrVal[pf.Vector],
-    fabric_material: t.SocketOrVal[pf.Material],
-    foot_material: t.SocketOrVal[pf.Material],
-    baseboard_height: t.SocketOrVal[float],
-    backrest_width: t.SocketOrVal[float],
-    seat_margin: t.SocketOrVal[float],
-    backrest_angle: t.SocketOrVal[float],
-    arm_width: t.SocketOrVal[float],
     arm_type: t.SocketOrVal[int],
+    arm_width: t.SocketOrVal[float],
     arm_height: t.SocketOrVal[float],
-    arms_angle: t.SocketOrVal[float],
-    reflection: t.SocketOrVal[int],
-    leg_type: t.SocketOrVal[bool],
-    leg_dimensions: t.SocketOrVal[float],
-    leg_z: t.SocketOrVal[float],
-    leg_faces: t.SocketOrVal[int],
-    has_feet: t.SocketOrVal[bool] = True,
-    footrest: t.SocketOrVal[bool] = False,
-    count: t.SocketOrVal[int] = 0,
-    scaling_footrest: t.SocketOrVal[float] = 0,
-    body_crease: t.SocketOrVal[float] = 0.7,
-    cushion_crease: t.SocketOrVal[float] = 0.15,
-    arm_back_crease: t.SocketOrVal[float] = 0.2,
+    arm_back_crease: t.SocketOrVal[float],
+    body_radius: t.SocketOrVal[float],
 ) -> pf.ProcNode[pf.MeshObject]:
-    join_y_numerator_addend = pf.nodes.math.vector_multiply_add(
-        a=arm_dimensions,
-        b=(0.0, -2.0, 0.0),
-        addend=dimensions,
-    )
-    join_y_numerator = pf.nodes.math.vector_multiply_add(
-        a=back_dimensions,
-        b=(-1.0, 0.0, 0.0),
-        addend=join_y_numerator_addend,
-    )
-
-    base_board_2_dimensions = pf.nodes.math.combine_xyz(
-        x=join_y_numerator.x,
-        y=join_y_numerator.y,
-        z=baseboard_height,
-    )
-
-    join_a_2 = base_board_2_dimensions * (0.0, -0.5, 1.0)
-    join_b_0 = pf.nodes.math.combine_xyz(x=backrest_width, z=seat_dimensions.z)
-    join_a_1 = base_board_2_dimensions * (0.0, 0.5, 1.0)
-    join_12 = pf.nodes.math.ceil(join_y_numerator.y / seat_dimensions.y)
-    join_y = join_y_numerator.y / join_12
-    join_1_geometries_0_instance_dimensions = pf.nodes.math.combine_xyz(
-        x=seat_dimensions.x, y=join_y, z=seat_dimensions.z
-    )
-
-    seat_a = dimensions.z - seat_dimensions.z
-    seat_cushion_dimensions = pf.nodes.math.combine_xyz(
-        x=seat_a - baseboard_height, y=join_y, z=backrest_width
-    )
-    seat_cushion = mesh_util.box(
-        location=(0.0, 0.0, 0.0),
-        anchor=(0.1, 0.5, 1.0),
-        size=seat_cushion_dimensions,
-        vertices_x=2,
-        vertices_y=2,
-        vertices_z=2,
-        crease=cushion_crease,
-    )
-
-    extrude = pf.nodes.geo.extrude_mesh(mesh=seat_cushion, offset_scale=0.03)
-
-    scale_elements = pf.nodes.geo.scale_elements(
-        geometry=extrude.mesh,
-        selection=extrude.top,
-        scale=0.6,
-        center=(0, 0, 0),
-    )
-
-    transform_translation_x_1 = backrest_width * -1.0
-    transform_translation_x_0 = back_dimensions.x + 0.1
-    transform_translation = pf.nodes.math.combine_xyz(
-        transform_translation_x_1 + transform_translation_x_0
-    )
-    transform_rotation = pf.nodes.math.combine_xyz(y=backrest_angle + -1.5708)
-    transform_scale = pf.nodes.math.combine_xyz(x=seat_margin, y=seat_margin, z=1.0)
-    transform = pf.nodes.geo.transform(
-        geometry=scale_elements,
-        translation=transform_translation,
-        rotation=transform_rotation.astype(dtype=pf.Euler),
-        scale=transform_scale,
-    )
-
-    array_fill_line_result = _array_fill_line(
-        line_start=join_a_2 + join_b_0,
-        line_end=join_a_1 + join_b_0,
-        instance_dimensions=join_1_geometries_0_instance_dimensions,
-        count=join_12.astype(dtype=int),
-        instance=transform,
-    )
-
-    seat_cushion_1 = mesh_util.box(
-        location=(0.0, 0.0, 0.0),
-        anchor=(0.0, 0.5, 0.0),
-        size=join_1_geometries_0_instance_dimensions * (1.0, 1.03, 1.0),
-        vertices_x=2,
-        vertices_y=2,
-        vertices_z=2,
-        crease=cushion_crease,
-    )
-
-    transform_1_selection_0 = pf.nodes.math.constant(1.0)
-
-    store_named_attribute_3 = pf.nodes.geo.store_named_attribute(
-        domain="FACE",
-        geometry=seat_cushion_1,
-        selection=transform_1_selection_0.astype(dtype=bool),
-        name="TAG_cushion",
-        value=True,
-    )
-
-    transform_1 = pf.nodes.geo.transform(
-        geometry=store_named_attribute_3,
-        scale=transform_scale,
-        translation=(0, 0, 0),
-        rotation=(0, 0, 0),
-    )
-
-    array_fill_line_result_1 = _array_fill_line(
-        line_start=join_a_2,
-        line_end=join_a_1,
-        instance_dimensions=join_1_geometries_0_instance_dimensions,
-        count=join_12.astype(dtype=int),
-        instance=transform_1,
-    )
-
-    join_geometries_1_b_switch = pf.nodes.func.equal(a=count, b=4)
-    join_0_switch = pf.nodes.func.equal(a=count, b=4)
-    join_11 = pf.nodes.func.switch(switch=join_0_switch, a=reflection, b=1)
-    join_line_end_b = pf.nodes.math.combine_xyz(
-        x=1.0, y=join_11.astype(dtype=float), z=1.1
-    )
-    join_line_end_1 = join_a_1 * join_line_end_b
-
-    transform_2_scale = pf.nodes.math.combine_xyz(x=scaling_footrest, y=1.0, z=1.1)
-    transform_2 = pf.nodes.geo.transform(
-        geometry=transform_1,
-        scale=transform_2_scale,
-        translation=(0, 0, 0),
-        rotation=(0, 0, 0),
-    )
-
-    array_fill_line_result_2 = _array_fill_line(
-        line_start=join_a_2,
-        line_end=join_line_end_1,
-        instance_dimensions=join_1_geometries_0_instance_dimensions * join_line_end_b,
-        count=count,
-        instance=transform_2,
-    )
-
-    join_line_end_0 = pf.nodes.math.combine_xyz(z=join_line_end_1.z)
-
-    transform_3_scale = pf.nodes.math.combine_xyz(x=1.0, y=join_12, z=1.0)
-    transform_3 = pf.nodes.geo.transform(
-        geometry=transform_2,
-        scale=transform_3_scale,
-        translation=(0, 0, 0),
-        rotation=(0, 0, 0),
-    )
-
-    array_fill_line_result_3 = _array_fill_line(
-        line_start=(0.0, 0.0, 0.0),
-        line_end=join_line_end_0,
-        instance_dimensions=(0.0, 0.0, 0.0),
-        count=1,
-        instance=transform_3,
-    )
-
-    join_geometries_1_b = pf.nodes.func.switch(
-        switch=join_geometries_1_b_switch,
-        a=array_fill_line_result_2,
-        b=array_fill_line_result_3,
-    )
-    join_geometries = pf.nodes.func.switch(switch=footrest, b=join_geometries_1_b)
-    join = pf.nodes.geo.join_geometry([array_fill_line_result_1, join_geometries])
-
-    subdivide_1 = pf.nodes.geo.subdivide_mesh(mesh=join, level=2)
-
-    join_1 = pf.nodes.geo.join_geometry([array_fill_line_result, subdivide_1])
-
-    grid = pf.nodes.geo.mesh_grid(vertices_x=2, vertices_y=2)
-
-    transform_4_scale_1 = dimensions * (1.0, 1.0, 0.0)
-    transform_4_scale_0 = foot_dimensions * (2.5, 2.5, 0.0)
-    transform_4 = pf.nodes.geo.transform(
-        geometry=grid.mesh,
-        translation=dimensions * (0.5, 0.0, 0.0),
-        scale=transform_4_scale_1 - transform_4_scale_0,
-        rotation=(0, 0, 0),
-    )
-
-    cone = pf.nodes.geo.mesh_cone(
-        vertices=leg_faces,
-        side_segments=4,
-        radius_top=0.01,
-        radius_bottom=0.025,
-        depth=0.07,
-    )
-
-    transform_5_scale = pf.nodes.math.combine_xyz(
-        x=leg_dimensions, y=leg_dimensions, z=leg_z
-    )
-    transform_5 = pf.nodes.geo.transform(
-        geometry=cone.mesh,
-        translation=(0.0, 0.0, 0.01),
-        rotation=(0.0, 3.1416, 0.0),
-        scale=transform_5_scale,
-    )
-
-    foot_cube = mesh_util.box(
-        location=(0.0, 0.0, 0.0),
-        anchor=(0.5, 0.5, 0.9),
-        size=foot_dimensions,
-        vertices_x=4,
-        vertices_y=4,
-        vertices_z=4,
-    )
-
-    transform_6 = pf.nodes.geo.transform(
-        geometry=foot_cube,
-        scale=(0.5, 0.8, 0.8),
-        translation=(0, 0, 0),
-        rotation=(0, 0, 0),
-    )
-    foot = pf.nodes.func.switch(switch=leg_type, a=transform_5, b=transform_6)
-    foot = pf.nodes.geo.set_material(foot, foot_material)
-
-    instance_on_points = pf.nodes.geo.instance_on_points(
-        points=transform_4, instance=foot
-    )
-    feet = pf.nodes.geo.realize_instances(instance_on_points)
-
-    join_7_geometries_0_switch = pf.nodes.func.equal(a=count, b=4)
-
-    transform_switch = pf.nodes.func.equal(a=count, b=4)
-
-    base_board_dimensions_b = pf.nodes.math.combine_xyz(x=1.0, y=join_12, z=1.0)
-    base_board_dimensions = base_board_2_dimensions / base_board_dimensions_b
-
-    transform_8_translation_a = pf.nodes.func.switch(
-        switch=transform_switch,
-        a=base_board_dimensions,
-        b=base_board_2_dimensions,
-    )
-
-    grid_1 = pf.nodes.geo.mesh_grid(
-        size_y=transform_8_translation_a.y * 0.7,
-        vertices_x=1,
-        vertices_y=2,
-    )
-
-    transform_8_translation_b = pf.nodes.math.combine_xyz(
-        x=0.1,
-        y=transform_8_translation_a.y,
-        z=transform_8_translation_a.z,
-    )
-    transform_8_translation_1 = transform_8_translation_a - transform_8_translation_b
-    transform_8_translation_0 = back_dimensions * (1.0, 0.0, 0.0)
-    transform_8 = pf.nodes.geo.transform(
-        geometry=grid_1.mesh,
-        translation=transform_8_translation_1 + transform_8_translation_0,
-        scale=(1.0, 1.0, 0.9),
-        rotation=(0, 0, 0),
-    )
-
-    instance_on_points_1 = pf.nodes.geo.instance_on_points(
-        points=transform_8,
-        instance=foot,
-        scale=(1.0, 1.0, 1.2),
-    )
-    footrest_feet = pf.nodes.geo.realize_instances(instance_on_points_1)
-
-    base_a_y = pf.nodes.math.multiply_add(
-        a=arm_dimensions.y, b=-2.0, addend=dimensions.y
-    )
-    base_a = pf.nodes.math.combine_xyz(
-        x=back_dimensions.x, y=base_a_y, z=back_dimensions.z
-    )
-    base_board_2_location = base_a * (1.0, 0.0, 0.0)
-    base_board = mesh_util.box(
-        location=base_board_2_location,
-        anchor=(0.0, 0.5, -1.0),
-        size=base_board_dimensions,
-        vertices_x=2,
-        vertices_y=2,
-        vertices_z=2,
-    )
-
-    join_2 = pf.nodes.geo.join_geometry([footrest_feet, base_board])
-    join_a_0 = base_board_dimensions_b - (1.0, 1.0, 1.0)
-    join_a_translation_1 = base_board_dimensions * join_a_0 * (0.0, 0.5, 0.0)
-    join_a_translation_0 = pf.nodes.math.combine_xyz(
-        x=1.0, y=reflection.astype(dtype=float), z=1.0
-    )
-    join_a_scale = pf.nodes.math.combine_xyz(x=scaling_footrest, y=1.0, z=1.0)
-
-    transform_9 = pf.nodes.geo.transform(
-        geometry=join_2,
-        translation=join_a_translation_1 * join_a_translation_0,
-        scale=join_a_scale,
-        rotation=(0, 0, 0),
-    )
-
-    join_7_geometries_0_a = pf.nodes.func.switch(switch=footrest, a=transform_9)
-
-    base_board_1 = mesh_util.box(
-        location=base_board_2_location,
-        anchor=(0.0, 0.5, -1.0),
-        size=base_board_2_dimensions,
-        vertices_x=3,
-        vertices_y=3,
-        vertices_z=3,
-    )
-
-    transform_10_scale = pf.nodes.math.combine_xyz(x=scaling_footrest, y=1.0, z=1.0)
-    transform_10 = pf.nodes.geo.transform(
-        geometry=base_board_1,
-        scale=transform_10_scale,
-        translation=(0, 0, 0),
-        rotation=(0, 0, 0),
-    )
-    transform_11_scale = pf.nodes.math.combine_xyz(x=scaling_footrest, y=1.3, z=1.0)
-    transform_11 = pf.nodes.geo.transform(
-        geometry=footrest_feet,
-        scale=transform_11_scale,
-        translation=(0, 0, 0),
-        rotation=(0, 0, 0),
-    )
-
-    join_3 = pf.nodes.geo.join_geometry([transform_10, transform_11])
-    join_7_geometries_0_b = pf.nodes.func.switch(switch=footrest, b=join_3)
-    join_7_geometries = pf.nodes.func.switch(
-        switch=join_7_geometries_0_switch,
-        a=join_7_geometries_0_a,
-        b=join_7_geometries_0_b,
-    )
-
-    base_board_2 = mesh_util.box(
-        location=base_board_2_location,
-        anchor=(0.0, 0.5, -1.0),
-        size=base_board_2_dimensions,
-        vertices_x=5,
-        vertices_y=5,
-        vertices_z=2,
-        crease=body_crease,
-    )
-
-    back_board = mesh_util.box(
-        location=(0.0, 0.0, 0.0),
-        anchor=(0.0, 0.5, -1.0),
-        size=base_a,
-        vertices_x=2,
-        vertices_y=5,
-        vertices_z=5,
-        crease=arm_back_crease,
-    )
-
     is_arm_angular = pf.nodes.func.equal(a=arm_type, b=ARM_TYPE_ANGULAR)
     is_arm_square = pf.nodes.func.equal(a=arm_type, b=ARM_TYPE_SQUARE)
     join_b_dimensions = pf.nodes.math.combine_xyz(
@@ -446,25 +65,20 @@ def _sofa_geometry(
 
     transform_numerator = join_b_dimensions.x * 1.0001
 
+    arm_radius = join_b_dimensions.y * 0.5
     cylinder = pf.nodes.geo.mesh_cylinder(
         fill_type="TRIANGLE_FAN",
         side_segments=4,
-        radius=join_b_dimensions.y,
+        radius=arm_radius,
         depth=transform_numerator,
     )
-
-    # store_named_attribute_4 = pf.nodes.geo.store_named_attribute(
-    #     geometry=cylinder.mesh,
-    #     name="UVMap",
-    #     value=cylinder.uv_map,
-    # )
 
     join_b_location = dimensions * (0.0, 0.5, 0.0)
 
     transform_12_translation = pf.nodes.math.combine_xyz(
         x=transform_numerator / 2.0,
-        y=join_b_location.y,
-        z=join_b_dimensions.z - join_b_dimensions.y,
+        y=join_b_location.y - arm_radius,
+        z=join_b_dimensions.z,
     )
     transform_12 = pf.nodes.geo.transform(
         geometry=cylinder.mesh,
@@ -473,14 +87,11 @@ def _sofa_geometry(
         scale=(1, 1, 1),
     )
 
-    arm_cube = mesh_util.box(
+    arm_cube = mesh_util.box_with_support_loops(
         location=join_b_location,
         anchor=(0.0, 1.0, 0.0),
         size=join_b_dimensions,
-        vertices_x=4,
-        vertices_y=4,
-        vertices_z=4,
-        crease=arm_back_crease,
+        support_loop_offset=cushion.support_loop_offset(body_radius, join_b_dimensions),
     )
 
     arm_round = pf.nodes.geo.join_geometry([transform_12, arm_cube])
@@ -556,73 +167,233 @@ def _sofa_geometry(
         b=arm_angular,
     )
 
-    arm_sym = pf.nodes.geo.transform(
-        geometry=arm_switch,
+    return arm_switch
+
+
+@pf.nodes.node_function
+def _lean_arm(
+    arm: t.SocketOrVal[pf.MeshObject],
+    arm_top: t.SocketOrVal[float],
+    slant_tan: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    below_top = pf.nodes.math.minimum(pf.nodes.geo.input_position().z - arm_top, 0.0)
+    offset = pf.nodes.math.combine_xyz(y=below_top * slant_tan)
+    return pf.nodes.geo.set_position(geometry=arm, offset=offset)
+
+
+@pf.nodes.node_function
+def _sofa_geometry(
+    dimensions: t.SocketOrVal[pf.Vector],
+    arm_dimensions: t.SocketOrVal[pf.Vector],
+    left_arm_thickness: t.SocketOrVal[float],
+    right_arm_thickness: t.SocketOrVal[float],
+    back_dimensions: t.SocketOrVal[pf.Vector],
+    seat_thickness: t.SocketOrVal[float],
+    seat_cushion_count: t.SocketOrVal[int],
+    fabric_material: t.SocketOrVal[pf.Material],
+    baseboard_height: t.SocketOrVal[float],
+    backrest_width: t.SocketOrVal[float],
+    seat_margin: t.SocketOrVal[float],
+    backrest_angle: t.SocketOrVal[float],
+    arm_width: t.SocketOrVal[float],
+    arm_type: t.SocketOrVal[int],
+    arm_height: t.SocketOrVal[float],
+    arm_back_crease: t.SocketOrVal[float] = 0.2,
+    cushion_radius: t.SocketOrVal[float] = 0.05,
+    back_cushion_radius: t.SocketOrVal[float] = 0.06,
+    seat_cushion_crown: t.SocketOrVal[float] = 0.0,
+    back_cushion_crown: t.SocketOrVal[float] = 0.0,
+    piping_radius: t.SocketOrVal[float] = 0.0,
+    body_radius: t.SocketOrVal[float] = 0.02,
+    arm_slant: t.SocketOrVal[float] = 0.0,
+) -> pf.ProcNode[pf.MeshObject]:
+    has_left_arm = left_arm_thickness > 0.0
+    has_right_arm = right_arm_thickness > 0.0
+
+    # arms lean out about their top edge, so the seat sits inside their lowered inner faces
+    slant_tan = pf.nodes.math.tan(arm_slant)
+    seat_top_z = baseboard_height + seat_thickness
+    is_arm_square = pf.nodes.func.equal(a=arm_type, b=ARM_TYPE_SQUARE)
+    square_top_drop = pf.nodes.func.switch(switch=is_arm_square, a=0.0, b=0.5)
+    left_arm_top = arm_dimensions.z - left_arm_thickness * square_top_drop
+    right_arm_top = arm_dimensions.z - right_arm_thickness * square_top_drop
+    left_seat_shift = slant_tan * (left_arm_top - seat_top_z)
+    right_seat_shift = slant_tan * (right_arm_top - seat_top_z)
+    left_inset = left_arm_thickness + pf.nodes.func.switch(
+        switch=has_left_arm, a=0.0, b=left_seat_shift
+    )
+    right_inset = right_arm_thickness + pf.nodes.func.switch(
+        switch=has_right_arm, a=0.0, b=right_seat_shift
+    )
+
+    seat_depth = dimensions.x - back_dimensions.x
+    inner_width = dimensions.y - left_inset - right_inset
+    base_board_dimensions = pf.nodes.math.combine_xyz(
+        x=seat_depth, y=inner_width, z=baseboard_height
+    )
+    seat_line_start = base_board_dimensions * (0.0, -0.5, 1.0)
+    seat_line_end = base_board_dimensions * (0.0, 0.5, 1.0)
+    back_line_offset = pf.nodes.math.combine_xyz(x=backrest_width, z=seat_thickness)
+    cushion_width = inner_width / seat_cushion_count.astype(dtype=float)
+    seat_cushion_dimensions = pf.nodes.math.combine_xyz(
+        x=seat_depth, y=cushion_width, z=seat_thickness
+    )
+
+    back_cushion_dimensions = pf.nodes.math.combine_xyz(
+        x=dimensions.z - seat_thickness - baseboard_height,
+        y=cushion_width,
+        z=backrest_width,
+    )
+    back_cushion = cushion.box_cushion_geometry(
+        size=back_cushion_dimensions,
+        material=fabric_material,
+        piping_material=fabric_material,
+        location=(0.0, 0.0, 0.0),
+        anchor=(0.1, 0.5, 1.0),
+        edge_radius=back_cushion_radius,
+        crown=back_cushion_crown,
+        piping_radius=piping_radius,
+    )
+
+    back_cushion_translation = pf.nodes.math.combine_xyz(
+        back_dimensions.x + 0.1 - backrest_width
+    )
+    back_cushion_rotation = pf.nodes.math.combine_xyz(y=backrest_angle + -1.5708)
+    cushion_scale = pf.nodes.math.combine_xyz(x=seat_margin, y=seat_margin, z=1.0)
+    back_cushion = pf.nodes.geo.transform(
+        geometry=back_cushion,
+        translation=back_cushion_translation,
+        rotation=back_cushion_rotation.astype(dtype=pf.Euler),
+        scale=cushion_scale,
+    )
+    back_cushions = instances_on_line(
+        instance=back_cushion,
+        start=seat_line_start + back_line_offset,
+        end=seat_line_end + back_line_offset,
+        count=seat_cushion_count,
+    )
+    back_cushions = pf.nodes.geo.realize_instances(back_cushions)
+
+    seat_cushion = cushion.box_cushion_geometry(
+        size=seat_cushion_dimensions * (1.0, 1.03, 1.0),
+        material=fabric_material,
+        piping_material=fabric_material,
+        location=(0.0, 0.0, 0.0),
+        anchor=(0.0, 0.5, 0.0),
+        edge_radius=cushion_radius,
+        crown=seat_cushion_crown,
+        piping_radius=piping_radius,
+    )
+    seat_cushion = pf.nodes.geo.store_named_attribute(
+        domain="FACE",
+        geometry=seat_cushion,
+        name="TAG_cushion",
+        value=True,
+    )
+    seat_cushion = pf.nodes.geo.transform(
+        geometry=seat_cushion,
+        scale=cushion_scale,
+        translation=back_dimensions * (1.0, 0.0, 0.0),
+        rotation=(0, 0, 0),
+    )
+    seat_cushions = instances_on_line(
+        instance=seat_cushion,
+        start=seat_line_start,
+        end=seat_line_end,
+        count=seat_cushion_count,
+    )
+    seat_cushions = pf.nodes.geo.realize_instances(seat_cushions)
+
+    base_board_location = back_dimensions * (1.0, 0.0, 0.0)
+    base_board = mesh_util.box_with_support_loops(
+        location=base_board_location,
+        anchor=(0.0, 0.5, -1.0),
+        size=base_board_dimensions,
+        support_loop_offset=cushion.support_loop_offset(
+            body_radius, base_board_dimensions
+        ),
+    )
+
+    back_board_dimensions = pf.nodes.math.combine_xyz(
+        x=back_dimensions.x,
+        y=dimensions.y - left_arm_thickness - right_arm_thickness,
+        z=back_dimensions.z,
+    )
+    back_board = mesh_util.box_with_support_loops(
+        location=(0.0, 0.0, 0.0),
+        anchor=(0.0, 0.5, -1.0),
+        size=back_board_dimensions,
+        support_loop_offset=cushion.support_loop_offset(
+            body_radius, back_board_dimensions
+        ),
+    )
+    back_board = pf.nodes.geo.transform(
+        geometry=back_board,
+        translation=pf.nodes.math.combine_xyz(
+            y=(left_arm_thickness - right_arm_thickness) * 0.5
+        ),
+        rotation=(0, 0, 0),
+        scale=(1, 1, 1),
+    )
+
+    right_arm_dimensions = pf.nodes.math.combine_xyz(
+        x=arm_dimensions.x, y=right_arm_thickness, z=arm_dimensions.z
+    )
+    right_arm_upright = _sofa_arm(
+        dimensions=dimensions,
+        arm_dimensions=right_arm_dimensions,
+        arm_type=arm_type,
+        arm_width=arm_width,
+        arm_height=arm_height,
+        arm_back_crease=arm_back_crease,
+        body_radius=body_radius,
+    )
+    right_arm = _lean_arm(right_arm_upright, right_arm_top, slant_tan)
+    right_arm = pf.nodes.func.switch(switch=has_right_arm, b=right_arm)
+
+    left_arm_dimensions = pf.nodes.math.combine_xyz(
+        x=arm_dimensions.x, y=left_arm_thickness, z=arm_dimensions.z
+    )
+    left_arm_upright = _sofa_arm(
+        dimensions=dimensions,
+        arm_dimensions=left_arm_dimensions,
+        arm_type=arm_type,
+        arm_width=arm_width,
+        arm_height=arm_height,
+        arm_back_crease=arm_back_crease,
+        body_radius=body_radius,
+    )
+    left_arm = _lean_arm(left_arm_upright, left_arm_top, slant_tan)
+    left_arm = pf.nodes.geo.transform(
+        geometry=left_arm,
         scale=(1.0, -1.0, 1.0),
         translation=(0, 0, 0),
         rotation=(0, 0, 0),
     )
-    arm_sym = pf.nodes.geo.flip_faces(arm_sym)
-    arm_sym = pf.nodes.geo.join_geometry([arm_switch, arm_sym])
+    left_arm = pf.nodes.geo.flip_faces(left_arm)
+    left_arm = pf.nodes.func.switch(switch=has_left_arm, b=left_arm)
+    arms = pf.nodes.geo.join_geometry([right_arm, left_arm])
 
-    join_6 = pf.nodes.geo.join_geometry([back_board, arm_sym])
-    join_7 = pf.nodes.geo.join_geometry([join_7_geometries, base_board_2, join_6])
-
-    all_fabric = pf.nodes.geo.join_geometry([join_1, join_7])
-    all_fabric = pf.nodes.geo.set_material(all_fabric, fabric_material)
-
-    # dropping the feet lets a separate base be composed underneath instead
-    with_feet = pf.nodes.geo.join_geometry([all_fabric, feet])
-    geometry = pf.nodes.func.switch(switch=has_feet, a=all_fabric, b=with_feet)
-
-    support_z = pf.nodes.geo.bound_box(base_board_2).min.z
-    bbox_min_z = pf.nodes.geo.bound_box(geometry).min.z
-    support_height = support_z - bbox_min_z
-    support_depth = base_board_2_dimensions.x
-    support_center_x = base_board_2_location.x + support_depth * 0.5
-    base_depth = support_depth + base_board_2_location.x
-    base_center_x = base_depth * 0.5
-    translation_for_legs = pf.nodes.math.combine_xyz(x=0, y=0, z=bbox_min_z * -1.0)
-    geometry = pf.nodes.geo.transform(
-        geometry, translation=translation_for_legs, rotation=(0, 0, 0), scale=(1, 1, 1)
+    inner = pf.nodes.geo.join_geometry([back_cushions, seat_cushions, base_board])
+    inner_offset = pf.nodes.math.combine_xyz(y=(left_inset - right_inset) * 0.5)
+    inner = pf.nodes.geo.transform(
+        geometry=inner, translation=inner_offset, rotation=(0, 0, 0), scale=(1, 1, 1)
     )
 
+    geometry = pf.nodes.geo.join_geometry([inner, back_board, arms])
+    geometry = pf.nodes.geo.set_material(geometry, fabric_material)
     geometry = pf.nodes.geo.merge_by_distance(geometry, distance=1e-5)
-    geometry = pf.nodes.geo.store_named_attribute(
-        geometry=geometry,
-        name=_SUPPORT_HEIGHT_ATTRIBUTE,
-        value=support_height,
-    )
-    geometry = pf.nodes.geo.store_named_attribute(
-        geometry=geometry,
-        name=_SUPPORT_DEPTH_ATTRIBUTE,
-        value=support_depth,
-    )
-    geometry = pf.nodes.geo.store_named_attribute(
-        geometry=geometry,
-        name=_SUPPORT_CENTER_X_ATTRIBUTE,
-        value=support_center_x,
-    )
-    geometry = pf.nodes.geo.store_named_attribute(
-        geometry=geometry,
-        name=_BASE_DEPTH_ATTRIBUTE,
-        value=base_depth,
-    )
-    geometry = pf.nodes.geo.store_named_attribute(
-        geometry=geometry,
-        name=_BASE_CENTER_X_ATTRIBUTE,
-        value=base_center_x,
-    )
-
     return geometry
 
 
 def sofa(
     dimensions: pf.Vector | None = None,
     arm_dimensions: pf.Vector = (1.0, 0.105, 0.625),
+    left_arm_thickness: float | None = None,
+    right_arm_thickness: float | None = None,
     back_dimensions: pf.Vector = (0.2, 0.0, 0.625),
-    seat_dimensions: pf.Vector | None = None,
-    foot_dimensions: pf.Vector = (0.16, 0.06, 0.06),
+    seat_thickness: float = 0.2,
+    seat_cushion_count: int = 2,
     baseboard_height: float = 0.07,
     backrest_width: float = 0.15,
     seat_margin: float = 0.985,
@@ -630,36 +401,34 @@ def sofa(
     arm_width: float = 0.75,
     arm_type: int = ARM_TYPE_SQUARE,
     arm_height: float = 0.8,
-    arms_angle: float = 0.54,
-    reflection: int = 1,
-    leg_type: bool = True,
-    leg_dimensions: float = 0.65,
-    leg_z: float = 1.8,
-    leg_faces: int = 4,
-    body_crease: float = 0.7,
-    cushion_crease: float = 0.15,
     arm_back_crease: float = 0.2,
+    cushion_radius: float = 0.05,
+    back_cushion_radius: float = 0.06,
+    seat_cushion_crown: float = 0.0,
+    back_cushion_crown: float = 0.0,
+    piping_radius: float = 0.0,
+    body_radius: float = 0.02,
+    arm_slant: float = 0.0,
     fabric_material: pf.Material | None = None,
-    foot_material: pf.Material | None = None,
-    has_feet: bool = True,
 ) -> SofaResult:
     if dimensions is None:
         dimensions = pf.Vector((0.925, 1.75, 0.83))
-    if seat_dimensions is None:
-        seat_dimensions = pf.Vector((dimensions[0], 1.35, 0.225))
     if fabric_material is None:
         fabric_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-    if foot_material is None:
-        foot_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
+    if left_arm_thickness is None:
+        left_arm_thickness = arm_dimensions[1]
+    if right_arm_thickness is None:
+        right_arm_thickness = arm_dimensions[1]
 
     res = _sofa_geometry(
         dimensions=dimensions,
         arm_dimensions=arm_dimensions,
+        left_arm_thickness=left_arm_thickness,
+        right_arm_thickness=right_arm_thickness,
         back_dimensions=back_dimensions,
-        seat_dimensions=seat_dimensions,
-        foot_dimensions=foot_dimensions,
+        seat_thickness=seat_thickness,
+        seat_cushion_count=seat_cushion_count,
         fabric_material=fabric_material,
-        foot_material=foot_material,
         baseboard_height=baseboard_height,
         backrest_width=backrest_width,
         seat_margin=seat_margin,
@@ -667,30 +436,58 @@ def sofa(
         arm_width=arm_width,
         arm_type=arm_type,
         arm_height=arm_height,
-        arms_angle=arms_angle,
-        reflection=reflection,
-        leg_type=leg_type,
-        leg_dimensions=leg_dimensions,
-        leg_z=leg_z,
-        leg_faces=leg_faces,
-        has_feet=has_feet,
-        footrest=False,
-        body_crease=body_crease,
-        cushion_crease=cushion_crease,
         arm_back_crease=arm_back_crease,
+        cushion_radius=cushion_radius,
+        back_cushion_radius=back_cushion_radius,
+        seat_cushion_crown=seat_cushion_crown,
+        back_cushion_crown=back_cushion_crown,
+        piping_radius=piping_radius,
+        body_radius=body_radius,
+        arm_slant=arm_slant,
     )
     obj = pf.nodes.to_mesh_object(res)
     pf.ops.uv.cube_project(obj, uv_name="UVMap")
     pf.ops.modifier.subdivide_surface(obj, levels=6, _skip_apply=True)
-    return SofaResult(mesh=obj)
+
+    seat_top = baseboard_height + seat_thickness
+    left_inset = _seat_inset(
+        left_arm_thickness, arm_dimensions[2], arm_type, arm_slant, seat_top
+    )
+    right_inset = _seat_inset(
+        right_arm_thickness, arm_dimensions[2], arm_type, arm_slant, seat_top
+    )
+    back_x = back_dimensions[0] + 0.1 + backrest_width / np.cos(backrest_angle)
+    return SofaResult(
+        mesh=obj,
+        back_seat_line_start=pf.Vector(
+            (back_x, left_inset - dimensions[1] * 0.5, seat_top)
+        ),
+        back_seat_line_end=pf.Vector(
+            (back_x, dimensions[1] * 0.5 - right_inset, seat_top)
+        ),
+        back_tilt=-backrest_angle,
+    )
+
+
+def _seat_inset(
+    arm_thickness: float,
+    arm_height: float,
+    arm_type: int,
+    arm_slant: float,
+    seat_top: float,
+) -> float:
+    square_top = 1 - np.minimum(np.abs(arm_type - ARM_TYPE_SQUARE), 1)
+    arm_top = arm_height - arm_thickness * 0.5 * square_top
+    seat_shift = np.tan(arm_slant) * (arm_top - seat_top)
+    return arm_thickness + seat_shift * np.sign(arm_thickness)
 
 
 def sofa_dimensions_rand(rng: pf.RNG) -> pf.Vector:
     """Default sofa dimensions."""
     return (
-        pf.random.uniform(rng, 0.85, 1.0),
+        pf.random.uniform(rng, 0.82, 1.08),
         pf.random.clip_gaussian(rng, 1.75, 0.75, 0.9, 3),
-        pf.random.uniform(rng, 0.69, 0.97),
+        pf.random.uniform(rng, 0.76, 0.98),
     )
 
 
@@ -698,57 +495,86 @@ def sofa_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
-    foot_material: pf.Material | None = None,
-    has_feet: bool = True,
+    left_arm_thickness: float | None = None,
+    right_arm_thickness: float | None = None,
+    seat_height: float | None = None,
 ) -> SofaResult:
-    rng, rng_fabric, rng_foot = rng.spawn(3)
+    """Skirted sofa whose body rests on the floor, seat 16-20 in high."""
+    rng, rng_fabric, rng_piping, rng_seat, rng_dims, rng_arm = rng.spawn(6)
     if dimensions is None:
-        dimensions = sofa_dimensions_rand(rng)
+        dimensions = sofa_dimensions_rand(rng_dims)
+    if material is None:
+        material = fabric_sturdy_rand(rng_fabric, pf.nodes.shader.coord().uv)
+    depth = dimensions[0]
 
     arm_type = pf.control.choice(
-        rng,
+        rng_arm,
         [(ARM_TYPE_SQUARE, 0.4), (ARM_TYPE_ROUND, 0.2), (ARM_TYPE_ANGULAR, 0.4)],
     )
 
-    reflection = pf.control.choice(rng, [(1, 0.5), (-1, 0.5)])
-    leg_type = pf.control.choice(rng, [(True, 0.5), (False, 0.5)])
+    boxiness = pf.random.uniform(rng, 0.0, 1.0) ** 1.5
+    plushness = (1.0 - boxiness) ** 2
 
-    arm_dimensions = pf.random.uniform(rng, (1.0, 0.06, 0.5), (1.0, 0.15, 0.75))
-    back_dimensions = pf.random.uniform(rng, (0.15, 0.0, 0.5), (0.25, 0.0, 0.75))
-    seat_dimensions = pf.random.uniform(
-        rng, (dimensions[0], 1.2, 0.15), (dimensions[0], 1.5, 0.3)
+    if seat_height is None:
+        seat_height = pf.random.uniform(rng_seat, 0.41, 0.5)
+    seat_thickness = pf.random.uniform(rng, 0.1, 0.2)
+    baseboard_height = max(seat_height - seat_thickness, 0.04)
+    seat_top = baseboard_height + seat_thickness
+    back_cushion_height = max(dimensions[2] - seat_height, 0.3)
+
+    arm_thickness = (0.09 + 0.17 * boxiness) * pf.random.uniform(rng, 0.85, 1.15)
+    arm_thickness = min(
+        arm_thickness, (dimensions[1] - 0.55) * 0.5, dimensions[1] * 0.15
     )
-    foot_dimensions = pf.random.uniform(rng, (0.07, 0.06, 0.06), (0.25, 0.06, 0.06))
+    backrest_width = pf.random.uniform(rng, 0.12, 0.2)
+    back_thickness = (0.13 + 0.1 * boxiness) * pf.random.uniform(rng, 0.9, 1.1)
+    back_thickness = min(back_thickness, depth - backrest_width - 0.5)
 
-    baseboard_height = pf.random.uniform(rng, 0.05, 0.09)
-    backrest_width = pf.random.uniform(rng, 0.1, 0.2)
-    seat_margin = pf.random.uniform(rng, 0.97, 1.0)
-    backrest_angle = pf.random.uniform(rng, -0.5, -0.15)
+    low_arm_top = seat_top + pf.random.uniform(rng, 0.06, 0.28)
+    back_top = seat_top + back_cushion_height
+    rail_top = low_arm_top + (back_top - low_arm_top) * pf.random.uniform(rng, 0.3, 1.0)
+    arm_rise = min(max(2.0 * pf.random.uniform(rng, 0.0, 1.0) - 0.5, 0.0), 1.0)
+    arm_top = low_arm_top + (rail_top - low_arm_top) * arm_rise
+    arm_length = depth * pf.random.uniform(rng, 0.97, 1.05)
+    cushion_target_width = pf.random.uniform(rng, 0.55, 0.8)
+
+    arm_dimensions = (arm_length, arm_thickness, arm_top)
+    back_dimensions = (back_thickness, 0.0, rail_top)
+
+    seat_margin = pf.random.uniform(rng, 0.96, 1.0)
+    backrest_angle = pf.random.uniform(rng, -0.44, -0.17)
     arm_width = pf.random.uniform(rng, 0.6, 0.9)
     arm_height = pf.random.uniform(rng, 0.7, 0.9)
-    arms_angle = pf.random.uniform(rng, 0.0, 1.08)
-    leg_dimensions = pf.random.uniform(rng, 0.4, 0.9)
-    leg_z = pf.random.uniform(rng, 1.1, 2.5)
-    leg_faces = pf.control.choice(rng, [(4, 0.5), (8, 0.5)])
 
-    body_crease = pf.random.uniform(rng, 0.5, 0.9)
-    cushion_crease = pf.random.uniform(rng, 0.0, 0.3)
-    arm_back_crease = pf.random.uniform(rng, 0.0, 0.4)
+    arm_back_crease = pf.random.uniform(rng, 0.0, 0.4) * (1.0 - 0.5 * boxiness)
+    cushion_radius = 0.03 + 0.17 * plushness * pf.random.uniform(rng, 0.7, 1.0)
+    back_cushion_radius = 0.04 + 0.16 * plushness * pf.random.uniform(rng, 0.7, 1.0)
+    body_radius = (0.015 + 0.05 * plushness) * pf.random.uniform(rng, 0.8, 1.2)
+    seat_cushion_crown = pf.random.uniform(rng, 0.005, 0.02) + 0.025 * plushness
+    back_cushion_crown = pf.random.uniform(rng, 0.008, 0.025) + 0.025 * plushness
+    piping_radius = cushion.optional_piping_radius_rand(rng_piping, 0.4)
+    arm_slant = 0.25 * pf.random.uniform(rng, 0.0, 1.0) ** 3
 
-    vec = pf.nodes.shader.coord().uv
-    if material is None:
-        material = fabric_sturdy_rand(rng_fabric, vec, translucency=0.0)
-    if foot_material is None:
-        foot_material = decorative_material_rand(rng_foot, vec)
+    if left_arm_thickness is None:
+        left_arm_thickness = arm_thickness
+    if right_arm_thickness is None:
+        right_arm_thickness = arm_thickness
+    left_inset = _seat_inset(left_arm_thickness, arm_top, arm_type, arm_slant, seat_top)
+    right_inset = _seat_inset(
+        right_arm_thickness, arm_top, arm_type, arm_slant, seat_top
+    )
+    inner_width = dimensions[1] - left_inset - right_inset
+    seat_cushion_count = max(1, round(inner_width / cushion_target_width))
 
-    res = _sofa_geometry(
-        dimensions=dimensions,
+    return sofa(
+        dimensions=(dimensions[0], dimensions[1], back_top),
         arm_dimensions=arm_dimensions,
+        left_arm_thickness=left_arm_thickness,
+        right_arm_thickness=right_arm_thickness,
         back_dimensions=back_dimensions,
-        seat_dimensions=seat_dimensions,
-        foot_dimensions=foot_dimensions,
+        seat_thickness=seat_thickness,
+        seat_cushion_count=seat_cushion_count,
         fabric_material=material,
-        foot_material=foot_material,
         baseboard_height=baseboard_height,
         backrest_width=backrest_width,
         seat_margin=seat_margin,
@@ -756,22 +582,15 @@ def sofa_rand(
         arm_width=arm_width,
         arm_type=arm_type,
         arm_height=arm_height,
-        arms_angle=arms_angle,
-        reflection=reflection,
-        leg_type=leg_type,
-        leg_dimensions=leg_dimensions,
-        leg_z=leg_z,
-        leg_faces=leg_faces,
-        has_feet=has_feet,
-        footrest=False,  # disabled due to bugs with missing footrest seat and too tricky to assign the material
-        body_crease=body_crease,
-        cushion_crease=cushion_crease,
         arm_back_crease=arm_back_crease,
+        cushion_radius=cushion_radius,
+        back_cushion_radius=back_cushion_radius,
+        seat_cushion_crown=seat_cushion_crown,
+        back_cushion_crown=back_cushion_crown,
+        piping_radius=piping_radius,
+        body_radius=body_radius,
+        arm_slant=arm_slant,
     )
-    obj = pf.nodes.to_mesh_object(res)
-    pf.ops.uv.cube_project(obj, uv_name="UVMap")
-    pf.ops.modifier.subdivide_surface(obj, levels=6, _skip_apply=True)
-    return SofaResult(mesh=obj)
 
 
 def sofa_with_base_rand(
@@ -780,27 +599,21 @@ def sofa_with_base_rand(
     material: pf.Material | None = None,
     base_material: pf.Material | None = None,
 ) -> SofaResult:
-    """Sofa body raised on a table-style leg base instead of its built-in feet.
-    The base is 2-10 inches high, with 4-10 inch legs held upright."""
+    """Sofa body raised on a table-style leg base 2-10 in high, seat 16-20 in high."""
     rng, rng_sofa, rng_dims, rng_mat, rng_base_sel, rng_base = rng.spawn(6)
     if dimensions is None:
         dimensions = sofa_dimensions_rand(rng_dims)
-    width = dimensions[1]
-    base_height_factor = pf.random.uniform(rng, 0.0, 1.0)
+    base_height = pf.random.uniform(rng, 0.0508, 0.254)
+    seat_height = pf.random.uniform(rng, 0.41, 0.5)
     leg_diameter = pf.random.uniform(rng, 0.1016, 0.254)
 
     body = sofa_rand(
-        rng_sofa, dimensions=dimensions, material=material, has_feet=False
-    ).mesh
-    support_height = pf.ops.attr.read_attribute(body, _SUPPORT_HEIGHT_ATTRIBUTE)[0]
-    base_depth = pf.ops.attr.read_attribute(body, _BASE_DEPTH_ATTRIBUTE)[0]
-    base_center_x = pf.ops.attr.read_attribute(body, _BASE_CENTER_X_ATTRIBUTE)[0]
-    min_base_height = max(0.0508, support_height + 0.0254)
-    max_base_height = max(0.254, min_base_height)
-    base_height_range = max_base_height - min_base_height
-    base_height = min_base_height + base_height_factor * base_height_range
-    body_clearance = base_height - support_height
-    pf.ops.object.set_transform(body, location=(0.0, 0.0, body_clearance))
+        rng_sofa,
+        dimensions=(dimensions[0], dimensions[1], dimensions[2] - base_height),
+        material=material,
+        seat_height=max(seat_height - base_height, 0.2),
+    )
+    pf.ops.object.set_transform(body.mesh, location=(0.0, 0.0, base_height))
 
     if base_material is None:
         base_material = decorative_material_rand(rng_mat, pf.nodes.shader.coord().uv)
@@ -809,7 +622,7 @@ def sofa_with_base_rand(
     )
     base = base_fn(
         rng_base,
-        dimensions=pf.Vector((width, base_depth, base_height)),
+        dimensions=pf.Vector((dimensions[1], dimensions[0], base_height)),
         material=base_material,
         leg_diameter=leg_diameter,
         leg_placement_bottom_scale=1.0,
@@ -817,9 +630,15 @@ def sofa_with_base_rand(
     # bases separate their frames along local x, so turn that across the length
     pf.ops.object.set_transform(
         base,
-        location=(base_center_x, 0.0, 0.0),
+        location=(dimensions[0] * 0.5, 0.0, 0.0),
         rotation_euler=(0.0, 0.0, math.pi / 2),
     )
-    pf.ops.object.join(body, base)
-    pf.ops.mesh.transform_apply(body)
-    return SofaResult(mesh=body)
+    pf.ops.object.join(body.mesh, base)
+    pf.ops.mesh.transform_apply(body.mesh)
+    lift = pf.Vector((0.0, 0.0, base_height))
+    return SofaResult(
+        mesh=body.mesh,
+        back_seat_line_start=body.back_seat_line_start + lift,
+        back_seat_line_end=body.back_seat_line_end + lift,
+        back_tilt=body.back_tilt,
+    )

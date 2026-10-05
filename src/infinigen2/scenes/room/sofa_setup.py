@@ -10,9 +10,11 @@ from typing import NamedTuple
 import numpy as np
 import procfunc as pf
 
-from infinigen2.objects import rug, table
+from infinigen2.objects import cushion, rug, table
+from infinigen2.objects.sofa import SofaResult
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding, keep_unobstructed
+from infinigen2.scenes.placement.distribute import instances_along_line
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
     MeshResult,
@@ -37,8 +39,9 @@ logger = logging.getLogger(__name__)
 
 class SofaSetupResult(NamedTuple):
     all_objects: list[pf.MeshObject]
-    sofas: list[MeshResult]
+    sofas: list[SofaResult]
     rugs: list[pf.MeshObject]
+    throw_pillows: list[pf.MeshObject]
     storage_containers: list[pf.MeshObject]
     supports: list[pf.MeshObject]
     storages: list[pf.MeshObject]
@@ -100,6 +103,56 @@ def _center_coffee_table_rand(
     return [child]
 
 
+def _throw_pillows_rand(rng: pf.RNG, sofa: SofaResult) -> list[pf.MeshObject]:
+    rng, rng_pillow = rng.spawn(2)
+    start = pf.Vector(sofa.back_seat_line_start)
+    end = pf.Vector(sofa.back_seat_line_end)
+    side = pf.random.uniform(rng, 0.4, 0.55)
+    thickness = side * pf.random.uniform(rng, 0.25, 0.33)
+    sink = thickness * pf.random.uniform(rng, 0.05, 0.15)
+    max_count = max(1, int((end.y - start.y) / (side + 0.05)))
+    count = pf.random.randint(rng, 1, min(4, max_count) + 1)
+    lean = sofa.back_tilt
+    offset = pf.Vector(
+        (
+            thickness * 0.5 * math.cos(lean) - side * 0.5 * math.sin(lean),
+            0.0,
+            side * 0.5 * math.cos(lean) + thickness * 0.5 * math.sin(lean) - sink,
+        )
+    )
+    pillow = cushion.throw_pillow_rand(
+        rng_pillow, size=pf.Vector((side, side, thickness))
+    )
+    pillows = instances_along_line(
+        pillow.mesh,
+        sofa.mesh,
+        start + offset,
+        end + offset,
+        count,
+        (0.0, math.pi / 2 - lean, 0.0),
+    )
+    for p in pillows:
+        p.item().name = cushion.throw_pillow_rand.__name__
+    return pillows
+
+
+def _no_throw_pillows(rng: pf.RNG, sofa: SofaResult) -> list[pf.MeshObject]:
+    return []
+
+
+def _sofas_throw_pillows_rand(
+    rng: pf.RNG, sofas: list[SofaResult]
+) -> list[pf.MeshObject]:
+    pillows = []
+    for sofa, sofa_rng in zip(sofas, rng.spawn(len(sofas)), strict=True):
+        rng_choice, rng_pillows = sofa_rng.spawn(2)
+        func = pf.control.choice(
+            rng_choice, [(_throw_pillows_rand, 2.0), (_no_throw_pillows, 1.0)]
+        )
+        pillows += func(rng_pillows, sofa)
+    return pillows
+
+
 def centered_sofa_setup_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector | None = None,
@@ -119,7 +172,8 @@ def centered_sofa_setup_rand(
         rng_jitter_objects,
         rng_coffee,
         rng_output,
-    ) = rng.spawn(7)
+        rng_pillows,
+    ) = rng.spawn(8)
     rug_objs = _rug_rand(rng_rug, room_dimensions, wall_clearance=1.2)
     rug_obj = rug_objs[0]
     cmin, cmax = (
@@ -159,12 +213,14 @@ def centered_sofa_setup_rand(
 
     center_coffee = _center_coffee_table_rand(rng_coffee, center)
     center_coffee, _ = keep_non_colliding(center_coffee, colliders)
+    pillows = _sofas_throw_pillows_rand(rng_pillows, sofa_objs)
     out_rugs = pf.control.choice(rng_output, [(rug_objs, 2.0), ([], 1.0)])
-    all_objects = [r.mesh for r in sofa_objs + center_coffee] + out_rugs
+    all_objects = [r.mesh for r in sofa_objs + center_coffee]
     return SofaSetupResult(
-        all_objects=all_objects,
+        all_objects=all_objects + pillows + out_rugs,
         sofas=sofa_objs,
         rugs=out_rugs,
+        throw_pillows=pillows,
         storage_containers=[r.mesh for r in sofa_objs],
         supports=[r.mesh for r in center_coffee] + out_rugs,
         storages=[r.mesh for r in center_coffee],
@@ -191,30 +247,32 @@ def wall_sofa_setup_rand(
             cache=colliders,
         )
 
-    n = pf.random.randint(rng, 0, 8)
-    rngs = rng.spawn(n)
-    sofas = [sofa_object_rand(rngs[i]) for i in range(n)]
-    placed_sofas = []
-    for i in range(n):
-        placed_sofas.append(
-            retry_place(
-                rngs[i], sofas[i], colliders, snap_back_front, parents=wall_planes
-            )
-        )
+    rng_count, rng_sofas, rng_place, rng_rug_choice, rng_rug, rng_pillows = rng.spawn(6)
+    n = pf.random.randint(rng_count, 0, 8)
+    sofa_rngs = rng_sofas.spawn(n)
+    place_rngs = rng_place.spawn(n)
+    sofas = [sofa_object_rand(sofa_rng) for sofa_rng in sofa_rngs]
+    placed_sofas = [
+        retry_place(r, s, colliders, snap_back_front, parents=wall_planes)
+        for r, s in zip(place_rngs, sofas, strict=True)
+    ]
     sofa_objs, _ = keep_non_colliding(placed_sofas, colliders)
     logger.info(f"Placed {len(sofa_objs)} wall sofas out of {n} attempts")
     rug_func = pf.control.choice(
-        rng,
+        rng_rug_choice,
         [
             (_rug_rand, 1.0),
-            (lambda *_, **__: [], 1.0),
+            (lambda *_: [], 1.0),
         ],
     )
-    rug_objs = rug_func(rng, room_dimensions, wall_clearance=0.3)
+    rug_objs = rug_func(rng_rug, room_dimensions, 0.3)
+    pillows = _sofas_throw_pillows_rand(rng_pillows, sofa_objs)
+    sofa_meshes = [r.mesh for r in sofa_objs]
     return SofaSetupResult(
-        all_objects=standalone_walls + [r.mesh for r in sofa_objs] + rug_objs,
+        all_objects=standalone_walls + sofa_meshes + pillows + rug_objs,
         sofas=sofa_objs,
         rugs=rug_objs,
+        throw_pillows=pillows,
         storage_containers=[r.mesh for r in sofa_objs],
         supports=rug_objs,
         storages=[],
@@ -267,11 +325,11 @@ def sofa_setup_rand(
         )
     side_tables, _ = keep_non_colliding(placed_side_tables, colliders)
     logger.info(f"Placed {len(side_tables)} side tables out of {n} attempts")
-
     return SofaSetupResult(
         all_objects=arrangement.all_objects + [r.mesh for r in side_tables],
         sofas=arrangement.sofas,
         rugs=arrangement.rugs,
+        throw_pillows=arrangement.throw_pillows,
         storage_containers=list(arrangement.storage_containers),
         supports=arrangement.supports + [r.mesh for r in side_tables],
         storages=arrangement.storages + [r.mesh for r in side_tables],

@@ -8,10 +8,9 @@ from typing import NamedTuple
 import procfunc as pf
 
 from infinigen2.objects import chair, storage, table
-from infinigen2.shaders.base_materials import fabric, leather
-from infinigen2.shaders.composites import fabric_patterned, fabric_wrinkled
 from infinigen2.shaders.functionality_lists import (
-    fabric_art_rand,
+    fabric_general_rand,
+    fabric_sturdy_rand,
     furniture_material_rand,
 )
 from infinigen2.util import mesh
@@ -179,36 +178,10 @@ def _frame_material_rand(rng: pf.RNG, hard_material: pf.Material) -> pf.Material
         r_choice,
         [
             (lambda _rng, _vector: hard_material, 2.0),
-            (fabric.fabric_rand, 1.0),
-            (leather.leather_rand, 1.0),
+            (fabric_sturdy_rand, 2.0),
         ],
     )
     return fn(r_material, vector)
-
-
-def _mattress_material_rand(rng: pf.RNG) -> pf.Material:
-    r_hue, r_saturation, r_value, r_choice, r_material = rng.spawn(5)
-    color = pf.color.hsv_color(
-        hue=pf.random.uniform(r_hue, 0.0, 1.0),
-        saturation=pf.random.uniform(r_saturation, 0.0, 0.15),
-        value=pf.random.uniform(r_value, 0.60, 0.90),
-    )
-    material_fn = pf.control.choice(
-        r_choice,
-        [
-            (partial(fabric.fabric_rand, base_color=color), 2.0),
-            (fabric_patterned.fabric_patterned_rand, 3.0),
-            (fabric_art_rand, 1.0),
-            (
-                partial(
-                    fabric_wrinkled.fabric_bedding_wrinkled_rand,
-                    base_color=color,
-                ),
-                2.0,
-            ),
-        ],
-    )
-    return material_fn(r_material, pf.nodes.shader.coord().uv)
 
 
 def mattress_rand(
@@ -216,7 +189,7 @@ def mattress_rand(
     dimensions: pf.Vector,
     center_z: float,
 ) -> pf.MeshObject:
-    material = _mattress_material_rand(rng)
+    material = fabric_general_rand(rng, pf.nodes.shader.coord().uv)
     mattress_geo = mesh.box_with_support_loops(
         size=dimensions,
         vertices_x=30,

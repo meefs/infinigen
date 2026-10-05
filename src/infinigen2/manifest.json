@@ -91,10 +91,6 @@
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.composites.fabric_patterned.fabric_patterned_translucent_rand"
-  },
-  {
-    "category": "Material",
     "name": "infinigen2.shaders.base_materials.brick_concrete.brick_concrete_rand",
     "integration_test_string": "brick_concrete_rand material_plane_uv render_cycles"
   },
@@ -358,10 +354,6 @@
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.base_materials.fabric.fabric_translucent_rand"
-  },
-  {
-    "category": "Material",
     "name": "infinigen2.shaders.composites.fabric_wrinkled.fabric_wrinkled_rand",
     "integration_test_string": "fabric_wrinkled_rand material_torus_uv render_cycles"
   },
@@ -424,6 +416,10 @@
       "leather_furniture_rough_preset",
       "leather_handheld_preset"
     ]
+  },
+  {
+    "category": "Material",
+    "name": "infinigen2.shaders.base_materials.leather.leather_allcolor_rand"
   },
   {
     "category": "Material",
@@ -865,6 +861,14 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.cushion.bed_pillow_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.cushion.throw_pillow_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.window.window_rand"
   },
   {
@@ -902,6 +906,14 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.table.side_table_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.table.circular_coffee_table_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.table.circular_side_table_rand"
   },
   {
     "category": "Object",

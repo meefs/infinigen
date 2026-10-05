@@ -27,6 +27,8 @@ __all__ = [
     "base_straight",
     "base_straight_rand",
     "circular_cocktail_table_rand",
+    "circular_coffee_table_rand",
+    "circular_side_table_rand",
     "circular_dining_table_rand",
     "cocktail_table_rand",
     "coffee_table_storage_rand",
@@ -1204,12 +1206,35 @@ def coffee_table_storage_rand(rng: pf.RNG) -> TableResult:
     return TableResult(mesh=result.mesh)
 
 
+def circular_coffee_table_rand(rng: pf.RNG) -> TableResult:
+    """Round coffee table, 30-42 in (0.76-1.07 m) across and 16-19 in high."""
+    rng, rng_table = rng.spawn(2)
+    return circular_dining_table_rand(
+        rng_table,
+        diameter=pf.random.uniform(rng, 0.76, 1.07),
+        height=pf.random.uniform(rng, 0.4, 0.48),
+        top_thickness=pf.random.uniform(rng, 0.02, 0.05),
+    )
+
+
+def circular_side_table_rand(rng: pf.RNG) -> TableResult:
+    """Round end table, 16-24 in (0.4-0.6 m) across, near sofa arm height."""
+    rng, rng_table = rng.spawn(2)
+    return circular_dining_table_rand(
+        rng_table,
+        diameter=pf.random.uniform(rng, 0.4, 0.6),
+        height=pf.random.uniform(rng, 0.5, 0.65),
+        top_thickness=pf.random.uniform(rng, 0.015, 0.04),
+    )
+
+
 def coffee_table_rand(rng: pf.RNG) -> TableResult:
-    """Coffee table with a 25% storage-with-legs chance."""
+    """Rectangular, round or storage coffee table."""
     func = pf.control.choice(
         rng,
         [
-            (_coffee_table_legged_rand, 3.0),
+            (_coffee_table_legged_rand, 2.0),
+            (circular_coffee_table_rand, 1.0),
             (coffee_table_storage_rand, 1.0),
         ],
     )

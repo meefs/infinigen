@@ -6,10 +6,11 @@ from typing import NamedTuple, cast
 
 import procfunc as pf
 
-from infinigen2.objects import bedside_table, lamp
+from infinigen2.objects import bedside_table, cushion, lamp
 from infinigen2.objects.bed import BedResult, bed_rand
 from infinigen2.scenes.placement import collision
 from infinigen2.scenes.placement.culling import keep_non_colliding
+from infinigen2.scenes.placement.distribute import instances_along_line
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
     BareMeshResult,
@@ -29,6 +30,7 @@ class BedSetupResult(NamedTuple):
     mattress: pf.MeshObject | None
     bedside_tables: list[pf.MeshObject]
     bedside_lamps: list[pf.MeshObject]
+    pillows: list[pf.MeshObject]
     lights: list[pf.LightObject]
     all_objects: list[pf.MeshObject]
     colliders: collision.CollisionSet
@@ -45,10 +47,15 @@ _BED_GENERATION_ATTEMPTS = 8
 def _bed_dimensions_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector | None,
-) -> pf.Vector | None:
-    if room_dimensions is None:
-        return None
+) -> pf.Vector:
     rng_length, rng_width, rng_thickness = rng.spawn(3)
+    if room_dimensions is None:
+        width = pf.control.choice(
+            rng_width,
+            [(0.90, 1.0), (1.20, 1.0), (1.40, 1.0), (1.60, 1.0), (1.80, 1.0)],
+        )
+        thickness = pf.random.uniform(rng_thickness, 0.20, 0.24)
+        return pf.Vector((2.0, width, thickness))
     minimum_span = min(room_dimensions.x, room_dimensions.y)
     maximum_length = max(1.2, min(2.2, minimum_span - 0.6))
     minimum_length = min(1.85, maximum_length)
@@ -141,6 +148,30 @@ def _generated_bed_rand(
     raise RejectedScene("Could not place bed against a wall")
 
 
+def _bed_pillows_rand(
+    rng: pf.RNG, mattress: pf.MeshObject, dimensions: pf.Vector
+) -> list[pf.MeshObject]:
+    rng, rng_pillow = rng.spawn(2)
+    max_count = max(1, int(dimensions.y / 0.6))
+    count = pf.random.randint(rng, max(1, max_count - 1), max_count + 1)
+    gap = pf.random.uniform(rng, 0.0, 0.04)
+    long_side = min(pf.random.uniform(rng, 0.66, 0.92), dimensions.y / count - gap)
+    short_side = pf.random.uniform(rng, 0.48, 0.53)
+    loft = pf.random.uniform(rng, 0.15, 0.22)
+    pillow = cushion.bed_pillow_rand(
+        rng_pillow, size=pf.Vector((short_side, long_side, loft))
+    )
+    x = -dimensions.x * 0.5 + short_side * 0.5 + 0.04
+    z = dimensions.z * 0.5 - loft * 0.05
+    half_span = count * (long_side + gap) * 0.5
+    pillows = instances_along_line(
+        pillow.mesh, mattress, (x, -half_span, z), (x, half_span, z), count
+    )
+    for p in pillows:
+        p.item().name = cushion.bed_pillow_rand.__name__
+    return pillows
+
+
 def bed_setup_rand(
     rng: pf.RNG,
     bed: pf.MeshObject | None = None,
@@ -158,8 +189,10 @@ def bed_setup_rand(
         r_table_choice,
         r_lamp,
         r_lamp_choices,
-    ) = rng.spawn(9)
+        r_pillows,
+    ) = rng.spawn(10)
     dimensions = _bed_dimensions_rand(r_dimensions, room_dimensions)
+    generated_bed = bed is None
     if colliders is None:
         wall_objects = cast(list[pf.Object], wall_planes or [])
         colliders = collision.collision_set(wall_objects)
@@ -298,7 +331,10 @@ def bed_setup_rand(
     bedside_tables = kept_tables
     bedside_lamps = [result.mesh for result in lamps]
     lights = [result.light for result in lamps]
-    objects = [*anchor_objects, *bedside_tables, *bedside_lamps]
+    pillows = []
+    if generated_bed and mattress is not None:
+        pillows = _bed_pillows_rand(r_pillows, mattress, dimensions)
+    objects = [*anchor_objects, *bedside_tables, *bedside_lamps, *pillows]
     setup_colliders = collision.collision_set(
         colliders.objs + objects,
         cache=setup_colliders,
@@ -308,6 +344,7 @@ def bed_setup_rand(
         mattress=mattress,
         bedside_tables=bedside_tables,
         bedside_lamps=bedside_lamps,
+        pillows=pillows,
         lights=lights,
         all_objects=objects,
         colliders=setup_colliders,

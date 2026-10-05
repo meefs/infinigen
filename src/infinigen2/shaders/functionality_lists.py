@@ -69,7 +69,7 @@ __all__ = [
     "decorative_material_rand",
     "fabric_art_rand",
     "fabric_floor_rand",
-    "fabric_light_rand",
+    "fabric_general_rand",
     "fabric_sturdy_rand",
     "floor_material_rand",
     "furniture_material_rand",
@@ -278,12 +278,11 @@ def furniture_material_rand(rng: pf.RNG, vec) -> pf.Material:
 def _furniture_surface_material_func_rand(
     rng: pf.RNG,
 ) -> Callable[..., pf.Material]:
-    fabric_opaque = partial(fabric_sturdy_rand, translucency=0.0)
     return pf.control.choice(
         rng,
         [
             (furniture_material_rand, 2.0),
-            (fabric_opaque, 1.0),
+            (fabric_sturdy_rand, 1.0),
         ],
     )
 
@@ -328,7 +327,7 @@ def fabric_art_rand(
 ) -> pf.Material:
     rng_color, rng_fabric = rng.spawn(2)
     color = graphicdesign.art_rand(rng_color, vector)
-    return fabric.fabric_translucent_rand(
+    return fabric.fabric_rand(
         rng_fabric,
         vector,
         base_color=color,
@@ -349,86 +348,55 @@ def _fabric_wear_rand(rng: pf.RNG, vec, material: pf.Material) -> pf.Material:
     return wear_func(rng_wear, vec, material)
 
 
-def fabric_sturdy_rand(
+def _fabric_cloth_rand(
     rng: pf.RNG,
-    vec,
-    translucency: float | None = None,
-    wear: bool = True,
+    vec: t.SocketOrVal[pf.Vector],
+    translucency: float = 0.0,
 ) -> pf.Material:
-    """Upholstery for surfaces that are sat on or take wear; leather is included."""
-    rng, rng_color, rng_choice, rng_mat, rng_wear = rng.spawn(5)
-    if translucency is None:
-        translucency = pf.random.clip_gaussian(rng, 0.4, 0.2, 0.05, 0.8)
-    value = pf.random.clip_gaussian(rng, 0.4, 0.3, 0.1, 0.9)
-    color = fabric.fabric_color_rand(rng_color, value=value)
-
-    plain = partial(
-        fabric.fabric_translucent_rand,
-        base_color=color,
-        translucency=translucency,
-    )
-    patterned = partial(
-        fabric_patterned.fabric_patterned_translucent_rand,
-        translucency=translucency,
-    )
-    art_patterned = partial(fabric_art_rand, translucency=translucency)
-    opaque = partial(fabric.fabric_rand, base_color=color)
-    wrinkled = partial(fabric_wrinkled.fabric_wrinkled_rand, base_color=color)
+    rng_choice, rng_mat, rng_wrinkles_choice, rng_wrinkles = rng.spawn(4)
     material_func = pf.control.choice(
         rng_choice,
         [
-            (plain, 1.5),
-            (patterned, 2.0),
-            (art_patterned, 0.5),
-            (opaque, 1.0),
-            (wrinkled, 1.0 / 3.0),
-            (leather.leather_rand, 3.0),
+            (fabric.fabric_rand, 2.5),
+            (fabric_patterned.fabric_patterned_rand, 2.0),
+            (fabric_art_rand, 0.5),
         ],
     )
-    material = material_func(rng_mat, vec)
-    if not wear:
-        return material
+    material = material_func(rng_mat, vec, translucency=translucency)
+    wrinkles_func = pf.control.choice(
+        rng_wrinkles_choice,
+        [
+            (lambda r, v, m: m, 2.0),
+            (fabric_wrinkled.wrinkles_overlay_rand, 1.0),
+        ],
+    )
+    return wrinkles_func(rng_wrinkles, vec, material)
+
+
+def fabric_general_rand(
+    rng: pf.RNG,
+    vec: t.SocketOrVal[pf.Vector],
+    translucency: float = 0.0,
+) -> pf.Material:
+    """Any cloth, optionally wrinkled and worn: bedding, drapery and lampshades."""
+    rng_cloth, rng_wear = rng.spawn(2)
+    material = _fabric_cloth_rand(rng_cloth, vec, translucency=translucency)
     return _fabric_wear_rand(rng_wear, vec, material)
 
 
-def fabric_light_rand(
-    rng: pf.RNG,
-    vec,
-    translucency: float | None = None,
-    wear: bool = True,
-) -> pf.Material:
-    """Drapery and other hanging textiles; never leather, and biased translucent."""
-    rng, rng_color, rng_choice, rng_mat, rng_wear = rng.spawn(5)
-    if translucency is None:
-        translucency = pf.random.clip_gaussian(rng, 0.6, 0.2, 0.05, 0.8)
-    value = pf.random.clip_gaussian(rng, 0.4, 0.3, 0.1, 0.9)
-    color = fabric.fabric_color_rand(rng_color, value=value)
-
-    plain = partial(
-        fabric.fabric_translucent_rand,
-        base_color=color,
-        translucency=translucency,
-    )
-    patterned = partial(
-        fabric_patterned.fabric_patterned_translucent_rand,
-        translucency=translucency,
-    )
-    art_patterned = partial(fabric_art_rand, translucency=translucency)
-    opaque = partial(fabric.fabric_rand, base_color=color)
-    wrinkled = partial(fabric_wrinkled.fabric_wrinkled_rand, base_color=color)
+def fabric_sturdy_rand(rng: pf.RNG, vec: t.SocketOrVal[pf.Vector]) -> pf.Material:
+    """Upholstery for surfaces that are sat on: cloth, leather or carpet, optionally worn."""
+    rng_choice, rng_mat, rng_wear = rng.spawn(3)
     material_func = pf.control.choice(
         rng_choice,
         [
-            (plain, 3.0),
-            (patterned, 2.0),
-            (art_patterned, 0.5),
-            (opaque, 0.5),
-            (wrinkled, 1.0 / 3.0),
+            (_fabric_cloth_rand, 5.0),
+            (leather.leather_rand, 0.75),
+            (leather.leather_allcolor_rand, 0.75),
+            (carpet.carpet_rand, 1.5),
         ],
     )
     material = material_func(rng_mat, vec)
-    if not wear:
-        return material
     return _fabric_wear_rand(rng_wear, vec, material)
 
 
@@ -702,23 +670,14 @@ def fabric_floor_rand(
 ) -> pf.Material:
     (
         rng_uv,
-        rng_base_choice,
         rng_base,
         rng_wrinkles_choice,
         rng_wrinkles,
         rng_wear_choice,
         rng_wear,
-    ) = rng.spawn(7)
+    ) = rng.spawn(6)
     vector = uv_maybe_rotate(rng_uv, vector)
-    base_func = pf.control.choice(
-        rng_base_choice,
-        [
-            (fabric_patterned.fabric_patterned_rand, 3.0),
-            (fabric.fabric_rand, 1.0),
-            (lambda rng, vector, **_: carpet.carpet_rand(rng, vector), 2.0),
-        ],
-    )
-    material = base_func(rng_base, vector)
+    material = carpet.carpet_rand(rng_base, vector)
     wrinkles_func = pf.control.choice(
         rng_wrinkles_choice,
         [

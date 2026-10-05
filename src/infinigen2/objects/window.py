@@ -14,7 +14,7 @@ from mathutils import Euler
 from procfunc.nodes import types as t
 
 from infinigen2.shaders.functionality_lists import (
-    fabric_light_rand,
+    fabric_general_rand,
     furniture_material_rand,
     glass_material_rand,
 )
@@ -285,8 +285,10 @@ def curtain_rand(
     if dimensions is None:
         dimensions = window_dimensions_rand(rng)
     vec = pf.nodes.shader.coord().uv
+    rng, rng_fabric = rng.spawn(2)
     if material is None:
-        material = fabric_light_rand(rng, vec)
+        translucency = pf.random.clip_gaussian(rng, 0.6, 0.2, 0.05, 0.8)
+        material = fabric_general_rand(rng_fabric, vec, translucency=translucency)
 
     if rail_material is None:
         rail_material = furniture_material_rand(rng, vec)

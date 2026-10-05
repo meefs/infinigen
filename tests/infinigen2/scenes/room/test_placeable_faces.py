@@ -19,6 +19,7 @@ HOSTS: dict[str, Callable[[pf.RNG], pf.MeshObject]] = {
     "storage": lambda rng: setup_utils.storage_object_rand(rng).mesh,
     "side_table": lambda rng: setup_utils.side_table_object_rand(rng).mesh,
     "coffee_table": lambda rng: table.coffee_table_rand(rng).mesh,
+    "coffee_table_storage": lambda rng: table.coffee_table_storage_rand(rng).mesh,
     "bedside_table": lambda rng: bedside_table.bedside_table_composite_rand(rng).mesh,
     "desk": lambda rng: desk.desk_rand(rng).mesh,
     "toilet": lambda rng: toilet.toilet_rand(rng).mesh,
@@ -34,6 +35,7 @@ MIN_AREA = {
     ("storage", "support"): 0.05,
     ("side_table", "support"): 0.05,
     ("coffee_table", "support"): 0.2,
+    ("coffee_table_storage", "container"): 0.1,
     ("bedside_table", "support"): 0.05,
     ("desk", "support"): 0.3,
     ("toilet", "support"): 0.02,
@@ -82,8 +84,7 @@ def test_small_islands_are_dropped() -> None:
 
 
 @pytest.mark.parametrize("seed", SEEDS)
-@pytest.mark.parametrize("role", sorted(ROLES))
-@pytest.mark.parametrize("host_name", sorted(HOSTS))
+@pytest.mark.parametrize(("host_name", "role"), sorted(MIN_AREA))
 def test_filter_keeps_most_of_each_host(host_name: str, role: str, seed: int) -> None:
     host = HOSTS[host_name](np.random.default_rng(seed))
     raw, filtered = _raw_and_filtered(host, role)

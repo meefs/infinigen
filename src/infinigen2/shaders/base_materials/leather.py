@@ -22,6 +22,8 @@ __all__ = [
     "color_offset",
     "grunge",
     "grunge_voronoi",
+    "leather_allcolor_color_rand",
+    "leather_allcolor_rand",
     "leather_animal_preset",
     "leather_animal_rand",
     "leather_cell",
@@ -1195,3 +1197,21 @@ def leather_rand(
         [(_leather_relief_rand, 2.0), (_leather_patina_rand, 1.0)],
     )
     return variant(rng_variant, vector, base_color)
+
+
+def leather_allcolor_color_rand(rng: pf.RNG) -> pf.Color:
+    rng_hue, rng_saturation, rng_value = rng.spawn(3)
+    hue = pf.random.wrap_gaussian(rng_hue, 0.12, 0.16, 0.0, 1.0)
+    saturation = pf.random.clip_gaussian(rng_saturation, 0.8, 0.13, 0.6, 0.97)
+    value = pf.random.uniform(rng_value, 0.0, 1.0)
+    return pf.color.hsv_color(hue=hue, saturation=saturation, value=value)
+
+
+@pf.tracer.grammar
+def leather_allcolor_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+) -> pf.Material:
+    rng_color, rng_leather = rng.spawn(2)
+    base_color = leather_allcolor_color_rand(rng_color)
+    return leather_rand(rng_leather, vector, base_color=base_color)
