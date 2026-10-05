@@ -446,7 +446,7 @@ def centered_sofa_grid_rand(
     setup = centered_sofa_setup_rand(rng_setup)
     for sofa in setup.sofas:
         sofa.mesh.item().name = "sofa"
-    for table in setup.storage_supports:
+    for table in setup.storages:
         table.item().name = "coffee_table"
     if spacing is None:
         spacing = _group_spacing_rand(rng_spacing)
@@ -493,11 +493,11 @@ def indoor_space_rand(
         rng_grid_choice,
         [
             (storage_grid_rand, 1.0),
-            (desk_grid_rand, 1.0),
+            (desk_grid_rand, 2.0),
             (classroom_grid_rand, 1.0),
             (chair_grid_rand, 1.0),
             (sofa_grid_rand, 1.0),
-            (dining_grid_rand, 1.0),
+            (dining_grid_rand, 2.0),
             (cocktail_grid_rand, 1.0),
             (centered_sofa_grid_rand, 1.0),
         ],
@@ -519,7 +519,7 @@ def indoor_space_rand(
         floor=room.floor,
         dimensions=room.dimensions,
         storage_containers=room.storage_containers,
-        storage_supports=room.storage_supports,
+        supports=room.supports,
         storages=room.storages,
         wall_planes=room.wall_planes,
     )

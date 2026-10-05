@@ -600,6 +600,7 @@ def scatter_small_objects_on_containers(
     collection: pf.Collection | None = None,
     density: float | None = None,
     fraction: float | None = None,
+    spacing_factor: float | None = None,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
     """Scatter on recessed upward faces, drawing a collection when omitted."""
     rng_fraction, rng_place, rng_collection = rng.spawn(3)
@@ -610,7 +611,7 @@ def scatter_small_objects_on_containers(
     on_target = functools.partial(
         _scatter_on_target,
         density=density,
-        spacing_factor=None,
+        spacing_factor=spacing_factor,
         scatter_func=_smallobj_scatter_containers,
     )
     return _place_on_targets(

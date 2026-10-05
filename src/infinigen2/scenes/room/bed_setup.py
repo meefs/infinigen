@@ -33,7 +33,7 @@ class BedSetupResult(NamedTuple):
     all_objects: list[pf.MeshObject]
     colliders: collision.CollisionSet
     storage_containers: list[pf.MeshObject]
-    storage_supports: list[pf.MeshObject]
+    supports: list[pf.MeshObject]
     storages: list[pf.MeshObject]
 
 
@@ -312,6 +312,6 @@ def bed_setup_rand(
         all_objects=objects,
         colliders=setup_colliders,
         storage_containers=[],
-        storage_supports=bedside_tables + ([mattress] if mattress is not None else []),
+        supports=bedside_tables + ([mattress] if mattress is not None else []),
         storages=bedside_tables,
     )

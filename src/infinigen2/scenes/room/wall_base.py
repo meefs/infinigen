@@ -39,7 +39,7 @@ class WallResult(NamedTuple):
     backs: list[pf.MeshObject]  # structural lightblocker meshes (wall backs)
     sills: list[pf.MeshObject]  # cutout reveal/sill meshes
     storage_containers: list[pf.MeshObject]
-    storage_supports: list[pf.MeshObject]
+    supports: list[pf.MeshObject]
     lights: list[pf.LightObject]  # window portals or other attached lights
     decorations: dict[
         str, list[pf.MeshObject]
@@ -218,7 +218,7 @@ def wall_plain_rand(
         backs=[wall_thick],
         sills=[],
         storage_containers=[],
-        storage_supports=[],
+        supports=[],
         lights=[],
         decorations={},
     )

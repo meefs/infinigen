@@ -49,7 +49,7 @@ class DiningTableSetupResult(NamedTuple):
     dining_tables: list[MeshResult]
     dining_chairs: list[pf.MeshObject]
     storage_containers: list[pf.MeshObject]
-    storage_supports: list[pf.MeshObject]
+    supports: list[pf.MeshObject]
     storages: list[pf.MeshObject]
 
 
@@ -404,6 +404,6 @@ def dining_table_setup_rand(
         dining_tables=diningtable_objs,
         dining_chairs=chair_objs,
         storage_containers=[],
-        storage_supports=[],
+        supports=[],
         storages=[],
     )
