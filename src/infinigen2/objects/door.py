@@ -71,14 +71,16 @@ def _door_body_geometry(
         geometry=planar, selection=inset.top, domain="FACE"
     )
 
-    frame_shell = pf.nodes.geo.extrude_mesh(mesh=split.inverted, offset_scale=thickness)
+    frame_shell = pf.nodes.geo.extrude_mesh(
+        mesh=split.inverted, offset_scale=thickness, individual=False
+    )
     frame_cap = pf.nodes.geo.flip_faces(split.inverted)
     frame = pf.nodes.geo.join_geometry([frame_shell.mesh, frame_cap])
     frame = pf.nodes.geo.merge_by_distance(frame, distance=0.0001)
     frame = pf.nodes.geo.set_material(frame, material=frame_material)
 
     panel_shell = pf.nodes.geo.extrude_mesh(
-        mesh=split.selection, offset_scale=panel_thickness
+        mesh=split.selection, offset_scale=panel_thickness, individual=False
     )
     panel_cap = pf.nodes.geo.flip_faces(split.selection)
     panel = pf.nodes.geo.join_geometry([panel_shell.mesh, panel_cap])
@@ -111,18 +113,10 @@ def _opaque_and_glass(rng: pf.RNG, vec) -> tuple[pf.Material, pf.Material]:
 
 
 def _door_body_finish(geo: pf.ProcNode, bevel_width: float) -> DoorResult:
-    sharp = pf.nodes.geo.input_mesh_edge_angle().unsigned_angle > 0.5
-    geo = pf.nodes.geo.store_named_attribute(
-        geometry=geo,
-        name="crease_edge",
-        domain="EDGE",
-        value=sharp.astype(dtype=float),
-        data_type="FLOAT",
-    )
     geo = metric_box_uv(geo)
     obj = pf.nodes.to_mesh_object(geo)
     pf.ops.modifier.bevel(obj, width=bevel_width, segments=6)
-    # only the bevel rim is curved; the panels are planar and gain nothing past this
+    pf.ops.attr.write_attribute(obj, 1.0, "crease_edge", domain="EDGE", overwrite=True)
     pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
     return DoorResult(mesh=obj)
 
