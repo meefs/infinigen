@@ -19,7 +19,8 @@ from infinigen2.scenes.room.decoration_objects import (
     DecorationObjectsResult,
     decorate_floor_objects_rand,
     decorate_surface_objects_rand,
-    decoration_primitives_collection_rand,
+    decoration_collection_primitives_and_real_rand,
+    decoration_collection_primitives_rand,
     scatter_small_objects_on_containers,
     scatter_small_objects_on_support_tops,
 )
@@ -412,9 +413,12 @@ def _decorate_room_small_objects_rand(
     containers: list[pf.MeshObject],
     support_tops: list[pf.MeshObject],
     storages: list[pf.MeshObject],
+    nonstorage_collection: pf.Collection | None = None,
+    storage_collection: pf.Collection | None = None,
 ) -> DecorationObjectsResult:
     (
-        rng_collection,
+        rng_collection_primitives,
+        rng_collection_primitives_and_real,
         rng_support_storages,
         rng_storage_containers,
         rng_nonstorage_support_density,
@@ -424,19 +428,26 @@ def _decorate_room_small_objects_rand(
         rng_nonstorage_container_density,
         rng_nonstorage_container_fraction,
         rng_nonstorage_containers,
-    ) = rng.spawn(10)
+    ) = rng.spawn(11)
     storage_objects = set(storages)
     support_storages = [obj for obj in support_tops if obj in storage_objects]
     support_nonstorages = [obj for obj in support_tops if obj not in storage_objects]
     container_storages = [obj for obj in containers if obj in storage_objects]
     container_nonstorages = [obj for obj in containers if obj not in storage_objects]
 
-    collection = decoration_primitives_collection_rand(rng_collection)
+    if nonstorage_collection is None:
+        nonstorage_collection = decoration_collection_primitives_rand(
+            rng_collection_primitives
+        )
+    if storage_collection is None:
+        storage_collection = decoration_collection_primitives_and_real_rand(
+            rng_collection_primitives_and_real
+        )
     placed_support_storages, colliders = scatter_small_objects_on_support_tops(
         rng_support_storages,
         support_storages,
         colliders,
-        collection=collection,
+        collection=storage_collection,
     )
     (
         rng_storage_container_density,
@@ -453,7 +464,7 @@ def _decorate_room_small_objects_rand(
         rng_storage_container_scatter,
         container_storages,
         colliders,
-        collection=collection,
+        collection=storage_collection,
         density=storage_container_density,
         fraction=1.0,
         spacing_factor=storage_container_spacing,
@@ -468,7 +479,7 @@ def _decorate_room_small_objects_rand(
         rng_support_nonstorages,
         support_nonstorages,
         colliders,
-        collection=collection,
+        collection=nonstorage_collection,
         density=nonstorage_support_density,
         fraction=nonstorage_support_fraction,
     )
@@ -482,7 +493,7 @@ def _decorate_room_small_objects_rand(
         rng_nonstorage_containers,
         container_nonstorages,
         colliders,
-        collection=collection,
+        collection=nonstorage_collection,
         density=nonstorage_container_density,
         fraction=nonstorage_container_fraction,
     )
@@ -908,7 +919,10 @@ def room_bathroom_rand(
     supports = room.supports + bathroom_setup.supports + wall_setup_supports
     clearances = bathroom_setup.temporary_objects
     storages = room.storages + bathroom_setup.storages + storage_storages
-    rng_surface, rng_small = rng_decor.spawn(2)
+    rng_surface, rng_collection_primitives, rng_small = rng_decor.spawn(3)
+    collection_primitives = decoration_collection_primitives_rand(
+        rng_collection_primitives
+    )
     surface_result = decorate_surface_objects_rand(
         rng_surface,
         objects=room.all_objects + furniture,
@@ -926,6 +940,8 @@ def room_bathroom_rand(
         containers=containers,
         support_tops=supports,
         storages=storages,
+        nonstorage_collection=collection_primitives,
+        storage_collection=collection_primitives,
     )
     clearance_items = {clearance.item() for clearance in clearances}
     colliders = ccol.collision_set(

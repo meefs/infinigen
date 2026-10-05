@@ -25,6 +25,7 @@ from infinigen2.util import mesh as mesh_util
 
 __all__ = [
     "VaseResult",
+    "cup_rand",
     "vase",
     "vase_body",
     "vase_material_rand",
@@ -461,4 +462,55 @@ def vase_rand(rng: pf.RNG) -> VaseResult:
     pf.ops.modifier.solidify(obj, thickness=thickness)
     pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
 
+    return VaseResult(mesh=obj)
+
+
+def cup_rand(rng: pf.RNG, material: pf.Material | None = None) -> VaseResult:
+    (
+        rng_diameter,
+        rng_height,
+        rng_flute,
+        rng_points,
+        rng_top,
+        rng_neck,
+        rng_neck_position,
+        rng_shoulder,
+        rng_foot,
+        rng_foot_height,
+        rng_thickness,
+        rng_material,
+    ) = rng.spawn(12)
+    diameter = pf.random.uniform(rng_diameter, 0.06, 0.09)
+    height = diameter * pf.random.uniform(rng_height, 0.7, 1.6)
+    profile_inner_radius = 1.0 - 0.12 * pf.random.uniform(rng_flute, 0.0, 1.0) ** 4
+    profile_star_points = pf.random.randint(rng_points, 16, 33)
+    top_scale = pf.random.uniform(rng_top, 0.95, 1.2)
+    neck_scale = top_scale * pf.random.uniform(rng_neck, 0.95, 1.0)
+
+    if material is None:
+        material = vase_material_rand(rng_material, pf.nodes.shader.coord().uv)
+
+    geo = vase_body(
+        u_resolution=2 * profile_star_points,
+        v_resolution=16,
+        height=height,
+        diameter=diameter / 2,
+        profile_inner_radius=profile_inner_radius,
+        profile_star_points=profile_star_points,
+        top_scale=top_scale,
+        neck_mid_position=0.5,
+        neck_position=pf.random.uniform(rng_neck_position, 0.85, 0.95),
+        neck_scale=neck_scale,
+        shoulder_position=pf.random.uniform(rng_shoulder, 0.3, 0.7),
+        shoulder_thickness=pf.random.uniform(rng_shoulder, 0.15, 0.3),
+        foot_scale=pf.random.uniform(rng_foot, 0.7, 0.95),
+        foot_height=pf.random.uniform(rng_foot_height, 0.02, 0.08),
+    )
+    geo = pf.nodes.geo.set_material(geo, material)
+    obj = pf.nodes.to_mesh_object(geo)
+    mesh_util.metric_cylinder_uv(obj)
+    obj.item().name = cup_rand.__name__
+    thickness = pf.random.uniform(rng_thickness, 0.002, 0.004)
+    pf.ops.modifier.solidify(obj, thickness=thickness)
+    pf.ops.modifier.subdivide_surface(obj, levels=3, _skip_apply=True)
     return VaseResult(mesh=obj)

@@ -9,8 +9,8 @@ Geometry-node Poisson-scatter of a collection of small objects onto a parent
 surface: selecting upward-facing faces and instancing a collection at
 random-density, min-distance points.
 
-The room-facing entrypoint builds a shared pool of primitives and scatters
-subsets of it onto each target's real surface.
+The room-facing entrypoint builds reusable decoration pools and scatters subsets
+of them onto each target's real surface.
 """
 
 import functools
@@ -23,7 +23,7 @@ import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import lamp, plant_pot, random_primitives, vase
+from infinigen2.objects import boulder, bowl, lamp, plant_pot, random_primitives, vase
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
@@ -41,9 +41,11 @@ __all__ = [
     "DecorationObjectsResult",
     "MIN_PLACEABLE_AREA",
     "container_faces",
-    "decoration_primitives_collection_rand",
+    "decoration_collection_primitives_and_real_rand",
+    "decoration_collection_primitives_rand",
     "decorate_floor_objects_rand",
     "decorate_surface_objects_rand",
+    "decoration_smallobj_rand",
     "objects_scatter_rand",
     "objects_scattered_on_surface",
     "placeable_faces",
@@ -505,17 +507,35 @@ def _mixed_on_target(
     return on_target(rng_place, parent, pool, colliders)
 
 
-def decoration_primitives_collection_rand(rng: pf.RNG) -> pf.Collection:
-    """Draw reusable decoration primitives with origins seated at their bases."""
-    n_pool = int(pf.random.randint(rng, 8, 17))
+def _decoration_primitive_rand(rng: pf.RNG) -> MeshResult:
+    rng_size, rng_mesh = rng.spawn(2)
+    target_size = pf.random.clip_gaussian(rng_size, 0.13, 0.105, 0.08, 0.45)
+    return random_primitives.primitive_with_effect_rand(
+        rng_mesh,
+        target_size=target_size,
+        max_subsurf_levels=1,
+    )
+
+
+def decoration_smallobj_rand(rng: pf.RNG) -> MeshResult:
+    rng_choice, rng_object = rng.spawn(2)
+    func = pf.control.choice(
+        rng_choice,
+        [
+            (_decoration_primitive_rand, 4.0),
+            (plant_pot.plant_pot_small_rand, 1.0),
+            (bowl.bowl_rand, 1.0),
+            (vase.cup_rand, 1.0),
+            (boulder.rock_rand, 1.0),
+        ],
+    )
+    return func(rng_object)
+
+
+def _decoration_collection(results: list[MeshResult]) -> pf.Collection:
     meshes = []
-    for i, rng_mesh in enumerate(rng.spawn(n_pool)):
-        target_size = pf.random.clip_gaussian(rng_mesh, 0.13, 0.105, 0.08, 0.45)
-        mesh = random_primitives.primitive_with_effect_rand(
-            rng_mesh,
-            target_size=target_size,
-            max_subsurf_levels=1,
-        ).mesh
+    for i, result in enumerate(results):
+        mesh = result.mesh
         pf.ops.mesh.transform_apply(mesh)
         bmin, _ = pf.ops.attr.bbox_min_max(mesh, global_coords=False)
         pf.ops.object.set_transform(mesh, location=(0, 0, -bmin[2]))
@@ -525,6 +545,22 @@ def decoration_primitives_collection_rand(rng: pf.RNG) -> pf.Collection:
         mesh.item().data.name = f"{label}_{i:03d}"
         meshes.append(mesh)
     return pf.Collection(meshes)
+
+
+def decoration_collection_primitives_rand(rng: pf.RNG) -> pf.Collection:
+    """Draw reusable decoration primitives with origins seated at their bases."""
+    rng_count, rng_meshes = rng.spawn(2)
+    n_pool = int(pf.random.randint(rng_count, 8, 17))
+    results = [_decoration_primitive_rand(r) for r in rng_meshes.spawn(n_pool)]
+    return _decoration_collection(results)
+
+
+def decoration_collection_primitives_and_real_rand(rng: pf.RNG) -> pf.Collection:
+    """Draw reusable primitives and real objects seated at their bases."""
+    rng_count, rng_meshes = rng.spawn(2)
+    n_pool = int(pf.random.randint(rng_count, 8, 17))
+    results = [decoration_smallobj_rand(r) for r in rng_meshes.spawn(n_pool)]
+    return _decoration_collection(results)
 
 
 def _place_on_targets(
@@ -605,7 +641,7 @@ def scatter_small_objects_on_containers(
     """Scatter on recessed upward faces, drawing a collection when omitted."""
     rng_fraction, rng_place, rng_collection = rng.spawn(3)
     if collection is None:
-        collection = decoration_primitives_collection_rand(rng_collection)
+        collection = decoration_collection_primitives_rand(rng_collection)
     if fraction is None:
         fraction = pf.random.uniform(rng_fraction, 0.0, 1.0)
     on_target = functools.partial(
@@ -630,7 +666,7 @@ def scatter_small_objects_on_support_tops(
     """Scatter on topmost upward faces, drawing a collection when omitted."""
     rng_fraction, rng_place, rng_collection = rng.spawn(3)
     if collection is None:
-        collection = decoration_primitives_collection_rand(rng_collection)
+        collection = decoration_collection_primitives_rand(rng_collection)
     if fraction is None:
         fraction = pf.random.uniform(rng_fraction, 0.0, 1.0)
     on_target = functools.partial(

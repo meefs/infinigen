@@ -8,13 +8,25 @@ from collections.abc import Callable
 import procfunc as pf
 import pytest
 
-from infinigen2.objects import random_primitives
+from infinigen2.objects import boulder, bowl, plant_pot, random_primitives, vase
 from infinigen2.objects.lamp import LampResult
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.room import decoration_objects
 
+SMALL_OBJECT_GENERATORS = {
+    func.__name__: func
+    for func in (
+        bowl.bowl_rand,
+        boulder.rock_rand,
+        plant_pot.plant_pot_small_rand,
+        vase.cup_rand,
+    )
+}
 
-def _resolve_label(label: str) -> tuple[object, object]:
+
+def _resolve_label(label: str) -> tuple[object, object | None]:
+    if "_effect_" not in label:
+        return SMALL_OBJECT_GENERATORS.get(label), None
     primitive, _, effect = label.partition("_effect_")
     return (
         getattr(random_primitives, primitive, None),
@@ -23,7 +35,7 @@ def _resolve_label(label: str) -> tuple[object, object]:
 
 
 def test_small_objects_pool_has_unique_stems_and_sampler_labels(rng: pf.RNG) -> None:
-    pool = decoration_objects.decoration_primitives_collection_rand(rng)
+    pool = decoration_objects.decoration_collection_primitives_and_real_rand(rng)
     data_names = [obj.item().data.name for obj in pool]
     labels = [decoration_objects._smallobj_label(name) for name in data_names]
 
@@ -33,11 +45,11 @@ def test_small_objects_pool_has_unique_stems_and_sampler_labels(rng: pf.RNG) -> 
         assert "." not in label, label
         primitive, effect = _resolve_label(label)
         assert callable(primitive), label
-        assert callable(effect), label
+        assert effect is None or callable(effect), label
 
 
 def test_small_objects_are_never_labelled_after_the_wrapper(rng: pf.RNG) -> None:
-    pool = decoration_objects.decoration_primitives_collection_rand(rng)
+    pool = decoration_objects.decoration_collection_primitives_and_real_rand(rng)
     labels = {decoration_objects._smallobj_label(obj.item().data.name) for obj in pool}
 
     assert random_primitives.primitive_with_effect_rand.__name__ not in labels
@@ -68,7 +80,7 @@ def test_small_object_scatter_collection_default_and_override(
 
     monkeypatch.setattr(
         decoration_objects,
-        "decoration_primitives_collection_rand",
+        "decoration_collection_primitives_rand",
         collection_rand,
     )
     target = pf.ops.primitives.mesh_cube(size=1.0)

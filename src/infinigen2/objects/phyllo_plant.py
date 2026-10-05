@@ -733,6 +733,8 @@ def plant_phyllo_basal_rand(
     stem_height: float | None = None,
     stem_radius: float | None = None,
     leaf_length: float | None = None,
+    min_angle: float | None = None,
+    max_angle: float | None = None,
 ) -> PhylloPlantResult:
     if stem_height is None:
         stem_height = pf.random.uniform(rng, 0.008, 0.04)
@@ -740,15 +742,20 @@ def plant_phyllo_basal_rand(
         stem_radius = pf.random.uniform(rng, 0.0125, 0.019)
     if leaf_length is None:
         leaf_length = pf.random.uniform(rng, 0.09, 0.24)
+    target_count = pf.random.randint(rng, 18, 49)
+    if min_angle is None:
+        min_angle = pf.random.uniform(rng, 0.12, 0.35)
+    if max_angle is None:
+        max_angle = pf.random.uniform(rng, 0.85, 1.35)
     return _phyllo_rand(
         rng,
-        target_count=pf.random.randint(rng, 18, 49),
+        target_count=target_count,
         height=stem_height,
         radius=stem_radius,
         stem_reference_leaf_length=0.33,
         leaf_length=leaf_length,
-        min_angle=pf.random.uniform(rng, 0.12, 0.35),
-        max_angle=pf.random.uniform(rng, 0.85, 1.35),
+        min_angle=min_angle,
+        max_angle=max_angle,
         leaf_size=leaf_size,
         leaf_width=leaf_width,
         petiole_length_fraction=petiole_length_fraction,
@@ -791,6 +798,8 @@ def plant_phyllo_ascending_rand(
     stem_height: float | None = None,
     stem_radius: float | None = None,
     leaf_length: float | None = None,
+    min_angle: float | None = None,
+    max_angle: float | None = None,
 ) -> PhylloPlantResult:
     if stem_height is None:
         stem_height = pf.random.log_uniform(rng, 0.08, 0.85)
@@ -798,15 +807,20 @@ def plant_phyllo_ascending_rand(
         stem_radius = pf.random.uniform(rng, 0.005, 0.0125)
     if leaf_length is None:
         leaf_length = pf.random.uniform(rng, 0.08, 0.23)
+    target_count = pf.random.randint(rng, 9, 29) * (0.5 + stem_height / 0.4)
+    if min_angle is None:
+        min_angle = pf.random.uniform(rng, 0.12, 0.45)
+    if max_angle is None:
+        max_angle = pf.random.uniform(rng, 0.55, 1.1)
     return _phyllo_rand(
         rng,
-        target_count=pf.random.randint(rng, 9, 29) * (0.5 + stem_height / 0.4),
+        target_count=target_count,
         height=stem_height,
         radius=stem_radius,
         stem_reference_leaf_length=0.25,
         leaf_length=leaf_length,
-        min_angle=pf.random.uniform(rng, 0.12, 0.45),
-        max_angle=pf.random.uniform(rng, 0.55, 1.1),
+        min_angle=min_angle,
+        max_angle=max_angle,
         leaf_size=leaf_size,
         leaf_width=leaf_width,
         petiole_length_fraction=petiole_length_fraction,

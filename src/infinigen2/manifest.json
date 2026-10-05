@@ -857,6 +857,10 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.boulder.rock_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.sofa.sofa_rand"
   },
   {
@@ -990,6 +994,10 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.vase.vase_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.vase.cup_rand"
   },
   {
     "category": "Object",

@@ -13,7 +13,11 @@ import procfunc as pf
 from mathutils import Matrix
 
 from infinigen2.objects import ant_landscape
-from infinigen2.shaders.functionality_lists import boulder_material_rand
+from infinigen2.shaders.base_materials import granite, stone_smooth
+from infinigen2.shaders.functionality_lists import (
+    boulder_material_rand,
+    decorative_material_rand,
+)
 
 __all__ = [
     "BoulderResult",
@@ -25,6 +29,8 @@ __all__ = [
     "boulder_rand",
     "boulder_ridged_rand",
     "boulder_rock_rand",
+    "rock_material_rand",
+    "rock_rand",
 ]
 
 
@@ -371,3 +377,27 @@ def boulder_rand(
         material=material,
         mesh_resolution=mesh_resolution,
     )
+
+
+def rock_material_rand(rng: pf.RNG) -> pf.Material:
+    rng_choice, rng_material = rng.spawn(2)
+    material_options = [
+        (granite.granite_smooth_rand, 1.0),
+        (stone_smooth.stone_smooth_rand, 1.0),
+        (decorative_material_rand, 1.0),
+    ]
+    material_func = pf.control.choice(rng_choice, material_options)
+    return material_func(rng_material, pf.nodes.shader.coord().object)
+
+
+def rock_rand(rng: pf.RNG, material: pf.Material | None = None) -> BoulderResult:
+    rng_scale, rng_material, rng_boulder = rng.spawn(3)
+    scale = pf.random.uniform(rng_scale, 0.05, 0.09)
+    if material is None:
+        material = rock_material_rand(rng_material)
+    result = boulder_rand(rng_boulder, material=material, mesh_resolution=0.04)
+    # no-scaling exception: boulder presets' sizes are too hard to recalibrate small
+    pf.ops.object.set_transform(result.mesh, scale=pf.Vector((scale, scale, scale)))
+    pf.ops.mesh.transform_apply(result.mesh)
+    result.mesh.item().name = rock_rand.__name__
+    return result

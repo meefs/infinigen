@@ -252,7 +252,7 @@ def bowl_rand(rng: pf.RNG) -> BowlResult:
     profile_fullness = pf.random.uniform(rng_profile_fullness, 0.5, 1.0)
     profile_slope = pf.random.uniform(rng_profile_slope, 0.0, 0.16)
     thickness = diameter * pf.random.uniform(rng_thickness, 0.01, 0.018)
-    return bowl(
+    result = bowl(
         diameter=diameter,
         height=height,
         base_scale=base_scale,
@@ -265,3 +265,5 @@ def bowl_rand(rng: pf.RNG) -> BowlResult:
         thickness=thickness,
         material=material,
     )
+    result.mesh.item().name = bowl_rand.__name__
+    return result

@@ -437,6 +437,7 @@ def wall_windows_rand(
         supports=[],
         lights=portals,
         decorations={"window": res.aliases, "window_trim": trims},
+        storages=sills,
     )
 
 
@@ -705,6 +706,7 @@ def wall_cubby_rand(
             supports=[],
             lights=[],
             decorations={},
+            storages=sills,
         )
 
     return pf.control.choice(rng, [(_keep_cabinets, 1.0), (_drop_cabinets, 2.0)])()
