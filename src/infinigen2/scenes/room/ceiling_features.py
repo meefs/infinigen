@@ -194,9 +194,8 @@ def ceiling_skylights_rand(
         rng, width=skylight_width, height=skylight_length
     )
     # skylights never get curtains
-    window_result = window.window_rand(
-        rng,
-        dimensions=window_dimensions,
+    window_result = window.window_from_profile_rand(
+        rng, window.rectangular_profile(window_dimensions)
     )
     win = window_result.mesh
 

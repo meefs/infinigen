@@ -408,6 +408,17 @@ def _build_func_resolution_map(toplevel_graph) -> tuple[dict, list[str]]:
     )
     func_resolution.update(default_resolution)
 
+    specs = [toplevel_graph.outputs.spec]
+    while specs:
+        spec = specs.pop()
+        specs.extend(spec.items)
+        if spec.container is None or spec.container in func_resolution:
+            continue
+        module = spec.container.__module__
+        name = spec.container.__name__
+        import_lines.append(f"from {module} import {name}")
+        func_resolution[spec.container] = name
+
     return func_resolution, import_lines
 
 

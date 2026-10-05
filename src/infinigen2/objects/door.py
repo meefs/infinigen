@@ -17,6 +17,7 @@ __all__ = [
     "DoorResult",
     "door_composite_rand",
     "door_double_rand",
+    "door_glass_from_profile_rand",
     "door_body",
     "door_body_rand",
     "door_with_handle",
@@ -187,21 +188,6 @@ def door_body_rand(
     return _door_body_finish(geo, bevel_width=bevel_width)
 
 
-def _place_handle(
-    door: pf.MeshObject,
-    handle: pf.MeshObject,
-    dimensions: pf.Vector,
-    edge_offset: float,
-    handle_z_frac: float,
-) -> None:
-    handle_x = dimensions.x
-    handle_y = dimensions.y - edge_offset
-    handle_z = dimensions.z * handle_z_frac
-    pf.ops.object.set_transform(handle, location=(handle_x, handle_y, handle_z))
-    # join drops the handle's own stack; it renders at the door's subdivision level
-    pf.ops.object.join(door, handle)
-
-
 def door_with_handle(
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
@@ -212,21 +198,12 @@ def door_with_handle(
         dimensions=dimensions, frame_material=material, panel_material=material
     ).mesh
     handle = handles.lever_handle().mesh
-    _place_handle(door, handle, dimensions, edge_offset=0.06, handle_z_frac=0.46)
-    return DoorResult(mesh=door)
-
-
-def _choose_handle_rand(rng_choice: pf.RNG, rng_handle: pf.RNG) -> pf.MeshObject:
-    handle_func = pf.control.choice(
-        rng_choice,
-        [
-            (handles.lever_handle_rand, 2.0),
-            (handles.bar_pull_handle_rand, 1.5),
-            (handles.curved_pull_handle_rand, 1.5),
-            (handles.knob_handle_rand, 1.0),
-        ],
+    pf.ops.object.set_transform(
+        handle,
+        location=(dimensions.x, dimensions.y - 0.06, dimensions.z * 0.46),
     )
-    return handle_func(rng_handle).mesh
+    pf.ops.object.join(door, handle)
+    return DoorResult(mesh=door)
 
 
 def door_with_handle_rand(
@@ -236,9 +213,9 @@ def door_with_handle_rand(
     inner_material: pf.Material | None = None,
     handle: pf.MeshObject | None = None,
 ) -> DoorResult:
-    """`inner_material` overrides the recessed panels alone, so a caller can glaze a
-    door whose frame keeps `material`. Left None the panels follow the frame."""
-    rng, rng_door, rng_handle_choice, rng_handle, rng_place = rng.spawn(5)
+    """`inner_material` overrides the recessed panels alone, so a caller can put glass
+    in a door whose frame keeps `material`. Left None the panels follow the frame."""
+    rng, rng_door, rng_handle, rng_place = rng.spawn(4)
     if dimensions is None:
         width = pf.random.uniform(rng, 0.7, 0.95)
         height = pf.random.uniform(rng, 1.9, 2.1)
@@ -256,11 +233,19 @@ def door_with_handle_rand(
     ).mesh
 
     if handle is None:
-        handle = _choose_handle_rand(rng_handle_choice, rng_handle)
+        handle = handles.handle_rand(rng_handle).mesh
 
     edge_offset = pf.random.uniform(rng_place, 0.04, 0.08)
     handle_z_frac = pf.random.uniform(rng_place, 0.42, 0.5)
-    _place_handle(door, handle, dimensions, edge_offset, handle_z_frac)
+    pf.ops.object.set_transform(
+        handle,
+        location=(
+            dimensions.x,
+            dimensions.y - edge_offset,
+            dimensions.z * handle_z_frac,
+        ),
+    )
+    pf.ops.object.join(door, handle)
     return DoorResult(mesh=door)
 
 
@@ -301,7 +286,7 @@ def door_composite_rand(
     handle: pf.MeshObject | None = None,
     inner_material: pf.Material | None = None,
 ) -> DoorResult:
-    rng, rng_body, rng_handle_choice, rng_handle, rng_place = rng.spawn(5)
+    rng, rng_body, rng_handle, rng_place = rng.spawn(4)
     if dimensions is None:
         width = pf.random.uniform(rng, 0.7, 0.95)
         height = pf.random.uniform(rng, 1.9, 2.1)
@@ -320,7 +305,7 @@ def door_composite_rand(
         )
 
     def window_body() -> window.WindowResult:
-        return window.window_rand(
+        return window.window_rectangular_rand(
             rng_body,
             dimensions=dimensions,
             frame_material=material,
@@ -330,16 +315,50 @@ def door_composite_rand(
     body_func = pf.control.choice(
         rng,
         [
-            (standard_body, 2.0),
+            (standard_body, 3.0),
             (window_body, 1.0),
         ],
     )
     door = body_func().mesh
-
     if handle is None:
-        handle = _choose_handle_rand(rng_handle_choice, rng_handle)
+        handle = handles.handle_rand(rng_handle).mesh
 
     edge_offset = pf.random.uniform(rng_place, 0.04, 0.08)
     handle_z_frac = pf.random.uniform(rng_place, 0.42, 0.5)
-    _place_handle(door, handle, dimensions, edge_offset, handle_z_frac)
+    pf.ops.object.set_transform(
+        handle,
+        location=(
+            dimensions.x,
+            dimensions.y - edge_offset,
+            dimensions.z * handle_z_frac,
+        ),
+    )
+    pf.ops.object.join(door, handle)
+    return DoorResult(mesh=door)
+
+
+def door_glass_from_profile_rand(
+    rng: pf.RNG,
+    profile: window.WindowProfile,
+    material: pf.Material | None = None,
+    handle: pf.MeshObject | None = None,
+) -> DoorResult:
+    rng, rng_body, rng_handle = rng.spawn(3)
+    door = window.window_from_profile_rand(
+        rng_body, profile, frame_material=material, include_portal=False
+    ).mesh
+    if handle is None:
+        handle = handles.handle_rand(rng_handle).mesh
+
+    edge_offset = pf.random.uniform(rng, 0.04, 0.08)
+    handle_z_frac = pf.random.uniform(rng, 0.42, 0.5)
+    pf.ops.object.set_transform(
+        handle,
+        location=(
+            profile.dimensions.x,
+            profile.dimensions.y - edge_offset,
+            profile.dimensions.z * handle_z_frac,
+        ),
+    )
+    pf.ops.object.join(door, handle)
     return DoorResult(mesh=door)

@@ -9,10 +9,15 @@ from typing import NamedTuple
 import numpy as np
 import procfunc as pf
 from mathutils import Euler
+from procfunc.nodes import types as t
 
 from infinigen2.curves.skirting_board_profile import trim_profile_rand
 from infinigen2.objects import storage, wall_art, window
-from infinigen2.objects.door import door_composite_rand, door_double_rand
+from infinigen2.objects.door import (
+    door_composite_rand,
+    door_double_rand,
+    door_glass_from_profile_rand,
+)
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.distribute import (
@@ -20,6 +25,7 @@ from infinigen2.scenes.placement.distribute import (
     propagate_modifiers_to_instances,
 )
 from infinigen2.scenes.room.wall_base import (
+    ROOM_SUBSURF_LEVELS,
     WallResult,
     extrude_for_thickness,
     fit_grid_margins,
@@ -55,12 +61,128 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
+def _subdivide_rounded_cutout(
+    mesh: pf.ProcNode[pf.MeshObject],
+    threshold_degrees: float,
+) -> pf.MeshObject:
+    """Crease folds and corners only, so arch edge chains subdivide into curves."""
+    creased = mesh_util.crease_sharp(mesh, threshold_degrees=threshold_degrees)
+    is_boundary = pf.nodes.func.equal(a=pf.nodes.geo.input_mesh_edge_neighbors(), b=1)
+    creased = pf.nodes.geo.store_named_attribute(
+        geometry=creased,
+        name="crease_edge",
+        value=1.0,
+        domain="EDGE",
+        selection=is_boundary,
+    )
+    obj = pf.nodes.to_mesh_object(creased)
+    pf.ops.modifier.subdivide_surface(
+        obj,
+        levels=ROOM_SUBSURF_LEVELS,
+        boundary_smooth="PRESERVE_CORNERS",
+        _skip_apply=True,
+    )
+    return obj
+
+
+@pf.nodes.node_function
+def _smooth_outline_curve(
+    curve: pf.ProcNode[pf.CurveObject],
+    corner_degrees: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.CurveObject]:
+    """Bezier through the outline points, keeping turns above `corner_degrees` sharp."""
+    position = pf.nodes.geo.input_position()
+    prev_index = pf.nodes.geo.offset_point_in_curve(offset=-1).point_index
+    next_index = pf.nodes.geo.offset_point_in_curve(offset=1).point_index
+    prev_position = pf.nodes.geo.field_at_index(value=position, index=prev_index)
+    next_position = pf.nodes.geo.field_at_index(value=position, index=next_index)
+    incoming = pf.nodes.math.vector_normalize(position - prev_position)
+    outgoing = pf.nodes.math.vector_normalize(next_position - position)
+    turn_cos = pf.nodes.math.vector_dot_product(a=incoming, b=outgoing)
+    corner_cos = pf.nodes.math.cos(pf.nodes.math.deg_to_rad(corner_degrees))
+    marked = pf.nodes.geo.capture_attribute(
+        geometry=curve, is_corner=pf.nodes.func.less_than(a=turn_cos, b=corner_cos)
+    )
+    bezier = pf.nodes.geo.curve_spline_type(marked.geometry, spline_type="BEZIER")
+    smooth = pf.nodes.geo.curve_set_handles(bezier, handle_type="AUTO")
+    return pf.nodes.geo.curve_set_handles(
+        smooth, selection=marked.is_corner, handle_type="VECTOR"
+    )
+
+
 class CutoutResult(NamedTuple):
     geom: pf.MeshObject  # posed holed surface
     sill: pf.MeshObject | None  # reveal/jamb tunnels
     lightblocker: pf.MeshObject | None  # opaque backing
     aliases: list[pf.MeshObject]  # placed instance aliases
     trim_edges: pf.CurveObject | None  # mouth outline loops, posed like the surface
+
+
+@pf.nodes.node_function
+def _inset_cutout_split(
+    geometry: pf.ProcNode[pf.MeshObject],
+    selection: t.SocketOrVal[bool],
+    inset: t.SocketOrVal[pf.Vector],
+    thickness: t.SocketOrVal[float],
+    blocker_thickness: t.SocketOrVal[float] = 0.1,
+    uv_winding_sign: t.SocketOrVal[float] = 1.0,
+    delete_facecap: t.SocketOrVal[bool] = True,
+    chamfer: t.SocketOrVal[float] = 0.006,
+) -> mesh_util.WallCutoutResult:
+    """`mesh_util.wall_cutout_split`, but each mouth vertex moves by its own `inset`.
+
+    `selection` and `inset` must come from `faces_for_instance_grid_bboxes` on
+    `geometry`, so rounded mouths keep a uniform chamfer lip.
+    """
+    flat = pf.nodes.geo.capture_attribute(
+        domain="FACE", geometry=geometry, surf_n=pf.nodes.geo.input_normal()
+    )
+    extrude_dir = pf.nodes.math.vector_normalize(flat.surf_n)
+    lip = pf.nodes.geo.extrude_mesh(
+        mesh=flat.geometry,
+        selection=selection,
+        offset_scale=0.0,
+        individual=False,
+        mode="FACES",
+    )
+    chamfer_offset = inset + pf.nodes.math.vector_scale(
+        vector=extrude_dir, scale=pf.nodes.math.multiply(a=chamfer, b=-1.0)
+    )
+    lip_in = pf.nodes.geo.set_position(
+        geometry=lip.mesh, selection=lip.top, offset=chamfer_offset
+    )
+    deep = mesh_util.extrude_mesh_seamless_uvs(
+        mesh=lip_in,
+        selection=lip.top,
+        offset_scale=pf.nodes.math.subtract(chamfer, thickness),
+        uv_winding_sign=uv_winding_sign,
+    )
+    tagged = pf.nodes.geo.store_named_attribute(
+        geometry=deep.mesh,
+        name="is_sill",
+        value=deep.side,
+        domain="FACE",
+        data_type="BOOLEAN",
+    )
+    drop_cap = pf.nodes.func.boolean_and(a=deep.top, b=delete_facecap)
+    niche = pf.nodes.geo.delete_geometry(
+        tagged, selection=drop_cap, domain="FACE", mode="ALL"
+    )
+    blocker_offset = pf.nodes.math.multiply(a=blocker_thickness, b=-1.0)
+    lightblocker = pf.nodes.geo.extrude_mesh(
+        niche, offset_scale=blocker_offset, individual=False, mode="FACES"
+    )
+    is_sill = pf.nodes.geo.input_named_attribute(
+        name="is_sill", data_type=pf.NodeDataType.BOOLEAN
+    )
+    sill_sep = pf.nodes.geo.separate_geometry(
+        niche, selection=is_sill.attribute, domain="FACE"
+    )
+    return mesh_util.WallCutoutResult(
+        wall=sill_sep.inverted,
+        sill=sill_sep.selection,
+        lightblocker=lightblocker.mesh,
+    )
 
 
 def cutout_spaced_instances(
@@ -82,12 +204,16 @@ def cutout_spaced_instances(
     footprint: pf.MeshObject | None = None,
     chamfer: float = 0.006,
     standoff: float = 0.0,
+    top_profile_height: float = 0.0,
+    bottom_profile_height: float = 0.0,
 ) -> CutoutResult:
     """Cut instance-footprint niches in a surface and place instance aliases over them.
 
     Instance template must be x-centered (flip-invariant w.r.t. UV sign).
     `trim_edges` is the sharp mouth outline of every cutout on the wall surface,
     posed like the wall, with curve normals pre-set for sweeping a trim profile.
+    Nonzero profile heights (metres) round the top/bottom of each footprint bbox
+    into ellipse quarters spanning its full width.
     """
     uv_meters = pf.nodes.geo.input_named_attribute(
         name="UVMap", data_type=pf.NodeDataType.FLOAT_VECTOR
@@ -97,6 +223,8 @@ def cutout_spaced_instances(
         footprint = instance
 
     cutout_chamfer = chamfer if recess else 0.0
+    is_rectangular = top_profile_height <= 0.0 and bottom_profile_height <= 0.0
+    columns = 2 if is_rectangular else 9
 
     grid_res = grid_placement.grid_from_spacing(
         uv_surface=surface,
@@ -118,17 +246,21 @@ def cutout_spaced_instances(
         instance_uvs=grid_res.query_uv,
         grid_index_x=grid_res.index_x,
         grid_index_y=grid_res.index_y,
-        verts_per_instance_x=2,
+        verts_per_instance_x=columns,
         verts_per_instance_y=2,
         margin_verts_x=1,
         margin_verts_y=1,
         face_expand_margin=pf.Vector((cutout_chamfer, cutout_chamfer, 0.0)),
         rotation_offset=rotation_offset,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
     )
 
     trim_curve = mesh_util.face_selection_boundary_curve(
         mesh=faces_res.mesh, selection=faces_res.is_instance_face
     )
+    if not is_rectangular:
+        trim_curve = _smooth_outline_curve(trim_curve, corner_degrees=45.0)
     trim_edges = pf.nodes.to_curve_object(trim_curve)
     pf.ops.object.set_transform(
         trim_edges, surface.item().location, surface.item().rotation_euler
@@ -139,22 +271,21 @@ def cutout_spaced_instances(
     lightblocker: pf.MeshObject | None = None
     if recess:
         # split into holed wall, sill tunnels, and lightblocker backing
-        tagged = pf.nodes.geo.store_named_attribute(
-            geometry=faces_res.mesh,
-            name="cutout_sel",
-            value=faces_res.is_instance_face,
-            domain="FACE",
-            data_type="BOOLEAN",
-        )
-        split = mesh_util.wall_cutout_split(
-            tagged,
+        split = _inset_cutout_split(
+            faces_res.mesh,
+            selection=faces_res.is_instance_face,
+            inset=faces_res.inset,
             thickness=wall_thickness,
             uv_winding_sign=mesh_util.uv_winding_sign(surface),
             delete_facecap=not keep_facecap,
             chamfer=cutout_chamfer,
         )
 
-        sill = pf.nodes.to_mesh_object(split.sill)
+        if is_rectangular:
+            sill = pf.nodes.to_mesh_object(split.sill)
+            subdivide_wall_plane(sill)
+        else:
+            sill = _subdivide_rounded_cutout(split.sill, threshold_degrees=60.0)
         pf.ops.object.set_transform(
             sill, surface.item().location, surface.item().rotation_euler
         )
@@ -163,7 +294,6 @@ def cutout_spaced_instances(
             surface=surface_material.surface,
             displacement=surface_material.displacement,
         )
-        subdivide_wall_plane(sill)
         sill.item().name = "room_wall_sill"
 
         lightblocker = pf.nodes.to_mesh_object(split.lightblocker)
@@ -180,7 +310,11 @@ def cutout_spaced_instances(
         ).inverted
     # weld coincident verts so boundary slivers don't break canonicalization
     geom = pf.nodes.geo.merge_by_distance(cut, distance=0.001)
-    geom = pf.nodes.to_mesh_object(geom)
+    if is_rectangular:
+        geom = pf.nodes.to_mesh_object(geom)
+        subdivide_wall_plane(geom)
+    else:
+        geom = _subdivide_rounded_cutout(geom, threshold_degrees=35.0)
     pf.ops.object.set_transform(
         geom, surface.item().location, surface.item().rotation_euler
     )
@@ -189,7 +323,6 @@ def cutout_spaced_instances(
         surface=surface_material.surface,
         displacement=surface_material.displacement,
     )
-    subdivide_wall_plane(geom)
 
     recess_depth = wall_thickness * recess_pct if recess else 0.0
     instances = grid_placement.place_instances_on_uv_grid(
@@ -265,6 +398,8 @@ def _resolve_window_inputs(
     wall: pf.MeshObject,
     window_obj: pf.MeshObject | None,
     window_portal: pf.LightObject | None,
+    top_profile_height: float,
+    bottom_profile_height: float,
     window_spacing: float | None,
     window_bottom: float | None,
 ) -> tuple[
@@ -273,15 +408,25 @@ def _resolve_window_inputs(
     pf.LightObject | None,
     float,
     float,
+    float,
+    float,
 ]:
     if (
         window_obj is not None
         and window_spacing is not None
         and window_bottom is not None
     ):
-        return rng, window_obj, window_portal, window_spacing, window_bottom
+        return (
+            rng,
+            window_obj,
+            window_portal,
+            top_profile_height,
+            bottom_profile_height,
+            window_spacing,
+            window_bottom,
+        )
 
-    rng_defaults, rng_feature = rng.spawn(2)
+    rng_defaults, rng_feature, rng_window = rng.spawn(3)
     wall_width, wall_height = wall_uv_dimensions(wall)
     if window_obj is None:
         width = max(1.0, min(2.0, 0.5 * wall_width))
@@ -289,11 +434,11 @@ def _resolve_window_inputs(
         dimensions = window.window_dimensions_rand(
             rng_defaults, width=width, height=height
         )
-        window_result = window.window_composite_rand(
-            rng_defaults, dimensions=dimensions
-        )
+        window_result = window.window_composite_rand(rng_window, dimensions=dimensions)
         window_obj = window_result.mesh
         window_portal = window_result.light
+        top_profile_height = window_result.profile.top_profile_height
+        bottom_profile_height = window_result.profile.bottom_profile_height
         wall_offset = pf.Vector((0.0, dimensions.y * -0.5, 0.0))
         pf.ops.object.set_transform(window_obj, location=wall_offset)
         pf.ops.mesh.transform_apply(window_obj)
@@ -311,7 +456,15 @@ def _resolve_window_inputs(
         free_height = max(0.0, wall_height - height)
         bottom_fraction = pf.random.uniform(rng_defaults, 0.35, 0.65)
         window_bottom = free_height * bottom_fraction - wmin[2]
-    return rng_feature, window_obj, window_portal, window_spacing, window_bottom
+    return (
+        rng_feature,
+        window_obj,
+        window_portal,
+        top_profile_height,
+        bottom_profile_height,
+        window_spacing,
+        window_bottom,
+    )
 
 
 @pf.tracer.grammar
@@ -323,6 +476,8 @@ def window_spaced_rand(
     spacing: float,
     window_bottom: float,
     wall_thickness: float = 0.05,
+    top_profile_height: float = 0.0,
+    bottom_profile_height: float = 0.0,
 ) -> "CutoutResult":
     width = window_obj.item().dimensions.y
     wmin, _ = pf.ops.attr.bbox_min_max(window_obj)
@@ -362,6 +517,8 @@ def window_spaced_rand(
         wall_thickness=reveal_depth,
         recess_pct=recess_pct,
         chamfer=pf.random.clip_gaussian(rng, 0.006, 0.002, 0.004, 0.010),
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
     )
     if not res.aliases:
         logger.warning(
@@ -381,20 +538,30 @@ def wall_windows_rand(
     wall_material: pf.Material | None = None,
     window_obj: pf.MeshObject | None = None,
     window_portal: pf.LightObject | None = None,
+    top_profile_height: float = 0.0,
+    bottom_profile_height: float = 0.0,
     window_spacing: float | None = None,
     window_bottom: float | None = None,
     wall_thickness: float = 0.05,
 ) -> WallResult:
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
-    rng, window_obj, window_portal, window_spacing, window_bottom = (
-        _resolve_window_inputs(
-            rng,
-            wall,
-            window_obj,
-            window_portal,
-            window_spacing,
-            window_bottom,
-        )
+    (
+        rng,
+        window_obj,
+        window_portal,
+        top_profile_height,
+        bottom_profile_height,
+        window_spacing,
+        window_bottom,
+    ) = _resolve_window_inputs(
+        rng,
+        wall,
+        window_obj,
+        window_portal,
+        top_profile_height,
+        bottom_profile_height,
+        window_spacing,
+        window_bottom,
     )
     res = window_spaced_rand(
         rng,
@@ -404,6 +571,8 @@ def wall_windows_rand(
         window_spacing,
         window_bottom,
         wall_thickness,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
     )
     portals = []
     if window_portal is not None and res.aliases:
@@ -746,29 +915,44 @@ def wall_doors_rand(
     reveal_depth = pf.random.uniform(rng, 0.1, 0.3)
     recess_pct = 0.9 + 0.1 * pf.random.uniform(rng, 0.0, 1.0)
 
-    door = door_func(
-        rng,
-        dimensions=pf.Vector((door_thickness, door_width, door_height)),
-    ).mesh
-    # centre the slab along the wall (Y); an off-centre along-wall origin lands it
-    # beside its hole. Use door_width, not the bbox, so the handle bump does not bias it
-    pf.ops.object.set_transform(door, location=(0.0, -door_width * 0.5, 0.0))
-    pf.ops.mesh.transform_apply(door)
+    dimensions = pf.Vector((door_thickness, door_width, door_height))
 
-    # lift the door 1cm off the wall's bottom edge (V is the .y margin) so its chamfered
-    # cutout stays inside the wall UV; below that sample_uv_surface returns origin verts
-    floor_lift = 0.01
-    geom, sill, lightblocker, door_aliases, _trim_edges = cutout_spaced_instances(
-        surface=wall,
-        instance=door,
-        surface_material=wall_material,
-        spacing=pf.Vector((spacing_x, 0, 0)),
-        margin_low=pf.Vector((margin_low_x, floor_lift, 0)),
-        margin_high=pf.Vector((margin_high_x, 0.0, 0)),
-        x_instances_max=2,
-        wall_thickness=reveal_depth,
-        recess_pct=recess_pct,
+    def cut_door(door: pf.MeshObject, top_profile_height: float) -> CutoutResult:
+        # centre the slab along the wall (Y); an off-centre along-wall origin lands it
+        # beside its hole. Use door_width, not the bbox, so the handle bump does not bias it
+        pf.ops.object.set_transform(door, location=(0.0, -door_width * 0.5, 0.0))
+        pf.ops.mesh.transform_apply(door)
+        # lift the door 1cm off the wall's bottom edge (V is the .y margin) so its
+        # chamfered cutout stays inside the wall UV; below that sample_uv_surface
+        # returns origin verts
+        floor_lift = 0.01
+        return cutout_spaced_instances(
+            surface=wall,
+            instance=door,
+            surface_material=wall_material,
+            spacing=pf.Vector((spacing_x, 0, 0)),
+            margin_low=pf.Vector((margin_low_x, floor_lift, 0)),
+            margin_high=pf.Vector((margin_high_x, 0.0, 0)),
+            x_instances_max=2,
+            wall_thickness=reveal_depth,
+            recess_pct=recess_pct,
+            top_profile_height=top_profile_height,
+        )
+
+    def rectangular_door(rng: pf.RNG) -> CutoutResult:
+        return cut_door(door_func(rng, dimensions=dimensions).mesh, 0.0)
+
+    def arched_door(rng: pf.RNG) -> CutoutResult:
+        rng_profile, rng_door = rng.spawn(2)
+        profile = window.top_rounded_profile_rand(rng_profile, dimensions)
+        door = door_glass_from_profile_rand(rng_door, profile)
+        return cut_door(door.mesh, profile.top_profile_height)
+
+    rng_shape_choice, _ = rng.spawn(2)
+    door_shape_func = pf.control.choice(
+        rng_shape_choice, [(rectangular_door, 0.9), (arched_door, 0.1)]
     )
+    geom, sill, lightblocker, door_aliases, _trim_edges = door_shape_func(rng)
     if not door_aliases:
         logger.warning(
             "door: grid fit 0 doors on %.2fm wall (door %.2f, spacing %.2f, "
@@ -857,7 +1041,7 @@ def wall_full_window_rand(
         return wall_plain_rand(rng, wall, wall_material, wall_thickness)
 
     win_dims = window.window_dimensions_rand(rng, width=target_w, height=target_h)
-    win_result = window.window_composite_rand(rng, dimensions=win_dims)
+    win_result = window.window_rectangular_composite_rand(rng, dimensions=win_dims)
     win_obj = win_result.mesh
     wall_offset = pf.Vector((0.0, win_dims.y * -0.5, 0.0))
     pf.ops.object.set_transform(win_obj, location=wall_offset)

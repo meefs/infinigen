@@ -96,6 +96,8 @@ def wall_arrangement_rand(
     wall: pf.MeshObject | None = None,
     window_obj: pf.MeshObject | None = None,
     window_portal: pf.LightObject | None = None,
+    top_profile_height: float = 0.0,
+    bottom_profile_height: float = 0.0,
     wall_material: pf.Material | None = None,
     window_spacing: float | None = None,
     window_bottom: float | None = None,
@@ -114,6 +116,8 @@ def wall_arrangement_rand(
             wall_material,
             window_obj=window_obj,
             window_portal=window_portal,
+            top_profile_height=top_profile_height,
+            bottom_profile_height=bottom_profile_height,
             window_spacing=window_spacing,
             window_bottom=window_bottom,
             wall_thickness=wall_thickness,
@@ -184,7 +188,7 @@ def room_walls_rand(
 ) -> WallResult:
     """Arrange `open_walls` and merge them with the `door` wall. Mounted features
     hitting earlier walls' decorations are dropped by each feature."""
-    rng_window, rng_walls = rng.spawn(2)
+    rng_window, rng_walls, rng_window_shape = rng.spawn(3)
 
     pf.ops.object.set_material(
         shape.walls,
@@ -212,7 +216,7 @@ def room_walls_rand(
         rng_window, width=window_width, height=window_height
     )
     window_result = window.window_composite_rand(
-        rng_window, dimensions=window_dimensions
+        rng_window_shape, dimensions=window_dimensions
     )
     window_obj = window_result.mesh
     window_portal = window_result.light
@@ -247,6 +251,8 @@ def room_walls_rand(
             wall,
             window_obj,
             window_portal,
+            top_profile_height=window_result.profile.top_profile_height,
+            bottom_profile_height=window_result.profile.bottom_profile_height,
             wall_material=material,
             window_spacing=window_spacing,
             window_bottom=window_bottom,

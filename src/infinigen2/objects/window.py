@@ -26,44 +26,369 @@ _WALL_REORIENT = (math.pi / 2, 0.0, math.pi / 2)
 
 __all__ = [
     "CurtainResult",
+    "WindowProfile",
     "WindowResult",
     "curtain",
     "curtain_rand",
+    "double_rounded_profile_rand",
+    "rectangular_profile",
+    "rounded_profile_rand",
+    "top_rounded_profile_rand",
     "window",
     "window_composite_rand",
+    "window_curved_rand",
     "window_dimensions_rand",
+    "window_from_profile_rand",
     "window_rand",
+    "window_rectangular_rand",
+    "window_rectangular_composite_rand",
 ]
 
 
+class _VerticalProfileExtents(NamedTuple):
+    top: pf.ProcNode[float]
+    bottom: pf.ProcNode[float]
+
+
+def _profile_quarter(width, height, profile_height, sign, start_angle, resolution):
+    arc = pf.nodes.geo.curve_arc(
+        resolution=resolution,
+        radius=1.0,
+        start_angle=start_angle,
+        sweep_angle=math.pi / 2,
+    )
+    return pf.nodes.geo.transform(
+        geometry=arc,
+        translation=pf.nodes.math.combine_xyz(y=(height * 0.5 - profile_height) * sign),
+        scale=pf.nodes.math.combine_xyz(x=width * 0.5, y=profile_height * sign, z=1.0),
+    )
+
+
 @pf.nodes.node_function
-def _line_seq(
+def _window_profile(
     width: t.SocketOrVal[float],
     height: t.SocketOrVal[float],
-    amount: t.SocketOrVal[float],
-) -> pf.ProcNode[t.Instances]:
-    curve_line_start_y = height * -0.5
-    curve_line_start = pf.nodes.math.combine_xyz(x=width * 0.5, y=curve_line_start_y)
-    curve_line_end = pf.nodes.math.combine_xyz(x=width * -0.5, y=curve_line_start_y)
-    curve_line = pf.nodes.geo.curve_line(start=curve_line_start, end=curve_line_end)
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
+    profile_resolution: t.SocketOrVal[int] = 5,
+) -> pf.ProcNode[pf.CurveObject]:
+    quarter = math.pi / 2
+    bottom_right = _profile_quarter(
+        width, height, bottom_profile_height, -1.0, 0.0, profile_resolution
+    )
+    top_right = _profile_quarter(
+        width, height, top_profile_height, 1.0, 0.0, profile_resolution
+    )
+    top_left = _profile_quarter(
+        width, height, top_profile_height, 1.0, quarter, profile_resolution
+    )
+    bottom_left = _profile_quarter(
+        width, height, bottom_profile_height, -1.0, quarter, profile_resolution
+    )
+    parts = [
+        pf.nodes.geo.reverse_curve(bottom_right),
+        top_right,
+        top_left,
+        pf.nodes.geo.reverse_curve(bottom_left),
+    ]
+    points = [pf.nodes.geo.curve_to_points_evaluated(curve=c).points for c in parts]
+    unique = pf.nodes.geo.merge_by_distance(
+        geometry=pf.nodes.geo.join_geometry(points), distance=1e-5
+    )
+    outline = pf.nodes.geo.points_to_curves(points=unique)
+    return pf.nodes.geo.set_spline_cyclic(curve=outline, cyclic=True)
 
-    to_instance = pf.nodes.geo.geometry_to_instance(curve_line)
 
-    duplicate_elements = pf.nodes.geo.duplicate_elements(
+@pf.nodes.node_function
+def _profile_vertical_extents(
+    width: t.SocketOrVal[float],
+    height: t.SocketOrVal[float],
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
+    x: t.SocketOrVal[float],
+) -> _VerticalProfileExtents:
+    across = x * 2.0 / width
+    inset = 1.0 - pf.nodes.math.sqrt(
+        pf.nodes.math.clamp(1.0 - across * across, 0.0, 1.0)
+    )
+    return _VerticalProfileExtents(
+        top=height * 0.5 - top_profile_height * inset,
+        bottom=height * -0.5 + bottom_profile_height * inset,
+    )
+
+
+@pf.nodes.node_function
+def _profile_half_width(
+    width: t.SocketOrVal[float],
+    height: t.SocketOrVal[float],
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
+    y: t.SocketOrVal[float],
+) -> pf.ProcNode[float]:
+    over_top = pf.nodes.math.maximum(
+        y - (height * 0.5 - top_profile_height), 0.0
+    ) / pf.nodes.math.maximum(top_profile_height, 1e-9)
+    over_bottom = pf.nodes.math.maximum(
+        (height * -0.5 + bottom_profile_height) - y, 0.0
+    ) / pf.nodes.math.maximum(bottom_profile_height, 1e-9)
+    over = pf.nodes.math.maximum(over_top, over_bottom)
+    return (
+        width
+        * 0.5
+        * pf.nodes.math.sqrt(pf.nodes.math.clamp(1.0 - over * over, 0.0, 1.0))
+    )
+
+
+@pf.nodes.node_function
+def _profile_beams(
+    instances: pf.ProcNode,
+    scale: t.SocketOrVal[pf.Vector],
+    translation: t.SocketOrVal[pf.Vector],
+) -> pf.ProcNode:
+    scaled = pf.nodes.geo.scale_instances(instances=instances, scale=scale)
+    return pf.nodes.geo.translate_instances(
+        instances=scaled, translation=translation, local_space=False
+    )
+
+
+def _unit_instance():
+    return pf.nodes.geo.geometry_to_instance(mesh_util.box(size=(1.0, 1.0, 1.0)))
+
+
+def _duplicate_index(duplicates):
+    return duplicates.duplicate_index.astype(dtype=float) + 1.0
+
+
+def _vertical_beams(
+    duplicates,
+    x,
+    width,
+    height,
+    top_profile_height,
+    bottom_profile_height,
+    frame_width,
+    frame_thickness,
+):
+    extents = _profile_vertical_extents(
+        width=width,
+        height=height,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
+        x=x,
+    )
+    return _profile_beams(
+        instances=duplicates,
+        scale=pf.nodes.math.combine_xyz(
+            x=frame_width, y=extents.top - extents.bottom, z=frame_thickness
+        ),
+        translation=pf.nodes.math.combine_xyz(
+            x=x, y=(extents.top + extents.bottom) * 0.5
+        ),
+    )
+
+
+def _horizontal_beams(
+    duplicates,
+    y,
+    width,
+    height,
+    top_profile_height,
+    bottom_profile_height,
+    frame_width,
+    frame_thickness,
+):
+    half_width = _profile_half_width(
+        width=width,
+        height=height,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
+        y=y,
+    )
+    return _profile_beams(
+        instances=duplicates,
+        scale=pf.nodes.math.combine_xyz(
+            x=half_width * 2.0, y=frame_width, z=frame_thickness
+        ),
+        translation=pf.nodes.math.combine_xyz(y=y),
+    )
+
+
+@pf.nodes.node_function
+def _profile_frame(
+    outline: pf.ProcNode,
+    frame_width: t.SocketOrVal[float],
+    frame_thickness: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    position = pf.nodes.geo.input_position()
+    tangent = pf.nodes.geo.input_tangent()
+    previous = pf.nodes.geo.offset_point_in_curve(
+        point_index=pf.nodes.geo.input_index(), offset=-1
+    )
+    previous_position = pf.nodes.geo.sample_index(
+        geometry=outline,
+        index=previous.point_index,
+        value=position,
+        data_type=pf.nodes.NodeDataType.FLOAT_VECTOR,
+    )
+    incoming = pf.nodes.math.vector_normalize(position - previous_position)
+    # miter radius keeps width exact at corners; it also scales depth, so reset z
+    miter = 1.0 / pf.nodes.math.vector_dot_product(incoming, tangent)
+    mitered = pf.nodes.geo.set_curve_radius(curve=outline, radius=miter)
+    profile = pf.nodes.geo.curve_quadrilateral(
+        width=frame_width,
+        height=frame_thickness,
+    )
+    mesh = pf.nodes.geo.curve_to_mesh(curve=mitered, profile_curve=profile)
+    flat_depth = pf.nodes.math.combine_xyz(
+        x=position.x,
+        y=position.y,
+        z=pf.nodes.math.sign(position.z) * frame_thickness * 0.5,
+    )
+    return pf.nodes.geo.set_position(geometry=mesh, position=flat_depth)
+
+
+@pf.nodes.node_function
+def _profile_grid(
+    width: t.SocketOrVal[float],
+    height: t.SocketOrVal[float],
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
+    frame_width: t.SocketOrVal[float],
+    frame_thickness: t.SocketOrVal[float],
+    panel_h_amount: t.SocketOrVal[int],
+    panel_v_amount: t.SocketOrVal[int],
+) -> pf.ProcNode[pf.MeshObject]:
+    unit = _unit_instance()
+
+    vertical = pf.nodes.geo.duplicate_elements(
+        geometry=unit,
+        amount=(panel_v_amount.astype(dtype=float) - 1.0).astype(dtype=int),
         domain="INSTANCE",
-        geometry=to_instance,
-        amount=amount.astype(dtype=int),
+    )
+    x = width * -0.5 + _duplicate_index(vertical) * width / panel_v_amount.astype(
+        dtype=float
+    )
+    vertical_instances = _vertical_beams(
+        vertical.geometry,
+        x,
+        width,
+        height,
+        top_profile_height,
+        bottom_profile_height,
+        frame_width,
+        frame_thickness,
     )
 
-    offset_y_1 = duplicate_elements.duplicate_index.astype(dtype=float) + 1.0
-    offset_y_0 = height / (amount + 1.0)
-    offset = pf.nodes.math.combine_xyz(y=offset_y_1 * offset_y_0)
-
-    set_position = pf.nodes.geo.set_position(
-        geometry=duplicate_elements.geometry,
-        offset=offset,
+    horizontal = pf.nodes.geo.duplicate_elements(
+        geometry=unit,
+        amount=(panel_h_amount.astype(dtype=float) - 1.0).astype(dtype=int),
+        domain="INSTANCE",
     )
-    return set_position
+    y = height * -0.5 + _duplicate_index(horizontal) * height / panel_h_amount.astype(
+        dtype=float
+    )
+    horizontal_instances = _horizontal_beams(
+        horizontal.geometry,
+        y,
+        width,
+        height,
+        top_profile_height,
+        bottom_profile_height,
+        frame_width,
+        frame_thickness,
+    )
+    return pf.nodes.geo.realize_instances(
+        pf.nodes.geo.join_geometry([vertical_instances, horizontal_instances])
+    )
+
+
+@pf.nodes.node_function
+def _profile_sashes(
+    outline: pf.ProcNode,
+    outer_width: t.SocketOrVal[float],
+    outer_height: t.SocketOrVal[float],
+    inner_width: t.SocketOrVal[float],
+    inner_height: t.SocketOrVal[float],
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
+    inset: t.SocketOrVal[float],
+    frame_width: t.SocketOrVal[float],
+    frame_thickness: t.SocketOrVal[float],
+    panel_h_amount: t.SocketOrVal[int],
+    panel_v_amount: t.SocketOrVal[int],
+    sub_panel_h_amount: t.SocketOrVal[int],
+    sub_panel_v_amount: t.SocketOrVal[int],
+) -> pf.ProcNode[pf.MeshObject]:
+    unit = _unit_instance()
+
+    vertical_per_cell = sub_panel_v_amount.astype(dtype=float) + 1.0
+    vertical = pf.nodes.geo.duplicate_elements(
+        geometry=unit,
+        amount=(panel_v_amount.astype(dtype=float) * vertical_per_cell - 2.0).astype(
+            dtype=int
+        ),
+        domain="INSTANCE",
+    )
+    vertical_index = _duplicate_index(vertical)
+    column = pf.nodes.math.floor(vertical_index / vertical_per_cell)
+    column_index = vertical_index % vertical_per_cell
+    cell_width = outer_width / panel_v_amount.astype(dtype=float)
+    sash_width = cell_width - inset * 2.0
+    x = (
+        outer_width * -0.5
+        + column * cell_width
+        + inset
+        + column_index * sash_width / sub_panel_v_amount.astype(dtype=float)
+    )
+    vertical_instances = _vertical_beams(
+        vertical.geometry,
+        x,
+        inner_width,
+        inner_height,
+        top_profile_height,
+        bottom_profile_height,
+        frame_width,
+        frame_thickness,
+    )
+
+    horizontal_per_cell = sub_panel_h_amount.astype(dtype=float) + 1.0
+    horizontal = pf.nodes.geo.duplicate_elements(
+        geometry=unit,
+        amount=(panel_h_amount.astype(dtype=float) * horizontal_per_cell - 2.0).astype(
+            dtype=int
+        ),
+        domain="INSTANCE",
+    )
+    horizontal_index = _duplicate_index(horizontal)
+    row = pf.nodes.math.floor(horizontal_index / horizontal_per_cell)
+    row_index = horizontal_index % horizontal_per_cell
+    cell_height = outer_height / panel_h_amount.astype(dtype=float)
+    sash_height = cell_height - inset * 2.0
+    y = (
+        outer_height * -0.5
+        + row * cell_height
+        + inset
+        + row_index * sash_height / sub_panel_h_amount.astype(dtype=float)
+    )
+    horizontal_instances = _horizontal_beams(
+        horizontal.geometry,
+        y,
+        inner_width,
+        inner_height,
+        top_profile_height,
+        bottom_profile_height,
+        frame_width,
+        frame_thickness,
+    )
+
+    frame = _profile_frame(
+        outline=outline,
+        frame_width=frame_width,
+        frame_thickness=frame_thickness,
+    )
+    return pf.nodes.geo.realize_instances(
+        pf.nodes.geo.join_geometry([frame, vertical_instances, horizontal_instances])
+    )
 
 
 @pf.nodes.node_function
@@ -201,18 +526,7 @@ def _curtain_geometry(
         material=curtain_frame_material,
     )
 
-    sharp = pf.nodes.geo.input_mesh_edge_angle().unsigned_angle > 0.5
-    boundary = pf.nodes.func.equal(a=pf.nodes.geo.input_mesh_edge_neighbors(), b=1)
-    curtain_edge = pf.nodes.func.boolean_or(a=sharp, b=boundary)
-    creased = pf.nodes.geo.store_named_attribute(
-        geometry=boolean.mesh,
-        name="crease_edge",
-        value=1.0,
-        domain="EDGE",
-        selection=curtain_edge,
-    )
-
-    join_3 = pf.nodes.geo.join_geometry([creased, set_material_1])
+    join_3 = pf.nodes.geo.join_geometry([boolean.mesh, set_material_1])
 
     # rail circles tessellate at ~11 deg, so 60 catches only the hem's 90 deg corners
     creased = mesh_util.crease_sharp(join_3, threshold_degrees=60.0)
@@ -404,11 +718,7 @@ def _window_shutter(
         pivot_point=(0, 0, 0),
     )
 
-    frame_curve_width = width - frame_width
-    frame_curve_height = height - frame_width
-    curve_quadrilateral = pf.nodes.geo.curve_quadrilateral(
-        width=frame_curve_width, height=frame_curve_height
-    )
+    curve_quadrilateral = pf.nodes.geo.curve_quadrilateral(width=width, height=height)
     curve_b = pf.nodes.math.sqrt(2.0)
     curve_quadrilateral_1 = pf.nodes.geo.curve_quadrilateral(
         width=frame_width * curve_b,
@@ -432,99 +742,55 @@ def _window_shutter(
     return realize_instances
 
 
-@pf.nodes.node_function
-def _window_panel(
-    width: t.SocketOrVal[float],
-    height: t.SocketOrVal[float],
-    frame_width: t.SocketOrVal[float],
-    frame_thickness: t.SocketOrVal[float],
-    panel_width: t.SocketOrVal[float],
-    panel_thickness: t.SocketOrVal[float],
-    profile_clearance: t.SocketOrVal[float],
-    panel_h_amount: t.SocketOrVal[int],
-    panel_v_amount: t.SocketOrVal[int],
-    frame_material: t.SocketOrVal[pf.Material],
-) -> pf.ProcNode[pf.MeshObject]:
-    line_seq_result = _line_seq(
-        width=height - frame_width,
-        height=width,
-        amount=panel_v_amount.astype(dtype=float) + -1.0,
-    )
-
-    transform = pf.nodes.geo.transform(
-        geometry=line_seq_result,
-        rotation=(0.0, 0.0, 1.5708),
-        translation=(0, 0, 0),
-        scale=(1, 1, 1),
-    )
-
-    curve_quadrilateral_1_height = panel_thickness - profile_clearance
-    curve_quadrilateral = pf.nodes.geo.curve_quadrilateral(
-        width=panel_width,
-        height=curve_quadrilateral_1_height - profile_clearance,
-    )
-    curve_to = pf.nodes.geo.curve_to_mesh(
-        curve=transform, profile_curve=curve_quadrilateral
-    )
-
-    line_seq_result_1 = _line_seq(
-        width=width - frame_width,
-        height=height,
-        amount=panel_h_amount.astype(dtype=float) + -1.0,
-    )
-
-    curve_quadrilateral_1 = pf.nodes.geo.curve_quadrilateral(
-        width=panel_width,
-        height=curve_quadrilateral_1_height,
-    )
-    curve_to_1 = pf.nodes.geo.curve_to_mesh(
-        curve=line_seq_result_1,
-        profile_curve=curve_quadrilateral_1,
-    )
-
-    join = pf.nodes.geo.join_geometry([curve_to, curve_to_1])
-
-    frame_curve_width = width - frame_width
-    frame_curve_height = height - frame_width
-    curve_quadrilateral_2 = pf.nodes.geo.curve_quadrilateral(
-        width=frame_curve_width, height=frame_curve_height
-    )
-    curve_b = pf.nodes.math.sqrt(2.0)
-    curve_quadrilateral_3 = pf.nodes.geo.curve_quadrilateral(
-        width=frame_width * curve_b,
-        height=frame_thickness,
-    )
-    curve_to_2 = pf.nodes.geo.curve_to_mesh(
-        curve=curve_quadrilateral_2,
-        profile_curve=curve_quadrilateral_3,
-    )
-
-    join_1 = pf.nodes.geo.join_geometry([join, curve_to_2])
-
-    set_material = pf.nodes.geo.set_material(
-        geometry=join_1, selection=True, material=frame_material
-    )
-
-    set_shade_smooth = pf.nodes.geo.set_shade_smooth(
-        geometry=set_material, shade_smooth=False
-    )
-    return set_shade_smooth
-
-
 class _WindowGeometryResult(NamedTuple):
     geometry: pf.ProcNode[pf.MeshObject]
     bounding_box: pf.ProcNode[pf.MeshObject]
 
 
+class WindowProfile(NamedTuple):
+    dimensions: pf.Vector
+    top_profile_height: float
+    bottom_profile_height: float
+
+
 class WindowResult(NamedTuple):
     mesh: pf.MeshObject
     light: pf.LightObject | None
+    profile: WindowProfile
+
+
+def rectangular_profile(dimensions: pf.Vector) -> WindowProfile:
+    return WindowProfile(dimensions.copy(), 0.0, 0.0)
+
+
+def top_rounded_profile_rand(rng: pf.RNG, dimensions: pf.Vector) -> WindowProfile:
+    height = dimensions.z * pf.random.uniform(rng, 0.2, 0.4)
+    return WindowProfile(dimensions.copy(), height, 0.0)
+
+
+def double_rounded_profile_rand(rng: pf.RNG, dimensions: pf.Vector) -> WindowProfile:
+    height = dimensions.z * pf.random.uniform(rng, 0.35, 0.45)
+    return WindowProfile(dimensions.copy(), height, height)
+
+
+def rounded_profile_rand(rng: pf.RNG, dimensions: pf.Vector) -> WindowProfile:
+    rng_choice, rng_build = rng.spawn(2)
+    profile_fn = pf.control.choice(
+        rng_choice,
+        [
+            (top_rounded_profile_rand, 0.8),
+            (double_rounded_profile_rand, 0.2),
+        ],
+    )
+    return profile_fn(rng_build, dimensions)
 
 
 @pf.nodes.node_function
 def _window_geometry(
     width: t.SocketOrVal[float],
     height: t.SocketOrVal[float],
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
     frame_width: t.SocketOrVal[float],
     frame_thickness: t.SocketOrVal[float],
     panel_h_amount: t.SocketOrVal[int],
@@ -533,11 +799,6 @@ def _window_geometry(
     sub_frame_thickness: t.SocketOrVal[float],
     sub_panel_h_amount: t.SocketOrVal[int],
     sub_panel_v_amount: t.SocketOrVal[int],
-    profile_clearance: t.SocketOrVal[float],
-    open_h_angle: t.SocketOrVal[float],
-    open_v_angle: t.SocketOrVal[float],
-    open_offset: t.SocketOrVal[float],
-    oe_offset: t.SocketOrVal[float],
     shutter: t.SocketOrVal[bool],
     shutter_panel_radius: t.SocketOrVal[float],
     shutter_width: t.SocketOrVal[float],
@@ -546,31 +807,69 @@ def _window_geometry(
     shutter_interval: t.SocketOrVal[float],
     frame_material: t.SocketOrVal[pf.Material],
 ) -> _WindowGeometryResult:
-    rotate_b_3 = frame_width * panel_v_amount.astype(dtype=float)
-    rotate_b_a = (width - rotate_b_3) / panel_v_amount.astype(dtype=float)
+    width = width - frame_width
+    height = height - frame_width
+    top_profile_height = pf.nodes.math.maximum(
+        top_profile_height - frame_width * 0.5, 0.0
+    )
+    bottom_profile_height = pf.nodes.math.maximum(
+        bottom_profile_height - frame_width * 0.5, 0.0
+    )
+    outline = _window_profile(
+        width=width,
+        height=height,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
+    )
+    outer_frame = _profile_frame(
+        outline=outline,
+        frame_width=frame_width,
+        frame_thickness=frame_thickness,
+    )
+    primary_grid = _profile_grid(
+        width=width,
+        height=height,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
+        frame_width=frame_width,
+        frame_thickness=frame_thickness,
+        panel_h_amount=panel_h_amount,
+        panel_v_amount=panel_v_amount,
+    )
 
-    transform_a_width = rotate_b_a - sub_frame_width
-
-    rotate_numerator = frame_width * panel_h_amount.astype(dtype=float)
-    rotate_y_a_a = (height - rotate_numerator) / panel_h_amount.astype(dtype=float)
-
-    transform_a_height = rotate_y_a_a - sub_frame_width
-
-    window_panel_result = _window_panel(
-        width=transform_a_width,
-        height=transform_a_height,
+    sash_inset = (frame_width + sub_frame_width) * 0.5
+    inner_width = width - sash_inset * 2.0
+    inner_height = height - sash_inset * 2.0
+    inner_outline = _window_profile(
+        width=inner_width,
+        height=inner_height,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
+    )
+    sashes = _profile_sashes(
+        outline=inner_outline,
+        outer_width=width,
+        outer_height=height,
+        inner_width=inner_width,
+        inner_height=inner_height,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
+        inset=sash_inset,
         frame_width=sub_frame_width,
         frame_thickness=sub_frame_thickness,
-        panel_width=sub_frame_width,
-        panel_thickness=sub_frame_thickness,
-        profile_clearance=profile_clearance,
-        panel_h_amount=sub_panel_h_amount,
-        panel_v_amount=sub_panel_v_amount,
-        frame_material=frame_material,
+        panel_h_amount=panel_h_amount,
+        panel_v_amount=panel_v_amount,
+        sub_panel_h_amount=sub_panel_h_amount,
+        sub_panel_v_amount=sub_panel_v_amount,
     )
-    window_shutter_result = _window_shutter(
-        width=transform_a_width,
-        height=transform_a_height,
+
+    panel_v_float = panel_v_amount.astype(dtype=float)
+    panel_h_float = panel_h_amount.astype(dtype=float)
+    panel_width = (width - frame_width * panel_v_float) / panel_v_float
+    panel_height = (height - frame_width * panel_h_float) / panel_h_float
+    shutter_panel = _window_shutter(
+        width=panel_width - sub_frame_width,
+        height=panel_height - sub_frame_width,
         frame_width=frame_width,
         frame_thickness=frame_thickness,
         panel_width=shutter_panel_radius,
@@ -581,106 +880,39 @@ def _window_geometry(
         shutter_rotation=shutter_rotation,
         frame_material=frame_material,
     )
-
-    transform_geometry = pf.nodes.func.switch(
-        switch=shutter, a=window_panel_result, b=window_shutter_result
-    )
-
-    rotate_a_1 = width * -0.5
-
-    transform_translation_x = width / panel_v_amount.astype(dtype=float) * 0.5
-
-    rotate_a_0 = height * -0.5
-
-    transform_translation_y = height / panel_h_amount.astype(dtype=float) * 0.5
-    transform_translation = pf.nodes.math.combine_xyz(
-        x=rotate_a_1 + transform_translation_x,
-        y=rotate_a_0 + transform_translation_y,
-    )
-    transform = pf.nodes.geo.transform(
-        geometry=transform_geometry,
-        translation=transform_translation,
-        rotation=(0, 0, 0),
-        scale=(1, 1, 1),
-    )
-
-    to_instance = pf.nodes.geo.geometry_to_instance(transform)
-
-    set_position_amount = panel_h_amount.astype(dtype=float) * panel_v_amount.astype(
-        dtype=float
-    )
-
-    duplicate_elements = pf.nodes.geo.duplicate_elements(
+    shutter_instance = pf.nodes.geo.geometry_to_instance(shutter_panel)
+    shutter_panels = pf.nodes.geo.duplicate_elements(
         domain="INSTANCE",
-        geometry=to_instance,
-        amount=set_position_amount.astype(dtype=int),
+        geometry=shutter_instance,
+        amount=(panel_h_float * panel_v_float).astype(dtype=int),
     )
-    set_x_exponent = pf.nodes.math.floor(
-        duplicate_elements.duplicate_index.astype(dtype=float)
-        / panel_h_amount.astype(dtype=float)
-    )
-    set_b_0 = rotate_b_a + frame_width
-
-    rotate_y_a = rotate_y_a_a + frame_width
-
-    set_position_offset_y = (
-        duplicate_elements.duplicate_index.astype(dtype=float)
-        % panel_h_amount.astype(dtype=float)
-        * rotate_y_a
-    )
-    set_a = pf.nodes.math.power(base=-1.0, exponent=set_x_exponent)
-    set_position_offset = pf.nodes.math.combine_xyz(
-        x=set_x_exponent * set_b_0,
-        y=set_position_offset_y,
-        z=set_a * oe_offset,
-    )
-    set_position = pf.nodes.geo.set_position(
-        geometry=duplicate_elements.geometry,
-        offset=set_position_offset,
+    shutter_index = shutter_panels.duplicate_index.astype(dtype=float)
+    column = pf.nodes.math.floor(shutter_index / panel_h_float)
+    row = shutter_index % panel_h_float
+    shutter_x = width * -0.5 + width / panel_v_float * (column + 0.5)
+    shutter_y = height * -0.5 + height / panel_h_float * (row + 0.5)
+    shutter_panels = pf.nodes.geo.translate_instances(
+        instances=shutter_panels.geometry,
+        translation=pf.nodes.math.combine_xyz(x=shutter_x, y=shutter_y),
+        local_space=False,
     )
 
-    rotate_b_2 = pf.nodes.math.power(base=-1.0, exponent=set_x_exponent)
-    rotate_instances_rotation = pf.nodes.math.combine_xyz(y=open_v_angle * rotate_b_2)
-    rotate_b_1 = rotate_b_a * (set_x_exponent % 2.0)
-    rotate_b_0 = rotate_y_a_a * (set_position_offset_y % 2.0)
-    rotate_instances_pivot_point = pf.nodes.math.combine_xyz(
-        x=rotate_a_1 + rotate_b_1, y=rotate_a_0 + rotate_b_0
+    details = pf.nodes.func.switch(
+        switch=shutter,
+        a=sashes,
+        b=shutter_panels,
     )
-    rotate_instances = pf.nodes.geo.rotate_instances(
-        instances=set_position,
-        rotation=rotate_instances_rotation.astype(dtype=pf.Euler),
-        pivot_point=rotate_instances_pivot_point,
+    joined = pf.nodes.geo.join_geometry([outer_frame, primary_grid, details])
+    realized = cast(
+        pf.ProcNode[pf.MeshObject],
+        pf.nodes.geo.realize_instances(joined),
     )
-    rotate = pf.nodes.math.combine_xyz(open_h_angle * 0.5)
-    rotate_instances_1_pivot_point = pf.nodes.math.combine_xyz(y=rotate_y_a * -1.0)
-    rotate_instances_1 = pf.nodes.geo.rotate_instances(
-        instances=rotate_instances,
-        rotation=rotate.astype(dtype=pf.Euler),
-        pivot_point=rotate_instances_1_pivot_point,
+    realized = pf.nodes.geo.set_material(
+        geometry=realized,
+        selection=True,
+        material=frame_material,
     )
 
-    set_x_0 = pf.nodes.math.power(base=-1.0, exponent=set_x_exponent)
-    set_position_1_offset = pf.nodes.math.combine_xyz(set_x_0 * open_offset)
-    set_position_1 = pf.nodes.geo.set_position(
-        geometry=rotate_instances_1, offset=set_position_1_offset
-    )
-
-    window_panel_result_1 = _window_panel(
-        width=width,
-        height=height,
-        frame_width=frame_width,
-        frame_thickness=frame_thickness,
-        panel_width=frame_width,
-        panel_thickness=frame_thickness,
-        profile_clearance=profile_clearance,
-        panel_h_amount=panel_h_amount,
-        panel_v_amount=panel_v_amount,
-        frame_material=frame_material,
-    )
-
-    join = pf.nodes.geo.join_geometry([set_position_1, window_panel_result_1])
-
-    realized = cast(pf.ProcNode[pf.MeshObject], pf.nodes.geo.realize_instances(join))
     creased = pf.nodes.geo.store_named_attribute(
         domain="EDGE",
         geometry=realized,
@@ -704,21 +936,33 @@ def _window_geometry(
 def _glass_pane(
     width: t.SocketOrVal[float],
     height: t.SocketOrVal[float],
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
     material: t.SocketOrVal[pf.Material],
 ) -> pf.ProcNode[pf.MeshObject]:
-    curve = pf.nodes.geo.curve_line(
-        start=pf.nodes.math.combine_xyz(y=height * -0.5),
-        end=pf.nodes.math.combine_xyz(y=height * 0.5),
+    outline = _window_profile(
+        width=width,
+        height=height,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
     )
-    profile = pf.nodes.geo.curve_line(
-        start=pf.nodes.math.combine_xyz(x=width * -0.5),
-        end=pf.nodes.math.combine_xyz(x=width * 0.5),
+    mesh = pf.nodes.geo.fill_curve(curve=outline, mode="NGONS")
+    position = pf.nodes.geo.input_position()
+    uv = pf.nodes.math.combine_xyz(
+        x=position.x + width * 0.5,
+        y=position.y + height * 0.5,
     )
-    mesh = curve_to_mesh_with_uv(curve=curve, profile=profile)
+    mesh = pf.nodes.geo.store_named_attribute(
+        geometry=mesh,
+        name="UVMap",
+        value=uv,
+        domain="CORNER",
+        data_type=pf.nodes.NodeDataType.FLOAT_VECTOR_2D,
+    )
     # uncreased, the frame's boundary_smooth=ALL subsurf rounds the pane inwards
     creased = pf.nodes.geo.store_named_attribute(
         domain="EDGE",
-        geometry=mesh.mesh,
+        geometry=mesh,
         name="crease_edge",
         value=1.0,
     )
@@ -726,6 +970,89 @@ def _glass_pane(
         geometry=creased, selection=True, material=material
     )
     return pf.nodes.geo.transform(geometry=glass, rotation=_WALL_REORIENT)
+
+
+def _window_build(
+    profile: WindowProfile,
+    frame_width: float,
+    panel_h_amount: int,
+    panel_v_amount: int,
+    sub_frame_width: float,
+    sub_frame_thickness: float,
+    sub_panel_h_amount: int,
+    sub_panel_v_amount: int,
+    shutter: bool,
+    shutter_panel_radius: float,
+    shutter_width: float,
+    shutter_thickness: float,
+    shutter_rotation: float,
+    shutter_interval: float,
+    frame_material: pf.Material | None,
+    glass_material: pf.Material | None,
+    include_glass_pane: bool,
+    include_portal: bool,
+) -> WindowResult:
+    if frame_material is None:
+        frame_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
+    if glass_material is None:
+        glass_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
+
+    dimensions = profile.dimensions
+    res = _window_geometry(
+        width=dimensions.y,
+        height=dimensions.z,
+        top_profile_height=profile.top_profile_height,
+        bottom_profile_height=profile.bottom_profile_height,
+        frame_width=frame_width,
+        frame_thickness=dimensions.x,
+        panel_h_amount=panel_h_amount,
+        panel_v_amount=panel_v_amount,
+        sub_frame_width=sub_frame_width,
+        sub_frame_thickness=sub_frame_thickness,
+        sub_panel_h_amount=sub_panel_h_amount,
+        sub_panel_v_amount=sub_panel_v_amount,
+        shutter=shutter,
+        shutter_panel_radius=shutter_panel_radius,
+        shutter_width=shutter_width,
+        shutter_thickness=shutter_thickness,
+        shutter_rotation=shutter_rotation,
+        shutter_interval=shutter_interval,
+        frame_material=frame_material,
+    )
+    frame_obj = pf.nodes.to_mesh_object(res.geometry)
+    pf.ops.uv.cube_project(frame_obj, uv_name="UVMap")
+
+    if include_glass_pane:
+        pane = _glass_pane(
+            width=dimensions.y,
+            height=dimensions.z,
+            top_profile_height=profile.top_profile_height,
+            bottom_profile_height=profile.bottom_profile_height,
+            material=glass_material,
+        )
+        pf.ops.object.join(frame_obj, pf.nodes.to_mesh_object(pane))
+
+    origin_offset = dimensions * 0.5
+    pf.ops.object.set_transform(frame_obj, location=origin_offset)
+    pf.ops.mesh.transform_apply(frame_obj)
+
+    portal_light = None
+    if include_portal:
+        portal_light = pf.ops.primitives.light.area_lamp(
+            shape="RECTANGLE",
+            size_x=dimensions.y,
+            size_y=dimensions.z,
+            energy=0.0,
+            portal=True,
+        )
+        reorient = Euler(_WALL_REORIENT).to_matrix()
+        flip = Euler((np.pi, 0.0, 0.0)).to_matrix()
+        pf.ops.object.set_transform(
+            portal_light,
+            location=origin_offset,
+            rotation_euler=tuple((reorient @ flip).to_euler()),
+        )
+    return WindowResult(mesh=frame_obj, light=portal_light, profile=profile)
 
 
 def window(
@@ -747,32 +1074,21 @@ def window(
     glass_material: pf.Material | None = None,
     include_glass_pane: bool = True,
     include_portal: bool = True,
+    top_profile_height: float = 0.0,
+    bottom_profile_height: float = 0.0,
 ) -> WindowResult:
     if dimensions is None:
         dimensions = pf.Vector((0.085, 2.5, 2.5))
-    if frame_material is None:
-        frame_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-    if glass_material is None:
-        glass_material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-
-    detail_scale = min(dimensions.y, dimensions.z, 1.0)
-
-    res = _window_geometry(
-        width=dimensions.y,
-        height=dimensions.z,
+    profile = WindowProfile(dimensions, top_profile_height, bottom_profile_height)
+    return _window_build(
+        profile=profile,
         frame_width=frame_width,
-        frame_thickness=dimensions.x,
         panel_h_amount=panel_h_amount,
         panel_v_amount=panel_v_amount,
         sub_frame_width=sub_frame_width,
         sub_frame_thickness=sub_frame_thickness,
         sub_panel_h_amount=sub_panel_h_amount,
         sub_panel_v_amount=sub_panel_v_amount,
-        profile_clearance=0.001 * detail_scale,
-        open_h_angle=0.0,
-        open_v_angle=0.0,
-        open_offset=0.0,
-        oe_offset=0.0,
         shutter=shutter,
         shutter_panel_radius=shutter_panel_radius,
         shutter_width=shutter_width,
@@ -780,63 +1096,24 @@ def window(
         shutter_rotation=shutter_rotation,
         shutter_interval=shutter_interval,
         frame_material=frame_material,
+        glass_material=glass_material,
+        include_glass_pane=include_glass_pane,
+        include_portal=include_portal,
     )
 
-    frame_obj = pf.nodes.to_mesh_object(res.geometry)
-    pf.ops.uv.cube_project(frame_obj, uv_name="UVMap")
 
-    if include_glass_pane:
-        pane_obj = pf.nodes.to_mesh_object(
-            _glass_pane(
-                width=dimensions.y,
-                height=dimensions.z,
-                material=glass_material,
-            )
-        )
-        pf.ops.object.join(frame_obj, pane_obj)
-
-    origin_offset = pf.Vector(
-        (sub_frame_thickness * 0.5, dimensions.y * 0.5, dimensions.z * 0.5)
-    )
-    pf.ops.object.set_transform(frame_obj, location=origin_offset)
-    pf.ops.mesh.transform_apply(frame_obj)
-
-    portal_light = None
-    if include_portal:
-        portal_light = pf.ops.primitives.light.area_lamp(
-            shape="RECTANGLE",
-            size_x=dimensions.y,
-            size_y=dimensions.z,
-            energy=0.0,
-            portal=True,
-        )
-        pf.ops.object.set_transform(
-            portal_light,
-            location=origin_offset,
-            rotation_euler=(np.pi, 0, 0),
-        )
-
-    return WindowResult(mesh=frame_obj, light=portal_light)
-
-
-def window_rand(
-    rng: pf.RNG,
-    dimensions: pf.Vector | None = None,
-    frame_material: pf.Material | None = None,
-    glass_material: pf.Material | None = None,
-    include_glass_pane: bool = True,
-    include_portal: bool = True,
+def _window_build_rand(
+    rng_param: pf.RNG,
+    rng_frame: pf.RNG,
+    rng_glass: pf.RNG,
+    profile: WindowProfile,
+    shutter: bool,
+    frame_material: pf.Material | None,
+    glass_material: pf.Material | None,
+    include_glass_pane: bool,
+    include_portal: bool,
 ) -> WindowResult:
-    (
-        rng_param,
-        rng_dim,
-        rng_frame,
-        rng_glass,
-    ) = rng.spawn(4)
-
-    if dimensions is None:
-        dimensions = window_dimensions_rand(rng_dim)
-
+    dimensions = profile.dimensions
     detail_scale = min(dimensions.y, dimensions.z, 1.0)
 
     frame_thickness = dimensions.x
@@ -869,15 +1146,12 @@ def window_rand(
     # Sub-panel counts - compute target sub-panel size, can be full panel (no dividers)
     target_panel_size_pct = pf.random.clip_gaussian(rng_param, 0.7, 0.5, 0.2, 1.2)
     target_subpanel_width = actual_panel_width * target_panel_size_pct
-
     subpanel_aspect = pf.random.uniform(rng_param, 0.5, 2.0)
     target_subpanel_height = target_subpanel_width * subpanel_aspect
     sub_frame_v_amount = max(1, math.floor(actual_panel_width / target_subpanel_width))
     sub_frame_h_amount = max(
         1, math.floor(actual_panel_height / target_subpanel_height)
     )
-
-    shutter = pf.control.choice(rng_param, [(True, 0.2), (False, 0.8)])
 
     shutter_panel_radius = detail_scale * pf.random.uniform(rng_param, 0.001, 0.003)
     shutter_width = detail_scale * pf.random.uniform(rng_param, 0.03, 0.05)
@@ -891,22 +1165,15 @@ def window_rand(
     if glass_material is None:
         glass_material = glass_material_rand(rng_glass, vec, glass_height=dimensions.z)
 
-    res = _window_geometry(
-        width=dimensions.y,
-        height=dimensions.z,
+    return _window_build(
+        profile=profile,
         frame_width=frame_width,
-        frame_thickness=frame_thickness,
         panel_h_amount=panel_h_amount,
         panel_v_amount=panel_v_amount,
         sub_frame_width=sub_frame_width,
         sub_frame_thickness=sub_frame_thickness,
         sub_panel_h_amount=sub_frame_h_amount,
         sub_panel_v_amount=sub_frame_v_amount,
-        profile_clearance=0.001 * detail_scale,
-        open_h_angle=0.0,
-        open_v_angle=0.0,
-        open_offset=0.0,
-        oe_offset=0.0,
         shutter=shutter,
         shutter_panel_radius=shutter_panel_radius,
         shutter_width=shutter_width,
@@ -914,46 +1181,129 @@ def window_rand(
         shutter_rotation=shutter_rotation,
         shutter_interval=shutter_interval,
         frame_material=frame_material,
+        glass_material=glass_material,
+        include_glass_pane=include_glass_pane,
+        include_portal=include_portal,
     )
 
-    frame_obj = pf.nodes.to_mesh_object(res.geometry)
-    pf.ops.uv.cube_project(frame_obj, uv_name="UVMap")
 
-    if include_glass_pane:
-        pane_obj = pf.nodes.to_mesh_object(
-            _glass_pane(
-                width=dimensions.y,
-                height=dimensions.z,
-                material=glass_material,
-            )
-        )
-        pf.ops.object.join(frame_obj, pane_obj)
-
-    origin_offset = dimensions * 0.5
-    pf.ops.object.set_transform(frame_obj, location=origin_offset)
-    pf.ops.mesh.transform_apply(frame_obj)
-
-    portal_light = None
-    if include_portal:
-        portal_light = pf.ops.primitives.light.area_lamp(
-            shape="RECTANGLE",
-            size_x=dimensions.y,
-            size_y=dimensions.z,
-            energy=0.0,
-            portal=True,
-        )
-        reorient = Euler(_WALL_REORIENT).to_matrix()
-        flip = Euler((np.pi, 0.0, 0.0)).to_matrix()
-        pf.ops.object.set_transform(
-            portal_light,
-            location=origin_offset,
-            rotation_euler=tuple((reorient @ flip).to_euler()),
-        )
-
-    return WindowResult(mesh=frame_obj, light=portal_light)
+def window_from_profile_rand(
+    rng: pf.RNG,
+    profile: WindowProfile,
+    frame_material: pf.Material | None = None,
+    glass_material: pf.Material | None = None,
+    include_glass_pane: bool = True,
+    include_portal: bool = True,
+) -> WindowResult:
+    rng_param, _rng_dim, rng_frame, rng_glass = rng.spawn(4)
+    return _window_build_rand(
+        rng_param,
+        rng_frame,
+        rng_glass,
+        profile=profile,
+        shutter=False,
+        frame_material=frame_material,
+        glass_material=glass_material,
+        include_glass_pane=include_glass_pane,
+        include_portal=include_portal,
+    )
 
 
-def window_composite_rand(
+def window_rectangular_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    frame_material: pf.Material | None = None,
+    glass_material: pf.Material | None = None,
+    include_glass_pane: bool = True,
+    include_portal: bool = True,
+) -> WindowResult:
+    rng_param, rng_dim, rng_frame, rng_glass, rng_shutter = rng.spawn(5)
+    if dimensions is None:
+        dimensions = window_dimensions_rand(rng_dim)
+    shutter_fn = pf.control.choice(
+        rng_shutter,
+        [
+            (lambda: True, 0.2),
+            (lambda: False, 0.8),
+        ],
+    )
+    profile = rectangular_profile(dimensions)
+    shutter = shutter_fn()
+    return _window_build_rand(
+        rng_param,
+        rng_frame,
+        rng_glass,
+        profile=profile,
+        shutter=shutter,
+        frame_material=frame_material,
+        glass_material=glass_material,
+        include_glass_pane=include_glass_pane,
+        include_portal=include_portal,
+    )
+
+
+def window_curved_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    frame_material: pf.Material | None = None,
+    glass_material: pf.Material | None = None,
+    include_glass_pane: bool = True,
+    include_portal: bool = True,
+) -> WindowResult:
+    rng_param, rng_dim, rng_frame, rng_glass, rng_profile = rng.spawn(5)
+    if dimensions is None:
+        dimensions = window_dimensions_rand(rng_dim)
+    profile = rounded_profile_rand(rng_profile, dimensions)
+    return _window_build_rand(
+        rng_param,
+        rng_frame,
+        rng_glass,
+        profile=profile,
+        shutter=False,
+        frame_material=frame_material,
+        glass_material=glass_material,
+        include_glass_pane=include_glass_pane,
+        include_portal=include_portal,
+    )
+
+
+def window_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    frame_material: pf.Material | None = None,
+    glass_material: pf.Material | None = None,
+    include_glass_pane: bool = True,
+    include_portal: bool = True,
+) -> WindowResult:
+    rng_choice, rng_build = rng.spawn(2)
+    window_fn = pf.control.choice(
+        rng_choice,
+        [
+            (window_rectangular_rand, 0.75),
+            (window_curved_rand, 0.25),
+        ],
+    )
+    return window_fn(
+        rng_build,
+        dimensions=dimensions,
+        frame_material=frame_material,
+        glass_material=glass_material,
+        include_glass_pane=include_glass_pane,
+        include_portal=include_portal,
+    )
+
+
+def _hang_curtain(
+    window_mesh: pf.MeshObject,
+    curtain: pf.MeshObject,
+    dimensions: pf.Vector,
+) -> None:
+    location = (dimensions.x + 0.07, dimensions.y * 0.5, dimensions.z * 0.5)
+    pf.ops.object.set_transform(curtain, location=location)
+    pf.ops.object.join(window_mesh, curtain)
+
+
+def window_rectangular_composite_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     frame_material: pf.Material | None = None,
@@ -963,12 +1313,10 @@ def window_composite_rand(
     include_portal: bool = True,
 ) -> WindowResult:
     rng_streams = rng.spawn(5)
-    rng_dimensions = rng_streams[1]
-    rng_curtain = rng_streams[4]
     if dimensions is None:
-        dimensions = window_dimensions_rand(rng_dimensions)
+        dimensions = window_dimensions_rand(rng_streams[1])
 
-    result = window_rand(
+    result = window_rectangular_rand(
         rng,
         dimensions=dimensions,
         frame_material=frame_material,
@@ -976,28 +1324,48 @@ def window_composite_rand(
         include_glass_pane=include_glass_pane,
         include_portal=include_portal,
     )
-    if curtain is None:
-        rng_curtain_choice, rng_curtain_build = rng_curtain.spawn(2)
+    if curtain is not None:
+        _hang_curtain(result.mesh, curtain, dimensions)
+        return result
 
-        def make_curtain() -> pf.MeshObject:
-            return curtain_rand(rng_curtain_build, dimensions=dimensions).mesh
+    rng_curtain_choice, rng_curtain_build = rng_streams[4].spawn(2)
 
-        curtain_func = pf.control.choice(
-            rng_curtain_choice,
-            [
-                (make_curtain, 1.0),
-                (lambda: pf.ops.primitives.mesh_single_vertex(), 2.0),
-            ],
-        )
-        curtain = curtain_func()
+    def hang_new_curtain() -> None:
+        curtain = curtain_rand(rng_curtain_build, dimensions=dimensions)
+        _hang_curtain(result.mesh, curtain.mesh, dimensions)
 
-    pf.ops.object.set_transform(
-        curtain,
-        location=(
-            dimensions.x + 0.07,
-            dimensions.y * 0.5,
-            dimensions.z * 0.5,
-        ),
+    curtain_fn = pf.control.choice(
+        rng_curtain_choice,
+        [
+            (hang_new_curtain, 1.0),
+            (lambda: None, 2.0),
+        ],
     )
-    pf.ops.object.join(result.mesh, curtain)
+    curtain_fn()
     return result
+
+
+def window_composite_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    frame_material: pf.Material | None = None,
+    glass_material: pf.Material | None = None,
+    include_glass_pane: bool = True,
+    include_portal: bool = True,
+) -> WindowResult:
+    rng_choice, rng_build = rng.spawn(2)
+    window_fn = pf.control.choice(
+        rng_choice,
+        [
+            (window_rectangular_composite_rand, 0.75),
+            (window_curved_rand, 0.25),
+        ],
+    )
+    return window_fn(
+        rng_build,
+        dimensions=dimensions,
+        frame_material=frame_material,
+        glass_material=glass_material,
+        include_glass_pane=include_glass_pane,
+        include_portal=include_portal,
+    )

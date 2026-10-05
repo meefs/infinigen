@@ -881,6 +881,14 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.window.window_rectangular_composite_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.window.window_curved_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.window.curtain_rand"
   },
   {
