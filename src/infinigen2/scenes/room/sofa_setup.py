@@ -3,6 +3,7 @@
 
 # Authors: Alexander Raistrick
 
+import functools
 import logging
 import math
 from typing import NamedTuple
@@ -10,7 +11,7 @@ from typing import NamedTuple
 import numpy as np
 import procfunc as pf
 
-from infinigen2.objects import cushion, rug, table
+from infinigen2.objects import cushion, monitor, rug, storage, table
 from infinigen2.objects.sofa import SofaResult
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.culling import keep_non_colliding, keep_unobstructed
@@ -18,6 +19,7 @@ from infinigen2.scenes.placement.distribute import instances_along_line
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
     MeshResult,
+    back_face_grounded,
     jitter_object_rotation_rand,
     retry_place,
     side_table_object_rand,
@@ -29,8 +31,11 @@ from infinigen2.scenes.setup_utils import (
 
 __all__ = [
     "SofaSetupResult",
+    "TVSetupResult",
     "centered_sofa_setup_rand",
     "sofa_setup_rand",
+    "tv_setup_rand",
+    "wall_tv_setup_rand",
     "wall_sofa_setup_rand",
 ]
 
@@ -45,6 +50,92 @@ class SofaSetupResult(NamedTuple):
     storage_containers: list[pf.MeshObject]
     supports: list[pf.MeshObject]
     storages: list[pf.MeshObject]
+    tv_setups: list["TVSetupResult"]
+
+
+class TVSetupResult(NamedTuple):
+    mesh: pf.MeshObject
+    tv: pf.MeshObject
+    all_objects: list[pf.MeshObject]
+
+
+def tv_setup_rand(rng: pf.RNG) -> TVSetupResult:
+    rng_diagonal, rng_size, rng_width, rng_depth, rng_height, rng_storage, rng_tv = (
+        rng.spawn(7)
+    )
+    diagonal = pf.random.clip_gaussian(rng_diagonal, 50.0, 20.0, 24.0, 98.0) * 0.0254
+    screen_dimensions = monitor.screen_dimensions_rand(rng_size, diagonal=diagonal)
+    extra_width = pf.random.uniform(rng_width, 0.15, 0.35)
+    storage_width = min(2.5, max(0.9, screen_dimensions.y + extra_width))
+    storage_depth = pf.random.uniform(rng_depth, 0.38, 0.48)
+    storage_height = pf.random.uniform(rng_height, 0.38, 0.64)
+    dimensions = pf.Vector((storage_depth, storage_width, storage_height))
+    storage_result = storage.storage_rand(
+        rng_storage,
+        dimensions=dimensions,
+        n_spaces_z=1,
+    )
+    tv_result = monitor.monitor_rand(rng_tv, screen_dimensions=screen_dimensions)
+    snap_to_plane(
+        child=tv_result.mesh,
+        parent=storage_result.mesh,
+        child_side="bottom",
+        parent_side="top",
+        margin=0.002,
+        constraint_axis=None,
+    )
+    storage_result.mesh.item().name = "tv_storage"
+    tv_result.mesh.item().name = "television"
+    tv_result.mesh.item().parent = storage_result.mesh.item()
+    tv_result.mesh.item().matrix_parent_inverse.identity()
+    return TVSetupResult(
+        mesh=storage_result.mesh,
+        tv=tv_result.mesh,
+        all_objects=[storage_result.mesh, tv_result.mesh],
+    )
+
+
+def _tv_setup_accepted(
+    storage_mesh: pf.MeshObject,
+    tv: pf.MeshObject,
+    wall_colliders: ccol.CollisionSet,
+    colliders: ccol.CollisionSet,
+    wall_margin: float,
+) -> bool:
+    grounded = back_face_grounded(
+        storage_mesh,
+        colliders=wall_colliders,
+        margin=wall_margin,
+    )
+    return grounded and not ccol.intersection_test(colliders, tv)
+
+
+def wall_tv_setup_rand(
+    rng: pf.RNG,
+    wall_planes: list[pf.MeshObject],
+    colliders: ccol.CollisionSet,
+) -> list[TVSetupResult]:
+    rng_tv, rng_margin, rng_place = rng.spawn(3)
+    tv_setup = tv_setup_rand(rng_tv)
+    wall_margin = pf.random.uniform(rng_margin, 0.03, 0.10)
+    accepted = functools.partial(
+        _tv_setup_accepted,
+        tv=tv_setup.tv,
+        wall_colliders=ccol.collision_set(wall_planes),
+        colliders=colliders,
+        wall_margin=wall_margin,
+    )
+    placed_tv = retry_place(
+        rng_place,
+        tv_setup,
+        colliders,
+        snap_back_front,
+        attempts=12,
+        accept_fn=accepted,
+        parents=wall_planes,
+        margin=wall_margin,
+    )
+    return [] if placed_tv is None else [placed_tv]
 
 
 def _rug_rand(
@@ -224,6 +315,7 @@ def centered_sofa_setup_rand(
         storage_containers=[r.mesh for r in sofa_objs],
         supports=[r.mesh for r in center_coffee] + out_rugs,
         storages=[r.mesh for r in center_coffee],
+        tv_setups=[],
     )
 
 
@@ -276,6 +368,7 @@ def wall_sofa_setup_rand(
         storage_containers=[r.mesh for r in sofa_objs],
         supports=rug_objs,
         storages=[],
+        tv_setups=[],
     )
 
 
@@ -285,9 +378,18 @@ def sofa_setup_rand(
     room_dimensions: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
 ) -> SofaSetupResult:
+    standalone_walls: list[pf.MeshObject] = []
+    if wall_planes is None:
+        wall_planes = standalone_wall_planes()
+        standalone_walls = wall_planes
     if colliders is None:
-        colliders = ccol.collision_set(wall_planes or [])
-    rng_arr, rng_side = rng.spawn(2)
+        colliders = ccol.collision_set(wall_planes)
+    elif standalone_walls:
+        colliders = ccol.collision_set(
+            colliders.objs + standalone_walls,
+            cache=colliders,
+        )
+    rng_arr, rng_side, rng_tv = rng.spawn(3)
 
     arrangement_func = pf.control.choice(
         rng_arr,
@@ -308,6 +410,13 @@ def sofa_setup_rand(
         cache=colliders,
     )
 
+    tv_setups = wall_tv_setup_rand(rng_tv, wall_planes=wall_planes, colliders=colliders)
+    tv_objects = [obj for result in tv_setups for obj in [result.mesh, result.tv]]
+    colliders = ccol.collision_set(
+        colliders.objs + tv_objects,
+        cache=colliders,
+    )
+
     n = min(pf.random.randint(rng_side, 1, 4), len(arrangement.sofas))
     rngs = rng_side.spawn(n)
     side_tables = [side_table_object_rand(rngs[i]) for i in range(n)]
@@ -325,12 +434,19 @@ def sofa_setup_rand(
         )
     side_tables, _ = keep_non_colliding(placed_side_tables, colliders)
     logger.info(f"Placed {len(side_tables)} side tables out of {n} attempts")
+    tv_storages = [result.mesh for result in tv_setups]
     return SofaSetupResult(
-        all_objects=arrangement.all_objects + [r.mesh for r in side_tables],
+        all_objects=(
+            standalone_walls
+            + arrangement.all_objects
+            + tv_objects
+            + [r.mesh for r in side_tables]
+        ),
         sofas=arrangement.sofas,
         rugs=arrangement.rugs,
         throw_pillows=arrangement.throw_pillows,
-        storage_containers=list(arrangement.storage_containers),
-        supports=arrangement.supports + [r.mesh for r in side_tables],
-        storages=arrangement.storages + [r.mesh for r in side_tables],
+        storage_containers=list(arrangement.storage_containers) + tv_storages,
+        supports=arrangement.supports + tv_storages + [r.mesh for r in side_tables],
+        storages=arrangement.storages + tv_storages + [r.mesh for r in side_tables],
+        tv_setups=tv_setups,
     )

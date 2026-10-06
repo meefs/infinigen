@@ -447,7 +447,7 @@ def sofa(
     )
     obj = pf.nodes.to_mesh_object(res)
     pf.ops.uv.cube_project(obj, uv_name="UVMap")
-    pf.ops.modifier.subdivide_surface(obj, levels=6, _skip_apply=True)
+    pf.ops.modifier.subdivide_surface(obj, levels=5, _skip_apply=True)
 
     seat_top = baseboard_height + seat_thickness
     left_inset = _seat_inset(

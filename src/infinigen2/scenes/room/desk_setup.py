@@ -9,9 +9,10 @@ from typing import NamedTuple, cast
 import numpy as np
 import procfunc as pf
 
-from infinigen2.objects import chair
+from infinigen2.objects import chair, monitor
 from infinigen2.objects import desk as desk_object
 from infinigen2.scenes.placement import collision as ccol
+from infinigen2.scenes.placement.culling import keep_non_colliding
 from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
     back_face_grounded,
@@ -28,6 +29,7 @@ __all__ = [
 class DeskSetupResult(NamedTuple):
     desk: pf.MeshObject
     chair: pf.MeshObject
+    monitors: list[pf.MeshObject]
     all_objects: list[pf.MeshObject]
     storage_containers: list[pf.MeshObject]
     supports: list[pf.MeshObject]
@@ -77,6 +79,37 @@ def _place_desk_against_wall_rand(
     )
 
 
+def _desk_monitor_rand(
+    rng: pf.RNG,
+    desk: pf.MeshObject,
+    desk_dimensions: pf.Vector,
+) -> list[pf.MeshObject]:
+    rng_monitor, rng_params = rng.spawn(2)
+    monitor_result = monitor.monitor_rand(rng_monitor)
+    monitor_result.mesh.item().name = "desk_monitor"
+    pf.ops.object.set_transform(
+        monitor_result.mesh,
+        rotation_euler=pf.Vector((0.0, 0.0, desk.item().matrix_world.to_euler().z)),
+    )
+    snap_to_plane(
+        child=monitor_result.mesh,
+        parent=desk,
+        child_side="bottom",
+        parent_side="top",
+        margin=0.002,
+        constraint_axis=None,
+    )
+    rear_offset = desk_dimensions.x * -0.5 + pf.random.uniform(rng_params, 0.18, 0.26)
+    world_offset = desk.item().matrix_world.to_3x3() @ pf.Vector(
+        (rear_offset, 0.0, 0.0)
+    )
+    pf.ops.object.set_transform(
+        monitor_result.mesh,
+        location=pf.Vector(monitor_result.mesh.item().location) + world_offset,
+    )
+    return [monitor_result.mesh]
+
+
 def desk_setup_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
@@ -88,7 +121,17 @@ def desk_setup_rand(
     if colliders is None:
         colliders = ccol.collision_set([])
 
-    rng_desk, rng_chair, rng_desk_pose, rng_chair_pose = rng.spawn(4)
+    (
+        rng_desk,
+        rng_chair,
+        rng_desk_pose,
+        rng_chair_pose,
+        rng_monitor_choice,
+        rng_monitor,
+        rng_dimensions,
+    ) = rng.spawn(7)
+    if dimensions is None:
+        dimensions = desk_object.desk_dimensions_rand(rng_dimensions)
     desk_result = desk_object.desk_rand(rng_desk, dimensions=dimensions)
     rng_chair_choice, rng_chair_gen = rng_chair.spawn(2)
     chair_func = pf.control.choice(
@@ -118,8 +161,15 @@ def desk_setup_rand(
         if desk_result is None:
             return None
 
+    monitor_fn = pf.control.choice(
+        rng_monitor_choice,
+        [(_desk_monitor_rand, 2.0), (lambda *_: [], 1.0)],
+    )
+    monitors = monitor_fn(rng_monitor, desk_result.mesh, dimensions)
+    monitors, _ = keep_non_colliding(monitors, colliders, key=lambda mesh: mesh)
+
     chair_colliders = ccol.collision_set(
-        [*colliders.objs, desk_result.mesh],
+        [*colliders.objs, desk_result.mesh, *monitors],
         cache=colliders,
     )
     chair_result = retry_place(
@@ -137,7 +187,8 @@ def desk_setup_rand(
     return DeskSetupResult(
         desk=desk,
         chair=chair_obj,
-        all_objects=[desk, chair_obj],
+        monitors=monitors,
+        all_objects=[desk, chair_obj, *monitors],
         storage_containers=[],
         supports=[desk],
         storages=[desk],

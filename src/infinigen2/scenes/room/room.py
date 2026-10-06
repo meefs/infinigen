@@ -37,7 +37,11 @@ from infinigen2.scenes.room.room_shape import (
     room_shape_rand,
 )
 from infinigen2.scenes.room.skirting import skirting_rand
-from infinigen2.scenes.room.sofa_setup import sofa_setup_rand, wall_sofa_setup_rand
+from infinigen2.scenes.room.sofa_setup import (
+    sofa_setup_rand,
+    wall_sofa_setup_rand,
+    wall_tv_setup_rand,
+)
 from infinigen2.scenes.room.wall_base import (
     ROOM_SUBSURF_LEVELS,
     WallResult,
@@ -772,7 +776,8 @@ def room_bedroom_rand(
         rng_desk,
         rng_storage,
         rng_decor,
-    ) = rng.spawn(7)
+        rng_tv,
+    ) = rng.spawn(8)
     if dimensions is None:
         dimensions = _bedroom_dimensions_rand(rng_dimensions)
 
@@ -840,6 +845,21 @@ def room_bedroom_rand(
         sofa_storages = sofa_setup.storages
         colliders = _with_objects(colliders, sofa_objects)
 
+    def no_tv():
+        return []
+
+    def wall_tv():
+        return wall_tv_setup_rand(
+            rng_tv_setup, wall_planes=room.wall_planes, colliders=colliders
+        )
+
+    rng_tv_active, rng_tv_setup = rng_tv.spawn(2)
+    tv_func = pf.control.choice(rng_tv_active, [(no_tv, 1.0), (wall_tv, 1.0)])
+    tv_setups = tv_func()
+    tv_objects = [obj for setup in tv_setups for obj in setup.all_objects]
+    tv_storages = [setup.mesh for setup in tv_setups]
+    colliders = _with_objects(colliders, tv_objects)
+
     desk_objects = []
     desk_containers = []
     desk_supports = []
@@ -866,12 +886,19 @@ def room_bedroom_rand(
         room_dimensions=dimensions,
         colliders=colliders,
     )
-    furniture = bed_objects + sofa_objects + desk_objects + storage_setup.all_objects
+    furniture = (
+        bed_objects
+        + sofa_objects
+        + tv_objects
+        + desk_objects
+        + storage_setup.all_objects
+    )
 
     storage_containers = (
         room.storage_containers
         + bed_containers
         + sofa_containers
+        + tv_storages
         + desk_containers
         + storage_setup.storage_containers
     )
@@ -879,6 +906,7 @@ def room_bedroom_rand(
         room.supports
         + bed_supports
         + sofa_supports
+        + tv_storages
         + desk_supports
         + storage_setup.supports
     )
@@ -886,6 +914,7 @@ def room_bedroom_rand(
         room.storages
         + bed_storages
         + sofa_storages
+        + tv_storages
         + desk_storages
         + storage_setup.storages
     )

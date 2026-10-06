@@ -668,6 +668,11 @@
   },
   {
     "category": "Scene",
+    "name": "infinigen2.scenes.room.sofa_setup.tv_setup_rand",
+    "integration_test_string": "tv_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
     "name": "infinigen2.scenes.room.wall_storage_setup.wall_storage_setup_rand",
     "integration_test_string": "wall_storage_setup_rand object_demo render_cycles"
   },
@@ -1009,6 +1014,14 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.lamp.desk_lamp_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.monitor.monitor_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.monitor.monitor_tv_rand"
   },
   {
     "category": "Object",
