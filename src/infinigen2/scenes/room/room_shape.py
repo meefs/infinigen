@@ -65,7 +65,8 @@ def room_edge_to_walls(
     )
 
     curve_to_mesh_with_uv_result = curve_to_mesh_with_uv(
-        curve=curve, profile=capture_attribute.geometry
+        curve=pf.nodes.geo.set_curve_normal(curve, mode="Z_UP"),
+        profile=capture_attribute.geometry,
     )
 
     input_index_1 = pf.nodes.geo.input_index()

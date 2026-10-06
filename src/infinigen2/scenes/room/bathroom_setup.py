@@ -41,8 +41,10 @@ if TYPE_CHECKING:
 
 __all__ = [
     "BathroomSetupResult",
+    "BathroomSinkSetupResult",
     "bathroom_setup_accept_pred",
     "bathroom_setup_rand",
+    "bathroom_sink_setup_rand",
     "bathroom_wall_arrangement_rand",
 ]
 
@@ -665,7 +667,7 @@ def _bathroom_fixtures_rand(
         + [result.mesh for result in bathtub_setup.hardware]
     )
     colliders = ccol.collision_set(colliders.objs + bathtub_objects, cache=colliders)
-    sink_setup = _bathroom_sink_components_rand(
+    sink_setup = bathroom_sink_setup_rand(
         rng_sink,
         sink_obj=sink_obj,
         wall_planes=wall_planes,
@@ -1682,7 +1684,7 @@ def _add_bathroom_demo_ground(
     )
 
 
-def _bathroom_sink_components_rand(
+def bathroom_sink_setup_rand(
     rng: pf.RNG,
     sink_obj: pf.MeshObject | None = None,
     wall_planes: list[pf.MeshObject] | None = None,

@@ -3,40 +3,49 @@
 
 # Authors: Alexander Raistrick
 
-import re
+import math
 from typing import NamedTuple, cast
 
 import bpy
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import chair
+from infinigen2.objects import chair, storage
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
+from infinigen2.scenes.placement.retry import repeat_attempts
+from infinigen2.scenes.room.bathroom_setup import bathroom_sink_setup_rand
 from infinigen2.scenes.room.cocktail_table_setup import cocktail_table_setup_rand
 from infinigen2.scenes.room.desk_setup import desk_setup_rand
 from infinigen2.scenes.room.dining_table_setup import dining_setup_rand
-from infinigen2.scenes.room.room import (
-    RoomResult,
-    room_unfurnished_rand,
-)
+from infinigen2.scenes.room.room import RoomResult, room_unfurnished_rand
 from infinigen2.scenes.room.sofa_setup import centered_sofa_setup_rand
-from infinigen2.scenes.setup_utils import sofa_object_rand, storage_object_rand
+from infinigen2.scenes.setup_utils import (
+    back_face_grounded,
+    sofa_object_rand,
+    storage_object_rand,
+)
+from infinigen2.util.scene_cleanup import delete_object
 
 __all__ = [
-    "SetupGridInstancesResult",
     "SetupGridResult",
+    "WallRowResult",
+    "bookshelf_aisle_rows_rand",
     "centered_sofa_grid_rand",
-    "chair_grid_rand",
-    "classroom_grid_rand",
-    "cocktail_grid_rand",
+    "chair_banks_rand",
+    "cocktail_table_grid_rand",
+    "desk_aisle_rows_rand",
     "desk_grid_rand",
-    "dining_grid_rand",
+    "dining_table_grid_rand",
     "indoor_space_rand",
+    "seat_wall_row_rand",
+    "setup_grid_in_region",
     "setup_grid_instances",
-    "setup_grid_rand",
+    "sink_wall_row_rand",
     "sofa_grid_rand",
-    "storage_grid_rand",
+    "storage_aisle_rows_rand",
+    "wall_row_rand",
+    "wall_rows_rand",
 ]
 
 
@@ -44,228 +53,547 @@ class SetupGridResult(NamedTuple):
     all_objects: list[pf.MeshObject]
 
 
-class SetupGridInstancesResult(NamedTuple):
-    instances: pf.ProcNode[t.Instances]
-    points: pf.ProcNode[t.Geometry]
+class WallRowResult(NamedTuple):
+    all_objects: list[pf.MeshObject]
+    yaw: float
+
+
+def _center_unit(objects: list[pf.MeshObject]) -> pf.Vector:
+    bounds = [pf.ops.attr.bbox_min_max(obj, global_coords=True) for obj in objects]
+    lo = pf.Vector([min(b[0][i] for b in bounds) for i in range(3)])
+    hi = pf.Vector([max(b[1][i] for b in bounds) for i in range(3)])
+    shift = pf.Vector((-lo.x, -(lo.y + hi.y) / 2.0, 0.0))
+    for obj in objects:
+        obj.item().location += shift
+    return hi - lo
 
 
 @pf.nodes.node_function
 def setup_grid_instances(
-    fill_dimensions: t.SocketOrVal[pf.Vector],
-    setup_collection: t.SocketOrVal[pf.Collection],
-    spacing_meters: t.SocketOrVal[pf.Vector],
-) -> SetupGridInstancesResult:
-    source = pf.nodes.geo.collection_info(setup_collection)
-    bounds = pf.nodes.geo.bound_box(pf.nodes.geo.realize_instances(source))
-    size = pf.nodes.math.separate_xyz(bounds.max - bounds.min)
-    fill = pf.nodes.math.separate_xyz(fill_dimensions)
-    spacing = pf.nodes.math.separate_xyz(spacing_meters)
-
-    pitch_x = pf.nodes.math.maximum(size.x + spacing.x, 0.001)
-    pitch_y = pf.nodes.math.maximum(size.y + spacing.y, 0.001)
-    count_x = pf.nodes.math.maximum(
-        pf.nodes.math.floor((fill.x + spacing.x) / pitch_x), 1.0
-    ).astype(dtype=int)
-    count_y = pf.nodes.math.maximum(
-        pf.nodes.math.floor((fill.y + spacing.y) / pitch_y), 1.0
-    ).astype(dtype=int)
-
-    count_x_f = count_x.astype(dtype=float)
-    count_y_f = count_y.astype(dtype=float)
-    occupied_x = size.x + (count_x_f - 1.0) * pitch_x
-    occupied_y = size.y + (count_y_f - 1.0) * pitch_y
-    start_x = (fill.x - occupied_x + size.x) * 0.5
-    start_y = (fill.y - occupied_y + size.y) * 0.5
-
-    x_line = pf.nodes.geo.mesh_line(
-        count=count_x,
-        start_location=pf.nodes.math.combine_xyz(x=start_x, y=start_y),
-        offset=pf.nodes.math.combine_xyz(x=pitch_x),
+    collection: t.SocketOrVal[pf.Collection],
+    count: t.SocketOrVal[int],
+    rows: t.SocketOrVal[float],
+    columns_per_pair: t.SocketOrVal[float],
+    column_pitch: t.SocketOrVal[float],
+    row_pitch: t.SocketOrVal[float],
+    rows_per_block: t.SocketOrVal[float],
+    row_aisle: t.SocketOrVal[float],
+    start: t.SocketOrVal[pf.Vector],
+    center: t.SocketOrVal[pf.Vector],
+    yaw: t.SocketOrVal[float],
+) -> pf.ProcNode[t.Instances]:
+    index = pf.nodes.geo.input_index().astype(dtype=float)
+    column = pf.nodes.math.floor(index / rows)
+    row = index - column * rows
+    pair = pf.nodes.math.floor(column / columns_per_pair)
+    turned = column - pair * columns_per_pair
+    block = pf.nodes.math.floor(row / rows_per_block)
+    position = pf.nodes.math.combine_xyz(
+        x=pair * column_pitch, y=row * row_pitch + block * row_aisle
     )
-    y_line = pf.nodes.geo.mesh_line(
-        count=count_y,
-        start_location=(0.0, 0.0, 0.0),
-        offset=pf.nodes.math.combine_xyz(y=pitch_y),
-    )
-    rows = pf.nodes.geo.instance_on_points(
-        points=cast("pf.ProcNode[t.Geometry]", y_line),
-        instance=cast("pf.ProcNode[t.Geometry]", x_line),
-    )
-    points = pf.nodes.geo.realize_instances(rows)
-
-    center = pf.nodes.math.separate_xyz((bounds.min + bounds.max) * 0.5)
-    normalized = pf.nodes.geo.translate_instances(
-        source,
-        translation=pf.nodes.math.combine_xyz(
-            x=-center.x,
-            y=-center.y,
-            z=-bounds.min.z,
-        ),
-    )
+    points = pf.nodes.geo.points(count=count, position=position + start)
     instances = pf.nodes.geo.instance_on_points(
         points=points,
-        instance=cast("pf.ProcNode[t.Geometry]", normalized),
+        instance=pf.nodes.geo.collection_info(collection),
+        rotation=pf.nodes.math.combine_xyz(z=turned * math.pi),
     )
-    return SetupGridInstancesResult(instances, points)
+    return pf.nodes.geo.transform(
+        instances, translation=center, rotation=pf.nodes.math.combine_xyz(z=yaw)
+    )
 
 
-def _data_stem(name: str) -> str:
-    return re.sub(r"\.\d+$", "", name)
+def _extent(n: int, size: float, gap: float, per_block: int, aisle: float) -> float:
+    return n * size + (n - 1) * gap + ((n - 1) // per_block) * aisle
 
 
-def _grid_aliases(
-    setup_collection: pf.Collection,
-    setup_objects: list[pf.MeshObject],
-    fill_dimensions: pf.Vector,
-    spacing: pf.Vector,
-) -> list[list[pf.MeshObject]]:
-    templates = []
-    labels = {}
-    seen = set()
-    for obj in setup_objects:
-        data = obj.item().data
-        key = data.as_pointer()
-        if key in seen:
-            continue
-        seen.add(key)
-        label = _data_stem(obj.item().name)
-        data.name = f"indoor_grid_source_{len(templates):03d}_{label}"
-        labels[_data_stem(data.name)] = label
-        templates.append(obj)
-
-    grid = setup_grid_instances(fill_dimensions, setup_collection, spacing)
-    aliases = pf.nodes.to_aliases(grid.instances)
-    propagate_modifiers_to_instances(templates, aliases)
-    for i, alias in enumerate(aliases):
-        label = labels[_data_stem(alias.item().data.name)]
-        alias.item().name = f"{label}.{i:03d}"
-    point_obj = pf.nodes.to_mesh_object(cast("pf.ProcNode[pf.MeshObject]", grid.points))
-    points = pf.ops.attr.vertex_positions(point_obj, global_coords=True)
-    setup_groups = [[] for _ in points]
-    for alias in aliases:
-        bbox_min, bbox_max = pf.ops.attr.bbox_min_max(alias, global_coords=True)
-        center_x = (bbox_min[0] + bbox_max[0]) * 0.5
-        center_y = (bbox_min[1] + bbox_max[1]) * 0.5
-        index = min(
-            range(len(points)),
-            key=lambda i: (center_x - points[i][0]) ** 2
-            + (center_y - points[i][1]) ** 2,
-        )
-        setup_groups[index].append(alias)
-    bpy.data.objects.remove(point_obj.item(), do_unlink=True)
-    return setup_groups
+def _fit_count(
+    length: float, size: float, gap: float, per_block: int, aisle: float
+) -> int:
+    n = max(1, int((length + gap) // (size + gap)))
+    while n > 1 and _extent(n, size, gap, per_block, aisle) > length:
+        n -= 1
+    return n
 
 
-def _keep_non_colliding_setups(
-    setup_groups: list[list[pf.MeshObject]],
+def _group_ok(
+    group: tuple[pf.MeshObject, ...],
+    rear: list[int],
     colliders: ccol.CollisionSet,
-) -> list[pf.MeshObject]:
-    kept = []
-    for setup in setup_groups:
-        if any(ccol.intersection_test(colliders, obj) for obj in setup):
-            for obj in setup:
-                obj.item().name = obj.item().name + "_COLLIDE"
-            continue
-        kept.extend(setup)
-        colliders = ccol.collision_set(colliders.objs + setup, cache=colliders)
-    return kept
+    wall_colliders: ccol.CollisionSet | None,
+) -> bool:
+    if wall_colliders is not None and not all(
+        back_face_grounded(group[i], wall_colliders, 0.02) for i in rear
+    ):
+        return False
+    return not any(ccol.intersection_test(colliders, obj) for obj in group)
 
 
-def _setup_dimensions(setup_objects: list[pf.MeshObject]) -> pf.Vector:
-    bounds = [
-        pf.ops.attr.bbox_min_max(obj, global_coords=True) for obj in setup_objects
-    ]
-    bbox_min = pf.Vector(tuple(min(lo[i] for lo, _ in bounds) for i in range(3)))
-    bbox_max = pf.Vector(tuple(max(hi[i] for _, hi in bounds) for i in range(3)))
-    return bbox_max - bbox_min
-
-
-def _grid_region_rand(
-    rng: pf.RNG,
-    room_dimensions: pf.Vector,
-    setup_dimensions: pf.Vector,
-    margin_fraction_max: float,
-) -> tuple[pf.Vector, pf.Vector]:
-    rng_margin_x, rng_margin_y, rng_centered, rng_offset_x, rng_offset_y = rng.spawn(5)
-    margin_x = room_dimensions.x * pf.random.uniform(
-        rng_margin_x, 0.05, margin_fraction_max
-    )
-    margin_y = room_dimensions.y * pf.random.uniform(
-        rng_margin_y, 0.05, margin_fraction_max
-    )
-    margin_x = min(margin_x, max(room_dimensions.x - setup_dimensions.x, 0.0))
-    margin_y = min(margin_y, max(room_dimensions.y - setup_dimensions.y, 0.0))
-    fill_dimensions = pf.Vector(
-        (room_dimensions.x - margin_x, room_dimensions.y - margin_y, room_dimensions.z)
-    )
-    centered = pf.control.choice(rng_centered, [(False, 1.0), (True, 1.0)])
-    if centered:
-        return fill_dimensions, pf.Vector((margin_x * 0.5, margin_y * 0.5, 0.0))
-    offset = pf.Vector(
+def setup_grid_in_region(
+    unit: list[pf.MeshObject],
+    unit_size: pf.Vector,
+    center: pf.Vector,
+    depth: float,
+    length: float,
+    yaw: float,
+    gap: pf.Vector,
+    aisle: float,
+    rows_per_block: int,
+    back_to_back: bool,
+    colliders: ccol.CollisionSet,
+    wall_colliders: ccol.CollisionSet | None,
+) -> SetupGridResult:
+    columns_per_pair = 2 if back_to_back else 1
+    pair_size = unit_size.x * columns_per_pair
+    n_pairs = _fit_count(depth, pair_size, gap.x, 1, 0.0)
+    n_rows = _fit_count(length, unit_size.y, gap.y, rows_per_block, aisle)
+    extent_x = _extent(n_pairs, pair_size, gap.x, 1, 0.0)
+    extent_y = _extent(n_rows, unit_size.y, gap.y, rows_per_block, aisle)
+    start = pf.Vector(
         (
-            margin_x * pf.random.uniform(rng_offset_x, 0.0, 1.0),
-            margin_y * pf.random.uniform(rng_offset_y, 0.0, 1.0),
+            (columns_per_pair - 1) * unit_size.x - extent_x / 2.0,
+            (unit_size.y - extent_y) / 2.0,
             0.0,
         )
     )
-    return fill_dimensions, offset
+
+    members = []
+    for obj in unit:
+        collection = pf.Collection([obj], name="setup_grid")
+        instances = setup_grid_instances(
+            collection=collection,
+            count=n_pairs * columns_per_pair * n_rows,
+            rows=float(n_rows),
+            columns_per_pair=float(columns_per_pair),
+            column_pitch=pair_size + gap.x,
+            row_pitch=unit_size.y + gap.y,
+            rows_per_block=float(rows_per_block),
+            row_aisle=aisle,
+            start=start,
+            center=center,
+            yaw=yaw,
+        )
+        aliases = pf.nodes.to_aliases(instances)
+        bpy.data.collections.remove(collection.item())
+        propagate_modifiers_to_instances([obj], aliases)
+        members.append(aliases)
+    rear = [
+        i
+        for i, obj in enumerate(unit)
+        if pf.ops.attr.bbox_min_max(obj, global_coords=True)[0][0] <= 0.015
+    ]
+    kept = []
+    for group in zip(*members, strict=True):
+        if _group_ok(group, rear, colliders, wall_colliders):
+            kept.append(group)
+            continue
+        for obj in group:
+            delete_object(obj.item())
+    for i, group in enumerate(kept):
+        for obj, template in zip(group, unit, strict=True):
+            obj.item().name = f"{template.item().name}_{i:03d}"
+    return SetupGridResult([obj for group in kept for obj in group])
+
+
+def _wall_row_center(
+    yaw: float,
+    room_dimensions: pf.Vector,
+    depth: float,
+    start: float,
+    length: float,
+    wall_length: float,
+) -> pf.Vector:
+    normal = pf.Vector((math.cos(yaw), math.sin(yaw), 0.0))
+    along = pf.Vector((-math.sin(yaw), math.cos(yaw), 0.0))
+    room_center = pf.Vector((room_dimensions.x / 2.0, room_dimensions.y / 2.0, 0.0))
+    wall_distance = abs(normal.dot(room_center))
+    return (
+        room_center
+        - normal * (wall_distance - 0.02 - depth / 2.0)
+        + along * (start + (length - wall_length) / 2.0)
+    )
+
+
+def _wall_row_of_unit_rand(
+    rng: pf.RNG,
+    unit: list[pf.MeshObject],
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+    wall_colliders: ccol.CollisionSet,
+    yaw: float,
+) -> WallRowResult:
+    spacing = pf.random.uniform(rng, 0.05, 0.6)
+    cell_count = pf.random.randint(rng, 1, 4)
+    first_cell = pf.random.randint(rng, 0, 4 - cell_count)
+    unit_size = _center_unit(unit)
+    wall_length = (
+        abs(math.sin(yaw)) * room_dimensions.x + abs(math.cos(yaw)) * room_dimensions.y
+    )
+    row_length = max(wall_length * cell_count / 3.0, unit_size.y)
+    row_start = min(wall_length * first_cell / 3.0, wall_length - row_length)
+    center = _wall_row_center(
+        yaw, room_dimensions, unit_size.x, row_start, row_length, wall_length
+    )
+    grid = setup_grid_in_region(
+        unit=unit,
+        unit_size=unit_size,
+        center=center,
+        depth=unit_size.x,
+        length=row_length,
+        yaw=yaw,
+        gap=pf.Vector((0.0, spacing, 0.0)),
+        aisle=0.0,
+        rows_per_block=1,
+        back_to_back=False,
+        colliders=colliders,
+        wall_colliders=wall_colliders,
+    )
+    for obj in unit:
+        delete_object(obj.item())
+    return WallRowResult(grid.all_objects, yaw)
 
 
 @pf.tracer.grammar
-def setup_grid_rand(
+def sink_wall_row_rand(
     rng: pf.RNG,
-    setup: list[pf.MeshObject] | pf.Collection,
-    spacing: pf.Vector,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
-    margin_fraction_max: float = 0.6,
-) -> SetupGridResult:
-    if isinstance(setup, pf.Collection):
-        setup_collection = setup
-        setup_objects = cast("list[pf.MeshObject]", list(setup))
-    else:
-        setup_objects = list(setup)
-        setup_collection = pf.Collection(setup_objects, name="indoor_grid_source")
-    if not setup_objects:
-        raise ValueError("setup must contain at least one mesh object")
-    setup_dimensions = _setup_dimensions(setup_objects)
-    fill_dimensions, offset = _grid_region_rand(
-        rng,
-        room_dimensions,
-        setup_dimensions,
-        margin_fraction_max,
+    wall_colliders: ccol.CollisionSet,
+    yaw: float,
+) -> WallRowResult:
+    rng, rng_setup = rng.spawn(2)
+    setup = bathroom_sink_setup_rand(rng_setup, room_dimensions=room_dimensions)
+    parts = (
+        setup.bathroom_sinks
+        + setup.sink_taps
+        + setup.sink_supports
+        + setup.mirrors
+        + setup.wall_storage
     )
-    setup_groups = _grid_aliases(
-        setup_collection,
-        setup_objects,
-        fill_dimensions,
-        spacing,
+    unit = [part.mesh for part in parts]
+    return _wall_row_of_unit_rand(
+        rng, unit, room_dimensions, colliders, wall_colliders, yaw
     )
-    for setup in setup_groups:
-        for obj in setup:
-            obj.item().location += offset
-    kept = _keep_non_colliding_setups(setup_groups, colliders)
-    return SetupGridResult(kept)
 
 
 @pf.tracer.grammar
-def storage_grid_rand(
+def seat_wall_row_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
+    wall_colliders: ccol.CollisionSet,
+    yaw: float,
+) -> WallRowResult:
+    rng, rng_choice, rng_seat = rng.spawn(3)
+    seat_func = pf.control.choice(
+        rng_choice,
+        [
+            (chair.chair_rand, 1.0),
+            (chair.chair_bench_rand, 0.33),
+            (sofa_object_rand, 1.0),
+        ],
+    )
+    unit = [seat_func(rng_seat).mesh]
+    return _wall_row_of_unit_rand(
+        rng, unit, room_dimensions, colliders, wall_colliders, yaw
+    )
+
+
+@pf.tracer.grammar
+def wall_row_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+    wall_colliders: ccol.CollisionSet,
+    yaw: float,
+) -> WallRowResult:
+    rng_choice, rng_row = rng.spawn(2)
+    row_func = pf.control.choice(
+        rng_choice, [(sink_wall_row_rand, 1.0), (seat_wall_row_rand, 2.33)]
+    )
+    return row_func(rng_row, room_dimensions, colliders, wall_colliders, yaw)
+
+
+def _wall_row_attempt_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+    wall_colliders: ccol.CollisionSet,
+) -> WallRowResult | None:
+    rng_yaw, rng_row = rng.spawn(2)
+    yaw = pf.control.choice(
+        rng_yaw,
+        [(0.0, 1.0), (math.pi / 2.0, 1.0), (math.pi, 1.0), (-math.pi / 2.0, 1.0)],
+    )
+    row = wall_row_rand(rng_row, room_dimensions, colliders, wall_colliders, yaw)
+    if not row.all_objects:
+        return None
+    return row
+
+
+@pf.tracer.grammar
+def wall_rows_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+    wall_colliders: ccol.CollisionSet,
 ) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    storage = storage_object_rand(rng_setup).mesh
-    storage.item().name = "storage"
-    if spacing is None:
-        spacing = pf.Vector((pf.random.uniform(rng_spacing, 0.8, 1.8), 0.0, 0.0))
-    return setup_grid_rand(
-        rng_grid,
-        [storage],
-        spacing,
+    rng_first, rng_second_choice, rng_second = rng.spawn(3)
+    first = repeat_attempts(
+        _wall_row_attempt_rand,
+        rng_first,
+        4,
         room_dimensions,
         colliders,
+        wall_colliders,
+    )
+    if first is None:
+        return SetupGridResult([])
+    colliders = ccol.collision_set(colliders.objs + first.all_objects, cache=colliders)
+    second_func = pf.control.choice(
+        rng_second_choice,
+        [(lambda *_: WallRowResult([], 0.0), 2.0), (wall_row_rand, 3.0)],
+    )
+    second = second_func(
+        rng_second, room_dimensions, colliders, wall_colliders, first.yaw + math.pi
+    )
+    return SetupGridResult(first.all_objects + second.all_objects)
+
+
+def _facing_grid_rand(
+    rng: pf.RNG,
+    unit: list[pf.MeshObject],
+    unit_size: pf.Vector,
+    center: pf.Vector,
+    size: pf.Vector,
+    gap: pf.Vector,
+    aisle: float,
+    rows_per_block: int,
+    back_to_back: bool,
+    colliders: ccol.CollisionSet,
+) -> list[pf.MeshObject]:
+    yaw = pf.control.choice(
+        rng,
+        [(0.0, 1.0), (math.pi / 2.0, 1.0), (math.pi, 1.0), (-math.pi / 2.0, 1.0)],
+    )
+    depth = abs(math.cos(yaw)) * size.x + abs(math.sin(yaw)) * size.y
+    length = abs(math.sin(yaw)) * size.x + abs(math.cos(yaw)) * size.y
+    grid = setup_grid_in_region(
+        unit=unit,
+        unit_size=unit_size,
+        center=center,
+        depth=depth,
+        length=length,
+        yaw=yaw,
+        gap=gap,
+        aisle=aisle,
+        rows_per_block=rows_per_block,
+        back_to_back=back_to_back,
+        colliders=colliders,
+        wall_colliders=None,
+    )
+    return grid.all_objects
+
+
+def _split_grid_rand(
+    rng: pf.RNG,
+    unit: list[pf.MeshObject],
+    unit_size: pf.Vector,
+    center: pf.Vector,
+    size: pf.Vector,
+    gap: pf.Vector,
+    aisle: float,
+    rows_per_block: int,
+    back_to_back: bool,
+    colliders: ccol.CollisionSet,
+) -> list[pf.MeshObject]:
+    rng, rng_first, rng_second = rng.spawn(3)
+    split = pf.random.uniform(rng, 0.35, 0.65)
+    split_gap = pf.random.uniform(rng, 1.0, 1.6)
+    axis = pf.Vector((1.0, 0.0, 0.0) if size.x >= size.y else (0.0, 1.0, 0.0))
+    total = size.dot(axis)
+    first = total * split - split_gap / 2.0
+    second = total - first - split_gap
+    first_objects = _facing_grid_rand(
+        rng_first,
+        unit=unit,
+        unit_size=unit_size,
+        center=center + axis * (first - total) / 2.0,
+        size=size - axis * (total - first),
+        gap=gap,
+        aisle=aisle,
+        rows_per_block=rows_per_block,
+        back_to_back=back_to_back,
+        colliders=colliders,
+    )
+    second_objects = _facing_grid_rand(
+        rng_second,
+        unit=unit,
+        unit_size=unit_size,
+        center=center + axis * (total - second) / 2.0,
+        size=size - axis * (total - second),
+        gap=gap,
+        aisle=aisle,
+        rows_per_block=rows_per_block,
+        back_to_back=back_to_back,
+        colliders=colliders,
+    )
+    return first_objects + second_objects
+
+
+def _interior_grid_rand(
+    rng: pf.RNG,
+    unit: list[pf.MeshObject],
+    unit_size: pf.Vector,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+    gap: pf.Vector,
+    aisle: float,
+    rows_per_block: int,
+    back_to_back: bool,
+) -> SetupGridResult:
+    rng, rng_layout, rng_grid = rng.spawn(3)
+    margin = pf.random.uniform(rng, 0.4, 0.8)
+    center = pf.Vector((room_dimensions.x / 2.0, room_dimensions.y / 2.0, 0.0))
+    size = pf.Vector(
+        (room_dimensions.x - 2 * margin, room_dimensions.y - 2 * margin, 0.0)
+    )
+    layout_func = pf.control.choice(
+        rng_layout, [(_facing_grid_rand, 1.0), (_split_grid_rand, 1.0)]
+    )
+    objects = layout_func(
+        rng_grid,
+        unit=unit,
+        unit_size=unit_size,
+        center=center,
+        size=size,
+        gap=gap,
+        aisle=aisle,
+        rows_per_block=rows_per_block,
+        back_to_back=back_to_back,
+        colliders=colliders,
+    )
+    for obj in unit:
+        delete_object(obj.item())
+    return SetupGridResult(objects)
+
+
+def _aisle_rows_of_unit_rand(
+    rng: pf.RNG,
+    unit: list[pf.MeshObject],
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+) -> SetupGridResult:
+    rng, rng_grid = rng.spawn(2)
+    unit_size = _center_unit(unit)
+    gap = pf.Vector((pf.random.uniform(rng, 0.7, 1.3), 0.0, 0.0))
+    aisle = pf.random.uniform(rng, 0.9, 1.5)
+    rows_per_block = pf.random.randint(rng, 3, 10)
+    return _interior_grid_rand(
+        rng_grid,
+        unit=unit,
+        unit_size=unit_size,
+        room_dimensions=room_dimensions,
+        colliders=colliders,
+        gap=gap,
+        aisle=aisle,
+        rows_per_block=rows_per_block,
+        back_to_back=True,
+    )
+
+
+@pf.tracer.grammar
+def desk_aisle_rows_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+) -> SetupGridResult:
+    rng, rng_setup = rng.spawn(2)
+    unit = desk_setup_rand(rng_setup).all_objects
+    return _aisle_rows_of_unit_rand(rng, unit, room_dimensions, colliders)
+
+
+@pf.tracer.grammar
+def storage_aisle_rows_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+) -> SetupGridResult:
+    rng, rng_storage = rng.spawn(2)
+    unit = [storage_object_rand(rng_storage).mesh]
+    return _aisle_rows_of_unit_rand(rng, unit, room_dimensions, colliders)
+
+
+@pf.tracer.grammar
+def bookshelf_aisle_rows_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+) -> SetupGridResult:
+    rng, rng_shelf, rng_rows = rng.spawn(3)
+    dimensions = pf.Vector(
+        (
+            pf.random.uniform(rng, 0.3, 0.45),
+            pf.random.uniform(rng, 0.8, 1.4),
+            pf.random.uniform(rng, 1.6, 2.2),
+        )
+    )
+    unit = [storage.storage_cell_shelf_rand(rng_shelf, dimensions=dimensions).mesh]
+    return _aisle_rows_of_unit_rand(rng_rows, unit, room_dimensions, colliders)
+
+
+@pf.tracer.grammar
+def chair_banks_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+) -> SetupGridResult:
+    rng, rng_choice, rng_seat, rng_grid = rng.spawn(4)
+    seat_func = pf.control.choice(
+        rng_choice, [(chair.chair_rand, 3.0), (chair.chair_bench_rand, 1.0)]
+    )
+    unit = [seat_func(rng_seat).mesh]
+    unit_size = _center_unit(unit)
+    gap = pf.Vector((pf.random.uniform(rng, 0.3, 0.6), 0.02, 0.0))
+    aisle = pf.random.uniform(rng, 0.9, 1.3)
+    block_length = pf.random.uniform(rng, 2.5, 7.0)
+    rows_per_block = max(1, int(block_length / (unit_size.y + gap.y)))
+    return _interior_grid_rand(
+        rng_grid,
+        unit=unit,
+        unit_size=unit_size,
+        room_dimensions=room_dimensions,
+        colliders=colliders,
+        gap=gap,
+        aisle=aisle,
+        rows_per_block=rows_per_block,
+        back_to_back=False,
+    )
+
+
+def _group_gap_rand(rng: pf.RNG) -> pf.Vector:
+    return pf.Vector(
+        (pf.random.uniform(rng, 1.0, 2.0), pf.random.uniform(rng, 1.0, 2.0), 0.0)
+    )
+
+
+def _plain_grid_rand(
+    rng: pf.RNG,
+    unit: list[pf.MeshObject],
+    gap: pf.Vector,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+) -> SetupGridResult:
+    unit_size = _center_unit(unit)
+    return _interior_grid_rand(
+        rng,
+        unit=unit,
+        unit_size=unit_size,
+        room_dimensions=room_dimensions,
+        colliders=colliders,
+        gap=gap,
+        aisle=0.0,
+        rows_per_block=1,
+        back_to_back=False,
     )
 
 
@@ -274,80 +602,13 @@ def desk_grid_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
 ) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    rng_rows, rng_seats = rng_spacing.spawn(2)
-    setup = desk_setup_rand(rng_setup)
-    setup.desk.item().name = "desk"
-    setup.chair.item().name = "desk_chair"
-    if spacing is None:
-        spacing = pf.Vector(
-            (
-                pf.random.uniform(rng_rows, 0.6, 1.5),
-                pf.random.uniform(rng_seats, 0.6, 1.5),
-                0.0,
-            )
-        )
-    return setup_grid_rand(
-        rng_grid,
-        setup.all_objects,
-        spacing,
-        room_dimensions,
-        colliders,
-        margin_fraction_max=0.2,
+    rng, rng_setup, rng_grid = rng.spawn(3)
+    unit = desk_setup_rand(rng_setup).all_objects
+    gap = pf.Vector(
+        (pf.random.uniform(rng, 0.6, 1.5), pf.random.uniform(rng, 0.0, 1.0) ** 2, 0.0)
     )
-
-
-@pf.tracer.grammar
-def classroom_grid_rand(
-    rng: pf.RNG,
-    room_dimensions: pf.Vector,
-    colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
-) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    setup = desk_setup_rand(rng_setup)
-    setup.desk.item().name = "desk"
-    setup.chair.item().name = "desk_chair"
-    if spacing is None:
-        spacing = pf.Vector((pf.random.uniform(rng_spacing, 0.6, 1.5), 0.0, 0.0))
-    return setup_grid_rand(
-        rng_grid,
-        setup.all_objects,
-        spacing,
-        room_dimensions,
-        colliders,
-        margin_fraction_max=0.2,
-    )
-
-
-@pf.tracer.grammar
-def chair_grid_rand(
-    rng: pf.RNG,
-    room_dimensions: pf.Vector,
-    colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
-) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    rng_rows, rng_seats = rng_spacing.spawn(2)
-    chair_obj = chair.chair_rand(rng_setup).mesh
-    chair_obj.item().name = "chair"
-    if spacing is None:
-        spacing = pf.Vector(
-            (
-                pf.random.uniform(rng_rows, 0.45, 0.8),
-                pf.random.uniform(rng_seats, 0.02, 0.12),
-                0.0,
-            )
-        )
-    return setup_grid_rand(
-        rng_grid,
-        [chair_obj],
-        spacing,
-        room_dimensions,
-        colliders,
-    )
+    return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
 
 
 @pf.tracer.grammar
@@ -355,84 +616,37 @@ def sofa_grid_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
 ) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    rng_rows, rng_seats = rng_spacing.spawn(2)
-    sofa = sofa_object_rand(rng_setup).mesh
-    sofa.item().name = "sofa"
-    if spacing is None:
-        spacing = pf.Vector(
-            (
-                pf.random.uniform(rng_rows, 0.8, 1.5),
-                pf.random.uniform(rng_seats, 0.05, 0.3),
-                0.0,
-            )
-        )
-    return setup_grid_rand(
-        rng_grid,
-        [sofa],
-        spacing,
-        room_dimensions,
-        colliders,
+    rng, rng_sofa, rng_grid = rng.spawn(3)
+    unit = [sofa_object_rand(rng_sofa).mesh]
+    gap = pf.Vector(
+        (pf.random.uniform(rng, 0.8, 1.5), pf.random.uniform(rng, 0.05, 0.3), 0.0)
     )
-
-
-def _group_spacing_rand(rng: pf.RNG) -> pf.Vector:
-    rng_x, rng_y = rng.spawn(2)
-    return pf.Vector(
-        (
-            pf.random.uniform(rng_x, 1.0, 2.0),
-            pf.random.uniform(rng_y, 1.0, 2.0),
-            0.0,
-        )
-    )
+    return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
 
 
 @pf.tracer.grammar
-def dining_grid_rand(
+def dining_table_grid_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
 ) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    setup = dining_setup_rand(rng_setup)
-    setup.dining_table.item().name = "dining_table"
-    for chair_obj in setup.chairs:
-        chair_obj.item().name = "dining_chair"
-    if spacing is None:
-        spacing = _group_spacing_rand(rng_spacing)
-    return setup_grid_rand(
-        rng_grid,
-        setup.all_objects,
-        spacing,
-        room_dimensions,
-        colliders,
-    )
+    rng, rng_setup, rng_grid = rng.spawn(3)
+    unit = dining_setup_rand(rng_setup).all_objects
+    gap = _group_gap_rand(rng)
+    return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
 
 
 @pf.tracer.grammar
-def cocktail_grid_rand(
+def cocktail_table_grid_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
 ) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    setup = cocktail_table_setup_rand(rng_setup)
-    setup.dining_table.item().name = "cocktail_table"
-    for chair_obj in setup.chairs:
-        chair_obj.item().name = "cocktail_chair"
-    if spacing is None:
-        spacing = _group_spacing_rand(rng_spacing)
-    return setup_grid_rand(
-        rng_grid,
-        setup.all_objects,
-        spacing,
-        room_dimensions,
-        colliders,
-    )
+    rng, rng_setup, rng_grid = rng.spawn(3)
+    unit = cocktail_table_setup_rand(rng_setup).all_objects
+    gap = _group_gap_rand(rng)
+    return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
 
 
 @pf.tracer.grammar
@@ -440,33 +654,45 @@ def centered_sofa_grid_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
-    spacing: pf.Vector | None = None,
 ) -> SetupGridResult:
-    rng_setup, rng_spacing, rng_grid = rng.spawn(3)
-    setup = centered_sofa_setup_rand(rng_setup)
-    for sofa in setup.sofas:
-        sofa.mesh.item().name = "sofa"
-    for table in setup.storages:
-        table.item().name = "coffee_table"
-    if spacing is None:
-        spacing = _group_spacing_rand(rng_spacing)
-    return setup_grid_rand(
-        rng_grid,
-        setup.all_objects,
-        spacing,
-        room_dimensions,
-        colliders,
+    rng, rng_setup, rng_grid = rng.spawn(3)
+    unit = centered_sofa_setup_rand(rng_setup).all_objects
+    gap = _group_gap_rand(rng)
+    return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
+
+
+def _interior_attempt_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    colliders: ccol.CollisionSet,
+) -> SetupGridResult | None:
+    rng_choice, rng_generate = rng.spawn(2)
+    grid_func = pf.control.choice(
+        rng_choice,
+        [
+            (desk_aisle_rows_rand, 2.0),
+            (storage_aisle_rows_rand, 1.0),
+            (bookshelf_aisle_rows_rand, 2.0),
+            (chair_banks_rand, 2.0),
+            (desk_grid_rand, 1.0),
+            (sofa_grid_rand, 1.0),
+            (dining_table_grid_rand, 1.0),
+            (cocktail_table_grid_rand, 1.0),
+            (centered_sofa_grid_rand, 1.0),
+        ],
     )
+    grid = grid_func(rng_generate, room_dimensions, colliders)
+    if not grid.all_objects:
+        return None
+    return grid
 
 
-def _indoor_space_dimensions_rand(rng: pf.RNG) -> pf.Vector:
-    rng_short, rng_long, rng_height, rng_orientation = rng.spawn(4)
-    short_side = pf.random.uniform(rng_short, 4.55, 8.0)
-    long_side = pf.random.uniform(rng_long, max(short_side, 5.85), 16.0)
-    height = pf.random.clip_gaussian(rng_height, 3.2, 1.2, 2.2, 6.0)
-    swap_axes = pf.control.choice(rng_orientation, [(False, 1.0), (True, 1.0)])
-    if swap_axes:
-        return pf.Vector((long_side, short_side, height))
+def _room_dimensions_rand(rng: pf.RNG) -> pf.Vector:
+    short_side = pf.random.uniform(rng, 4.55, 14.0)
+    long_side = short_side * pf.random.uniform(rng, 1.0, 1.7)
+    base_height = pf.random.clip_gaussian(rng, 3.2, 1.53, 2.2, 6.0)
+    tallness = pf.random.uniform(rng, 0.0, 1.0) ** 2
+    height = base_height + max(short_side - 8.0, 0.0) * 0.6 * tallness
     return pf.Vector((short_side, long_side, height))
 
 
@@ -477,10 +703,9 @@ def indoor_space_rand(
     frame_start: int = 1,
     frame_end: int = 1,
 ) -> RoomResult:
-    """A broad indoor shell filled by a repeated furniture-setup grid."""
-    rng_dimensions, rng_room, rng_grid = rng.spawn(3)
+    rng_dimensions, rng_room, rng_walls_choice, rng_walls, rng_interior = rng.spawn(5)
     if dimensions is None:
-        dimensions = _indoor_space_dimensions_rand(rng_dimensions)
+        dimensions = _room_dimensions_rand(rng_dimensions)
 
     room = room_unfurnished_rand(
         rng_room,
@@ -488,33 +713,27 @@ def indoor_space_rand(
         frame_start=frame_start,
         frame_end=frame_end,
     )
-    rng_grid_choice, rng_grid_generate = rng_grid.spawn(2)
-    grid_func = pf.control.choice(
-        rng_grid_choice,
-        [
-            (storage_grid_rand, 1.0),
-            (desk_grid_rand, 2.0),
-            (classroom_grid_rand, 1.0),
-            (chair_grid_rand, 1.0),
-            (sofa_grid_rand, 1.0),
-            (dining_grid_rand, 2.0),
-            (cocktail_grid_rand, 1.0),
-            (centered_sofa_grid_rand, 1.0),
-        ],
+    wall_colliders = ccol.collision_set(cast("list[pf.Object]", room.wall_planes))
+    walls_func = pf.control.choice(
+        rng_walls_choice,
+        [(lambda *_: SetupGridResult([]), 1.0), (wall_rows_rand, 2.0)],
     )
-    grid = grid_func(
-        rng_grid_generate,
-        dimensions,
-        room.colliders,
+    walls = walls_func(rng_walls, dimensions, room.colliders, wall_colliders)
+    colliders = ccol.collision_set(
+        room.colliders.objs + walls.all_objects, cache=room.colliders
     )
-    all_objects = room.all_objects + grid.all_objects
+    interior = repeat_attempts(
+        _interior_attempt_rand, rng_interior, 4, dimensions, colliders
+    )
+    interior_objects = [] if interior is None else interior.all_objects
+
+    all_objects = room.all_objects + walls.all_objects + interior_objects
     return RoomResult(
         all_objects=all_objects,
         cameras=room.cameras,
         lights=room.lights,
         colliders=ccol.collision_set(
-            room.colliders.objs + grid.all_objects,
-            cache=room.colliders,
+            colliders.objs + interior_objects, cache=colliders
         ),
         floor=room.floor,
         dimensions=room.dimensions,

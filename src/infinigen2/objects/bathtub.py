@@ -289,18 +289,12 @@ def bathtub_shell(
     abs_y = pf.nodes.math.absolute(square_y)
     direction_x = abs_x * half_width
     direction_y = abs_y * half_size
-    vertical_scale = half_width / pf.nodes.math.maximum(direction_x, 1e-8)
-    vertical_hit_y = vertical_scale * direction_y
-    vertical_scale = pf.nodes.func.switch(
-        vertical_hit_y <= half_size - radius + 1e-6, 1e6, vertical_scale
-    )
-    horizontal_scale = half_size / pf.nodes.math.maximum(direction_y, 1e-8)
-    horizontal_hit_x = horizontal_scale * direction_x
-    horizontal_scale = pf.nodes.func.switch(
-        horizontal_hit_x <= half_width - radius + 1e-6, 1e6, horizontal_scale
-    )
     corner_x = half_width - radius
     corner_y = half_size - radius
+    vertical_scale = half_width / pf.nodes.math.maximum(direction_x, 1e-8)
+    vertical_hit_y = vertical_scale * direction_y
+    horizontal_scale = half_size / pf.nodes.math.maximum(direction_y, 1e-8)
+    horizontal_hit_x = horizontal_scale * direction_x
     quadratic = direction_x * direction_x + direction_y * direction_y
     linear = direction_x * corner_x + direction_y * corner_y
     constant = corner_x * corner_x + corner_y * corner_y - radius * radius
@@ -308,15 +302,11 @@ def bathtub_shell(
     corner_scale = (linear + pf.nodes.math.sqrt(discriminant)) / pf.nodes.math.maximum(
         quadratic, 1e-8
     )
-    corner_hit_x = corner_scale * direction_x
-    corner_hit_y = corner_scale * direction_y
-    corner_valid = pf.nodes.func.boolean_and(
-        corner_hit_x >= corner_x - 1e-6,
-        corner_hit_y >= corner_y - 1e-6,
+    boundary_scale = pf.nodes.func.switch(
+        horizontal_hit_x <= corner_x, corner_scale, horizontal_scale
     )
-    corner_scale = pf.nodes.func.switch(corner_valid, 1e6, corner_scale)
-    boundary_scale = pf.nodes.math.minimum(
-        vertical_scale, pf.nodes.math.minimum(horizontal_scale, corner_scale)
+    boundary_scale = pf.nodes.func.switch(
+        vertical_hit_y <= corner_y, boundary_scale, vertical_scale
     )
     center_x = pf.nodes.func.switch(
         ring < 10.0,
