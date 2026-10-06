@@ -16,6 +16,7 @@ from typing import NamedTuple, TypeVar
 import numpy as np
 import procfunc as pf
 import shapely
+from mathutils import Matrix
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.polygon import orient
 
@@ -39,6 +40,7 @@ from infinigen2.scenes.house.floor_plan import (
 from infinigen2.scenes.house.outline import house_outline_rand
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
+from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.scenes.room.ceiling_features import (
     CeilingFeaturesResult,
     CeilingGridResult,
@@ -108,12 +110,15 @@ class HouseWallResult(NamedTuple):
     windows: list[pf.MeshObject]
     decorations: dict[str, list[pf.MeshObject]]
     doors: dict[int, pf.MeshObject]
+    doorway_centers: dict[int, tuple[float, float]]
     colliders: ccol.CollisionSet
 
 
 class HouseDoorWallsResult(NamedTuple):
     sides: list[HouseWallSideResult]
     doors: dict[int, pf.MeshObject]
+    door_widths: dict[int, float]
+    doorway_centers: dict[int, tuple[float, float]]
     colliders: ccol.CollisionSet
 
 
@@ -128,6 +133,7 @@ class HouseRoomResult(NamedTuple):
     flat_walls: list[pf.MeshObject]
     neighbors: dict[int, int]
     doors: dict[int, pf.MeshObject]
+    doorway_centers: dict[int, tuple[float, float]]
 
 
 class HouseResult(NamedTuple):
@@ -239,26 +245,34 @@ def _door_wall_result(cutout: CutoutResult, doors: list[pf.MeshObject]) -> WallR
 
 
 def _door_affordance_collider(
-    plane: WallPlane, center: float, width: float, height: float, wall_index: int
+    plane: WallPlane,
+    center_xy: tuple[float, float],
+    width: float,
+    height: float,
+    wall_index: int,
 ) -> pf.MeshObject:
     direction = _plane_direction(plane)
-    middle = (
-        np.asarray(plane.start)
-        + direction * center
-        - _plane_inward(plane) * plane.thickness / 2
-    )
     angle = float(np.arctan2(direction[1], direction[0]) - np.pi / 2)
     collider = pf.ops.primitives.mesh_cube(size=1.0)
     pf.ops.mesh.transform(collider, scale=(2 * width, width, height))
     pf.ops.object.set_transform(
         collider,
-        location=(*middle, height / 2),
+        location=(*center_xy, height / 2),
         rotation_euler=(0.0, 0.0, angle),
     )
     collider.item().name = f"house_door_affordance.{wall_index:02d}"
     collider.item().hide_render = True
     collider.item().display_type = "WIRE"
     return collider
+
+
+def _keep_door_leaves(leaves: list[pf.MeshObject]) -> list[pf.MeshObject]:
+    return leaves
+
+
+def _drop_door_leaves(leaves: list[pf.MeshObject]) -> list[pf.MeshObject]:
+    delete_objects([obj.item() for obj in leaves])
+    return []
 
 
 def _door_walls(
@@ -274,6 +288,8 @@ def _door_walls(
     ]
     results = []
     doors = {}
+    door_widths = {}
+    doorway_centers = {}
     door_clearances = []
     for wall_index, rng_wall in zip(
         door_walls, rng.spawn(len(door_walls)), strict=True
@@ -282,7 +298,7 @@ def _door_walls(
         start = np.asarray(wall.start)
         position = start + (np.asarray(wall.end) - start) * wall.door_position_frac
         sides = [p for p in planes_interior if p.wall_index == wall_index]
-        rng_params, rng_door = rng_wall.spawn(2)
+        rng_params, rng_door, rng_present = rng_wall.spawn(3)
         dimensions = _door_dimensions_rand(
             rng_params, height, min(side.length for side in sides)
         )
@@ -294,23 +310,118 @@ def _door_walls(
             for side, center in zip(sides, centers, strict=True)
         ]
         delete_objects([obj.item() for obj in [door, *cutouts[1].aliases]])
+        leaves_fn = pf.control.choice(
+            rng_present, [(_drop_door_leaves, 1.0), (_keep_door_leaves, 1.0)]
+        )
+        leaves = leaves_fn(cutouts[0].aliases)
         results += [
-            HouseWallSideResult(
-                sides[0], _door_wall_result(cutouts[0], cutouts[0].aliases)
-            ),
+            HouseWallSideResult(sides[0], _door_wall_result(cutouts[0], leaves)),
             HouseWallSideResult(sides[1], _door_wall_result(cutouts[1], [])),
         ]
-        doors[wall_index] = cutouts[0].aliases[0]
+        if leaves:
+            doors[wall_index] = leaves[0]
+            door_widths[wall_index] = door_width
+        doorway_center = (
+            np.asarray(sides[0].start)
+            + _plane_direction(sides[0]) * centers[0]
+            - _plane_inward(sides[0]) * sides[0].thickness / 2
+        )
+        doorway_centers[wall_index] = (
+            float(doorway_center[0]),
+            float(doorway_center[1]),
+        )
         door_clearances.append(
             _door_affordance_collider(
-                sides[0], centers[0], door_width, height, wall_index
+                sides[0], doorway_centers[wall_index], door_width, height, wall_index
             )
         )
     return HouseDoorWallsResult(
         sides=results,
         doors=doors,
+        door_widths=door_widths,
+        doorway_centers=doorway_centers,
         colliders=ccol.collision_set([*doors.values(), *door_clearances]),
     )
+
+
+def _open_door_rand(
+    rng: pf.RNG,
+    door: pf.MeshObject,
+    door_width: float,
+    obstacles: ccol.CollisionSet,
+    target_angle_deg: float | None,
+    attempts: int = 8,
+) -> float | None:
+    closed = door.item().matrix_world.copy()
+    hinge = Matrix.Translation((0.0, -door_width / 2, 0.0))
+    attempt_index = 0
+
+    def attempt(attempt_rng: pf.RNG) -> float | None:
+        nonlocal attempt_index
+        if target_angle_deg is None:
+            magnitude = pf.random.clip_gaussian(attempt_rng, 135.0, 40.0, 45.0, 180.0)
+        else:
+            magnitude = abs(target_angle_deg)
+        direction = 1 if attempt_index % 2 == 0 else -1
+        angle_deg = magnitude * direction
+        attempt_index += 1
+        rotation = Matrix.Rotation(np.deg2rad(angle_deg), 4, "Z")
+        door.item().matrix_world = closed @ hinge @ rotation @ hinge.inverted()
+        if ccol.intersection_test(obstacles, door):
+            door.item().matrix_world = closed
+            return None
+        return float(angle_deg)
+
+    if target_angle_deg == 0:
+        return 0.0
+    angle_deg = repeat_attempts(attempt, rng, attempts)
+    if angle_deg is None:
+        door.item().matrix_world = closed
+        return None
+    return angle_deg
+
+
+def _door_obstacles(result: WallResult) -> list[pf.MeshObject]:
+    return [
+        *result.wall_planes,
+        *result.storage_containers,
+        *result.supports,
+        *result.decorations.get("window", []),
+    ]
+
+
+def _open_doors_rand(
+    rng: pf.RNG,
+    sides: list[HouseWallSideResult],
+    doors: dict[int, pf.MeshObject],
+    door_widths: dict[int, float],
+    corners: list[pf.MeshObject],
+    target_angle_deg: float | None,
+) -> None:
+    wall_indices = sorted(doors)
+    door_rngs = rng.spawn(len(wall_indices))
+    for wall_index, door_rng in zip(wall_indices, door_rngs, strict=True):
+        results = [s.result for s in sides if s.plane.wall_index != wall_index]
+        objects = [obj for r in results for obj in _door_obstacles(r)]
+        other_doors = [doors[index] for index in doors if index != wall_index]
+        obstacles = ccol.collision_set(_unique_objects(objects + corners + other_doors))
+        door = doors[wall_index]
+        angle_deg = _open_door_rand(
+            door_rng, door, door_widths[wall_index], obstacles, target_angle_deg
+        )
+        if angle_deg is not None:
+            continue
+        for side in sides:
+            if side.plane.wall_index != wall_index:
+                continue
+            side.result.all_objects[:] = [
+                obj for obj in side.result.all_objects if obj != door
+            ]
+            for decorations in side.result.decorations.values():
+                decorations[:] = [obj for obj in decorations if obj != door]
+        delete_objects([door.item()])
+        del doors[wall_index]
+        del door_widths[wall_index]
 
 
 def _prism(section: np.ndarray, z_bounds: tuple[float, float]) -> pf.MeshObject:
@@ -541,12 +652,20 @@ def house_walls_rand(
     room_count: int,
     height: float,
     feature_min_width: float = 1.4,
+    door_open_angle_deg: float | None = None,
 ) -> HouseWallResult:
     """Treat both sides of every partition and the inside of every outer wall.
 
     Partition sides have no backs because the two offset faces close the wall.
     """
-    rng_window, rng_materials, rng_doors, rng_interior, rng_exterior = rng.spawn(5)
+    (
+        rng_window,
+        rng_materials,
+        rng_doors,
+        rng_interior,
+        rng_exterior,
+        rng_door_open,
+    ) = rng.spawn(6)
     vec_wall = pf.nodes.shader.coord().uv
     room_rngs = rng_materials.spawn(room_count)
     materials = [wall_material_rand(room_rng, vec_wall) for room_rng in room_rngs]
@@ -571,6 +690,9 @@ def house_walls_rand(
         )
 
     door_walls = _door_walls(rng_doors, walls, planes_interior, height, materials)
+    door_clearances = [
+        obj for obj in door_walls.colliders.objs if obj not in door_walls.doors.values()
+    ]
     interior = list(door_walls.sides)
     feature_planes = [
         plane
@@ -617,6 +739,17 @@ def house_walls_rand(
 
     corners_by_room = _shell_fillers(planes_exterior, materials, walls, height)
     sides = interior + exterior
+    corners = _unique_objects(
+        [obj for objects in corners_by_room.values() for obj in objects]
+    )
+    _open_doors_rand(
+        rng_door_open,
+        sides,
+        door_walls.doors,
+        door_walls.door_widths,
+        corners,
+        door_open_angle_deg,
+    )
     results = [side.result for side in sides]
     decorations: dict[str, list[pf.MeshObject]] = defaultdict(list)
     for result in results:
@@ -626,9 +759,7 @@ def house_walls_rand(
         sides=tuple(sides),
         planes_interior=[obj for side in interior for obj in side.result.wall_planes],
         planes_exterior=[obj for side in exterior for obj in side.result.wall_planes],
-        corners=_unique_objects(
-            [obj for objects in corners_by_room.values() for obj in objects]
-        ),
+        corners=corners,
         corners_by_room=corners_by_room,
         backs=[obj for result in results for obj in result.backs],
         sills=[obj for result in results for obj in result.sills],
@@ -638,7 +769,11 @@ def house_walls_rand(
         windows=decorations["window"],
         decorations=dict(decorations),
         doors=door_walls.doors,
-        colliders=door_walls.colliders,
+        doorway_centers=door_walls.doorway_centers,
+        colliders=ccol.collision_set(
+            [*door_walls.doors.values(), *door_clearances],
+            cache=door_walls.colliders,
+        ),
     )
 
 
@@ -649,6 +784,7 @@ def house_unfurnished_rand(
     room_count: int | None = None,
     height: float | None = None,
     wall_thickness: float | None = None,
+    door_open_angle_deg: float | None = None,
 ) -> HouseResult:
     """Dress a house shell with surface, wall, ceiling, and lighting options."""
     (
@@ -699,6 +835,7 @@ def house_unfurnished_rand(
         shape.planes_exterior,
         len(boundaries),
         height,
+        door_open_angle_deg=door_open_angle_deg,
     )
     sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
     storage_objects = _unique_objects([*walls.storage_containers, *walls.supports])
@@ -732,7 +869,7 @@ def house_unfurnished_rand(
             for i, (first, second) in door_rooms.items()
             if room_index in (first, second)
         }
-        doors = {wall_index: walls.doors[wall_index] for wall_index in neighbors}
+        doors = {i: walls.doors[i] for i in neighbors if i in walls.doors}
         room_objects = [
             surface.floor,
             surface.ceiling,
@@ -761,6 +898,10 @@ def house_unfurnished_rand(
                 ],
                 neighbors=neighbors,
                 doors=doors,
+                doorway_centers={
+                    wall_index: walls.doorway_centers[wall_index]
+                    for wall_index in neighbors
+                },
             )
         )
     all_objects = _unique_objects(
@@ -777,6 +918,7 @@ def house_unfurnished_rand(
         + fixtures
         + storage_objects
         + [obj for objs in walls.decorations.values() for obj in objs]
+        + list(walls.doors.values())
     )
     colliders = ccol.collision_set(collider_objects, cache=walls.colliders)
     ceiling_lights = [light for surface in surfaces for light in surface.lights]

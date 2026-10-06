@@ -251,15 +251,15 @@ def intersection_test(col: CollisionSet, obj: pf.Object) -> bool:
 
 
 def box_intersection_test(
-    col: CollisionSet, transform: np.ndarray, size: float = 1.0
+    col: CollisionSet,
+    transform: np.ndarray,
+    size: float | tuple[float, float, float] = 1.0,
 ) -> bool:
     if n_colliders(col) == 0:
         return False
     _sync_transforms(col)
-    box = trimesh.creation.box(
-        extents=np.broadcast_to(np.asarray(size, dtype=float), 3)
-    )
-    fcl_geom = col.collision_manager._get_fcl_obj(box)
+    extents = np.broadcast_to(np.asarray(size, dtype=float), 3)
+    fcl_geom = fcl.Box(*extents)
     probe = trimesh.collision.CollisionManager()
     _add_object_cached(
         probe,

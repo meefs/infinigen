@@ -14,6 +14,7 @@ def test_house_furnished_rand_tracks_room_contents() -> None:
         dimensions=(8.0, 7.0),
         room_count=1,
         height=2.8,
+        door_open_angle_deg=0.0,
     )
 
     assert len(result.rooms) == 1

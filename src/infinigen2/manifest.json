@@ -1155,11 +1155,6 @@
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.rrt_camera_fast",
-    "num_seeds": 3
-  },
-  {
-    "category": "Cameras",
     "name": "infinigen2.cameras.random_walk_camera",
     "num_seeds": 3
   },

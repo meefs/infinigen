@@ -78,6 +78,7 @@ if [ "${INTEGRATION_SLOT_INDEX:-0}" = 0 ]; then
     EXAMPLE_SCRIPTS=(
         "clay_pan_video examples/render_clay_pan_video.py"
         "flying_indoor examples/flying_indoor/render.py --camera_idx 0"
+        "house_tour examples/house_tour/render.py"
     )
 
     LISTED_EXAMPLES=$(printf '%s\n' "${EXAMPLE_SCRIPTS[@]}" | cut -d' ' -f2 | sort)

@@ -62,6 +62,7 @@ __all__ = [
     "furnish_house_room_furniture_rand",
     "furnish_house_room_rand",
     "house_furnished_rand",
+    "link_house_room_collection",
     "setup_from_space_rand",
 ]
 
@@ -523,7 +524,7 @@ def furnish_house_room_rand(
     )
 
 
-def _link_room_collection(
+def link_house_room_collection(
     room_index: int, objects: list[pf.MeshObject], lights: list[pf.LightObject]
 ) -> bpy.types.Collection:
     collection = bpy.data.collections.new(f"house_room_{room_index:02d}")
@@ -545,6 +546,7 @@ def house_furnished_rand(
     room_count: int | None = None,
     height: float | None = None,
     wall_thickness: float | None = None,
+    door_open_angle_deg: float | None = None,
 ) -> HouseResult:
     """Build an unfurnished house, then furnish each solved room."""
     rng_house, rng_rooms, rng_nonstorage, rng_storage = rng.spawn(4)
@@ -554,6 +556,7 @@ def house_furnished_rand(
         room_count=room_count,
         height=height,
         wall_thickness=wall_thickness,
+        door_open_angle_deg=door_open_angle_deg,
     )
     nonstorage_collection = decoration_collection_primitives_rand(rng_nonstorage)
     storage_collection = decoration_collection_primitives_and_real_rand(rng_storage)
@@ -589,7 +592,9 @@ def house_furnished_rand(
         )
         room_objects = [*room.all_objects, *furnished.all_objects]
         room_lights = [*room.lights, *furnished.lights]
-        collection = _link_room_collection(room.room_index, room_objects, room_lights)
+        collection = link_house_room_collection(
+            room.room_index, room_objects, room_lights
+        )
         collections.append(collection)
         rooms.append(
             HouseRoomResult(
@@ -603,6 +608,7 @@ def house_furnished_rand(
                 flat_walls=room.flat_walls,
                 neighbors=room.neighbors,
                 doors=room.doors,
+                doorway_centers=room.doorway_centers,
             )
         )
         objects += furnished.all_objects

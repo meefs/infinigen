@@ -84,14 +84,19 @@ def test_house_unfurnished_rand_returns_rooms_with_shell_and_door_graph() -> Non
     graph_keys = set()
     for room in result.rooms:
         assert room.boundary_rings
-        assert room.neighbors.keys() == room.doors.keys()
+        assert room.doors.keys() <= room.neighbors.keys()
+        assert room.doorway_centers.keys() == room.neighbors.keys()
         required = [room.floor, room.ceiling, *room.walls, *room.doors.values()]
         assert all(obj in room.all_objects for obj in required)
         assert all(obj in result.all_objects for obj in room.all_objects)
         for wall_index, neighbor_index in room.neighbors.items():
             neighbor = result.rooms[neighbor_index]
             assert neighbor.neighbors[wall_index] == room.room_index
-            assert neighbor.doors[wall_index] is room.doors[wall_index]
+            assert (
+                neighbor.doorway_centers[wall_index] == room.doorway_centers[wall_index]
+            )
+            if wall_index in room.doors:
+                assert neighbor.doors[wall_index] is room.doors[wall_index]
             graph_keys.add(wall_index)
     assert len(graph_keys) == len(result.rooms) - 1
 

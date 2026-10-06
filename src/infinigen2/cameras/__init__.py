@@ -6,7 +6,7 @@ from .monocular import (
     orbit_90_camera_rand,
 )
 from .random_walk import random_walk_camera
-from .rrt import rrt_camera, rrt_camera_fast
+from .rrt import rrt_camera
 from .stereo import (
     sample_baseline,
     stereo_accept_pred,
@@ -29,7 +29,6 @@ __all__ = [
     "sample_baseline",
     "stereo_accept_pred",
     "rrt_camera",
-    "rrt_camera_fast",
     "camera_cube_free_space_check",
     "camera_transform_cube_free_space_check",
     "total_bbox",
