@@ -46,6 +46,7 @@ __all__ = [
     "bathroom_setup_rand",
     "bathroom_sink_setup_rand",
     "bathroom_wall_arrangement_rand",
+    "snap_wall_hardware_rand",
 ]
 
 logger = logging.getLogger(__name__)
@@ -518,6 +519,31 @@ def _snap_hardware_adjacent_rand(
     place_func(hardware, parents)
 
 
+def snap_wall_hardware_rand(
+    rng: pf.RNG,
+    hardware: MeshResult,
+    parents: list[pf.MeshObject],
+    wall_colliders: ccol.CollisionSet,
+    colliders: ccol.CollisionSet,
+) -> MeshResult | None:
+    """Wall-mount `hardware` beside or above one of `parents`, retrying until its
+    back sits flat on `wall_colliders` and it clears `colliders`."""
+    grounded = functools.partial(
+        back_face_grounded,
+        colliders=wall_colliders,
+        margin=_WALL_MARGIN,
+    )
+    return retry_place(
+        rng,
+        hardware,
+        colliders,
+        _snap_hardware_adjacent_rand,
+        attempts=16,
+        accept_fn=grounded,
+        parents=parents,
+    )
+
+
 def _bathroom_hardware_objects_rand(
     rng: pf.RNG,
     parents: list[pf.MeshObject],
@@ -533,19 +559,8 @@ def _bathroom_hardware_objects_rand(
     for i, rng_item in enumerate(rng_hardware.spawn(n)):
         rng_generate, rng_place = rng_item.spawn(2)
         hardware = bathroom_hardware.bathroom_hardware_rand(rng_generate)
-        grounded = functools.partial(
-            back_face_grounded,
-            colliders=wall_colliders,
-            margin=_WALL_MARGIN,
-        )
-        placed = retry_place(
-            rng_place,
-            hardware,
-            colliders,
-            _snap_hardware_adjacent_rand,
-            attempts=16,
-            accept_fn=grounded,
-            parents=parents,
+        placed = snap_wall_hardware_rand(
+            rng_place, hardware, parents, wall_colliders, colliders
         )
         if placed is None:
             delete_object(hardware.mesh.item())

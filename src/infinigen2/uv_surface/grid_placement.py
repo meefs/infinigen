@@ -16,6 +16,7 @@ __all__ = [
     "NormedUvToBoundsUvResult",
     "SubgridResult",
     "faces_for_instance_grid_bboxes",
+    "grid_between",
     "grid_from_spacing",
     "grid_with_indices",
     "normed_uv_to_bounds_uv",
@@ -269,6 +270,29 @@ def grid_from_spacing(
         query_uv=query_uv,
         index_x=grid_with_indices_result.index_x,
         index_y=grid_with_indices_result.index_y,
+    )
+
+
+@pf.nodes.node_function
+def grid_between(
+    first_uv: t.SocketOrVal[pf.Vector],
+    last_uv: t.SocketOrVal[pf.Vector],
+    count: t.SocketOrVal[int],
+) -> GridFromSpacingResult:
+    """`count` query points evenly spaced in UV from `first_uv` to `last_uv`."""
+    grid = grid_with_indices(vertices_x=count, vertices_y=1)
+    query_uv = pf.nodes.math.map_range(
+        value=grid.uv_factor,
+        from_min=(0.0, 0.0, 0.0),
+        from_max=(1.0, 1.0, 1.0),
+        to_min=first_uv,
+        to_max=last_uv,
+    )
+    return GridFromSpacingResult(
+        grid_mesh=grid.mesh,
+        query_uv=query_uv,
+        index_x=grid.index_x,
+        index_y=grid.index_y,
     )
 
 

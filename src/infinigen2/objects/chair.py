@@ -2186,7 +2186,7 @@ def office_chair_rand(
         rng_top_sel,
         [
             (curvy_seat_rand, 1.5),
-            (round_seat_rand, 1.0),
+            (round_seat_rand, 0.33),
         ],
     )
     leg_spread = pf.random.uniform(rng, 0.5, 0.7)

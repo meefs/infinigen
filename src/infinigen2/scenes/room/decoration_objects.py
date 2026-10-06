@@ -526,10 +526,10 @@ def decoration_smallobj_rand(rng: pf.RNG) -> MeshResult:
         rng_choice,
         [
             (_decoration_primitive_rand, 4.0),
-            (plant_pot.plant_pot_small_rand, 1.0),
-            (bowl.bowl_rand, 1.0),
-            (vase.cup_rand, 1.0),
-            (boulder.rock_rand, 1.0),
+            (plant_pot.plant_pot_small_rand, 0.5),
+            (bowl.bowl_rand, 0.5),
+            (vase.cup_rand, 0.5),
+            (boulder.rock_rand, 0.5),
         ],
     )
     return func(rng_object)

@@ -21,6 +21,7 @@ __all__ = [
     "back_face_grounded",
     "bbox_face_grounded",
     "clear_of",
+    "inset_floor_point_rand",
     "jitter_object_rotation_rand",
     "random_bbox_poses_animation_rand",
     "retry_place",
@@ -229,6 +230,22 @@ def snap_to_wall(
         child_side=child_side,
         parent_side="front",
     )
+
+
+def inset_floor_point_rand(
+    rng: pf.RNG,
+    room_dimensions: pf.Vector,
+    half_size: tuple[float, float],
+    margin: float = 0.0,
+) -> tuple[float, float]:
+    """A random floor point where a footprint of `half_size` stays `margin` inside
+    the room, falling back to the room centre on an axis too small for it."""
+    slack = [
+        max(0.0, room_dimensions[i] / 2.0 - margin - half_size[i]) for i in range(2)
+    ]
+    x = room_dimensions.x / 2.0 + pf.random.uniform(rng, -slack[0], slack[0])
+    y = room_dimensions.y / 2.0 + pf.random.uniform(rng, -slack[1], slack[1])
+    return x, y
 
 
 def snap_back_front(

@@ -47,7 +47,7 @@ def wall_board_shelf_rand(
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
     wall_width, wall_height = wall_uv_dimensions(wall)
 
-    shelf_depth = pf.random.uniform(rng, 0.27, 0.4725)
+    shelf_depth = pf.random.uniform(rng, 0.162, 0.2835)
     shelf_thickness = pf.random.uniform(rng, 0.02, 0.05)
     spacing_x = pf.random.uniform(rng, 0.03, 0.25)
     spacing_y = pf.random.uniform(rng, 0.5, 0.65)

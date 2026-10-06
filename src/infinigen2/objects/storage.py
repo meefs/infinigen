@@ -17,6 +17,7 @@ from infinigen2.objects.door import (
     door_with_handle,
 )
 from infinigen2.shaders.functionality_lists import (
+    cabinet_material_rand,
     furniture_material_rand,
     glass_material_rand,
 )
@@ -29,6 +30,8 @@ __all__ = [
     "cabinet_with_base_rand",
     "cabinet_with_door",
     "cabinet_with_door_rand",
+    "storage_drawer_door_rand",
+    "storage_sink_base_rand",
     "storage_cell_shelf",
     "storage_cell_bounds",
     "storage_cell_shelf_rand",
@@ -94,16 +97,21 @@ def storage_cell_bounds(
 def _storage_drawers_rand(
     rng: pf.RNG,
     slots: list[tuple[pf.Vector, pf.Vector]],
-    params: StorageParams,
+    material: pf.Material,
+    frame_thickness: float,
+    row_divider_width: float,
+    col_divider_width: float,
+    handle: pf.MeshObject | None = None,
 ) -> pf.MeshObject:
-    side = min(params.frame_thickness, params.col_divider_width)
-    row = min(params.frame_thickness, params.row_divider_width)
+    side = min(frame_thickness, col_divider_width * 0.5)
+    row = min(frame_thickness, row_divider_width * 0.5)
     drawers = drawer.drawer_rand(
         rng,
         slots[0][1] - slots[0][0],
-        material=params.material,
+        material=material,
         frame_widths=(side, side, row, row),
         opening_fraction=0,
+        handle=handle,
     ).mesh
     copies = [drawers.clone() for _ in slots[1:]]
     pf.ops.object.set_transform(drawers, location=slots[0][0])
@@ -609,7 +617,10 @@ def storage_cell_shelf_rand(
 
 
 def _storage_doors_rand(
-    rng: pf.RNG, dimensions: pf.Vector, material: pf.Material
+    rng: pf.RNG,
+    dimensions: pf.Vector,
+    material: pf.Material,
+    handle: pf.MeshObject | None = None,
 ) -> pf.MeshObject:
     rng_door_choice, rng_door, rng_style, rng_handle = rng.spawn(4)
 
@@ -618,17 +629,16 @@ def _storage_doors_rand(
             r, grip_length=min(0.06, dimensions.z * 0.5)
         )
 
-    handle_fn = pf.control.choice(
-        rng_style, [(bar_pull, 1.0), (handles.knob_handle_rand, 1.0)]
-    )
+    if handle is None:
+        handle_fn = pf.control.choice(
+            rng_style, [(bar_pull, 1.0), (handles.knob_handle_rand, 1.0)]
+        )
+        handle = handle_fn(rng_handle).mesh
     door_fn = pf.control.choice(
         rng_door_choice, [(door_composite_rand, 2.0), (door_double_rand, 1.0)]
     )
     return door_fn(
-        rng_door,
-        dimensions=dimensions,
-        material=material,
-        handle=handle_fn(rng_handle).mesh,
+        rng_door, dimensions=dimensions, material=material, handle=handle
     ).mesh
 
 
@@ -643,6 +653,7 @@ def storage_composite_rand(
     row_divider_width: float | None = None,
     col_divider_width: float | None = None,
     desired_slot_aspect: float | None = None,
+    handle: pf.MeshObject | None = None,
 ) -> StorageResult:
     """Sample one open, drawer, single-door or double-door cabinet treatment.
 
@@ -689,13 +700,22 @@ def storage_composite_rand(
         return None
 
     def drawer_front(r: pf.RNG) -> pf.MeshObject | None:
-        return _storage_drawers_rand(r, slots, params)
+        return _storage_drawers_rand(
+            r,
+            slots,
+            params.material,
+            params.frame_thickness,
+            params.row_divider_width,
+            params.col_divider_width,
+            handle,
+        )
 
     def door_front(r: pf.RNG) -> pf.MeshObject | None:
         front = _storage_doors_rand(
             r,
             pf.Vector((front_thickness, params.dimensions.y, params.dimensions.z)),
             params.material,
+            handle,
         )
         pf.ops.object.set_transform(front, location=(carcass_depth, 0, 0))
         return front
@@ -1057,8 +1077,12 @@ def cabinet_with_door(
 
 
 def cabinet_with_door_rand(
-    rng: pf.RNG, dimensions: pf.Vector | None = None
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    frame_material: pf.Material | None = None,
+    handle: pf.MeshObject | None = None,
 ) -> StorageResult:
+    """`frame_material` covers carcass and door front when given."""
     rng, rng_shelves, rng_front, rng_mat, rng_front_mat, rng_handle = rng.spawn(6)
     if dimensions is None:
         depth = pf.random.uniform(rng, 0.25, 0.35)
@@ -1067,21 +1091,21 @@ def cabinet_with_door_rand(
         height = pf.random.uniform(rng, 0.9, 1.8)
         dimensions = pf.Vector((depth, width, height))
     vec = pf.nodes.shader.coord().uv
-    frame_material = furniture_material_rand(rng_mat, vec)
-
     (
         rng_front_choice,
         rng_front_body,
         rng_inner_choice,
         rng_inner_body,
     ) = rng_front_mat.spawn(4)
-    front_material = pf.control.choice(
-        rng_front_choice,
-        [
-            (lambda _rng: frame_material, 2.0),
-            (lambda r: furniture_material_rand(r, vec), 1.0),
-        ],
-    )(rng_front_body)
+    front_options = [
+        (lambda _rng: frame_material, 2.0),
+        (lambda r: furniture_material_rand(r, vec), 1.0),
+    ]
+    front_material = frame_material
+    if frame_material is None:
+        frame_material = furniture_material_rand(rng_mat, vec)
+        front_fn = pf.control.choice(rng_front_choice, front_options)
+        front_material = front_fn(rng_front_body)
 
     inner_material = pf.control.choice(
         rng_inner_choice,
@@ -1099,15 +1123,15 @@ def cabinet_with_door_rand(
         frame_material=frame_material,
     )
     rng_handle, rng_handle_choice = rng_handle.spawn(2)
-    handle_func = pf.control.choice(
-        rng_handle_choice,
-        [
-            (handles.bar_pull_handle_rand, 6.0),
-            (handles.curved_pull_handle_rand, 4.0),
-            (handles.knob_handle_rand, 2.0),
-            (handles.lever_handle_rand, 1.0),
-        ],
-    )
+    handle_options = [
+        (handles.bar_pull_handle_rand, 6.0),
+        (handles.curved_pull_handle_rand, 4.0),
+        (handles.knob_handle_rand, 2.0),
+        (handles.lever_handle_rand, 1.0),
+    ]
+    if handle is None:
+        handle_func = pf.control.choice(rng_handle_choice, handle_options)
+        handle = handle_func(rng_handle).mesh
     rng_front, rng_front_choice = rng_front.spawn(2)
     front_func = pf.control.choice(
         rng_front_choice, [(door_composite_rand, 2.0), (door_double_rand, 1.0)]
@@ -1117,10 +1141,147 @@ def cabinet_with_door_rand(
         dimensions=pf.Vector((thickness, dimensions.y, dimensions.z)),
         material=front_material,
         inner_material=inner_material,
-        handle=handle_func(rng_handle).mesh,
+        handle=handle,
     )
     pf.ops.object.set_transform(
         door_result.mesh, location=(dimensions.x - thickness, 0.0, 0.0)
     )
     pf.ops.object.join(carcass_result.mesh, door_result.mesh)
     return StorageResult(mesh=carcass_result.mesh)
+
+
+@pf.nodes.node_function
+def _open_top_carcass_geometry(
+    dimensions: t.SocketOrVal[pf.Vector], board: t.SocketOrVal[float]
+) -> pf.ProcNode:
+    side = pf.nodes.math.combine_xyz(x=dimensions.x, y=board, z=dimensions.z)
+    inner = dimensions.y - board * 2.0
+    parts = [
+        mesh_util.box(size=side, anchor=(0.0, 0.0, 0.0)),
+        mesh_util.box(
+            size=side,
+            location=pf.nodes.math.combine_xyz(y=dimensions.y - board),
+            anchor=(0.0, 0.0, 0.0),
+        ),
+        mesh_util.box(
+            size=pf.nodes.math.combine_xyz(x=dimensions.x, y=inner, z=board),
+            location=pf.nodes.math.combine_xyz(y=board),
+            anchor=(0.0, 0.0, 0.0),
+        ),
+        mesh_util.box(
+            size=pf.nodes.math.combine_xyz(x=board, y=inner, z=dimensions.z),
+            location=pf.nodes.math.combine_xyz(y=board),
+            anchor=(0.0, 0.0, 0.0),
+        ),
+    ]
+    return pf.nodes.geo.join_geometry(parts)
+
+
+def storage_sink_base_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    frame_material: pf.Material | None = None,
+    handle: pf.MeshObject | None = None,
+) -> StorageResult:
+    """Open-topped, shelfless door cabinet so a basin can drop in from above."""
+    rng_board, rng_size, rng_material, rng_handle, rng_door = rng.spawn(5)
+    if dimensions is None:
+        dimensions = pf.Vector(
+            (
+                pf.random.uniform(rng_size, 0.56, 0.61),
+                pf.random.uniform(rng_size, 0.6, 0.9),
+                pf.random.uniform(rng_size, 0.72, 0.8),
+            )
+        )
+    if frame_material is None:
+        frame_material = cabinet_material_rand(rng_material, pf.nodes.shader.coord().uv)
+    if handle is None:
+        handle = handles.bar_pull_handle_rand(rng_handle).mesh
+    depth = dimensions.x - 0.018
+    geo = _open_top_carcass_geometry(
+        pf.Vector((depth, dimensions.y, dimensions.z)),
+        pf.random.uniform(rng_board, 0.016, 0.019),
+    )
+    geo = pf.nodes.geo.set_material(geometry=geo, material=frame_material)
+    carcass = pf.nodes.to_mesh_object(
+        mesh_util.crease_sharp(geo, threshold_degrees=30.0)
+    )
+    pf.ops.modifier.bevel(carcass, width=0.002, segments=2)
+    pf.ops.modifier.subdivide_surface(carcass, levels=2, _skip_apply=True)
+    door = _storage_doors_rand(
+        rng_door,
+        pf.Vector((0.018, dimensions.y, dimensions.z)),
+        frame_material,
+        handle,
+    )
+    pf.ops.object.set_transform(door, location=(depth, 0.0, 0.0))
+    pf.ops.object.join(carcass, door)
+    return StorageResult(mesh=carcass)
+
+
+def storage_drawer_door_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+    frame_material: pf.Material | None = None,
+    handle: pf.MeshObject | None = None,
+    drawer_fraction: float | None = None,
+) -> StorageResult:
+    """Drawer storage over a door cabinet, with drawers in the top `drawer_fraction`."""
+    (
+        rng_size,
+        rng_material,
+        rng_handle,
+        rng_draws,
+        rng_door,
+        rng_params,
+        rng_shelf,
+        rng_drawers,
+    ) = rng.spawn(8)
+    if dimensions is None:
+        dimensions = pf.Vector(
+            (
+                pf.random.uniform(rng_size, 0.56, 0.61),
+                pf.random.uniform(rng_size, 0.3, 0.9),
+                pf.random.uniform(rng_size, 0.72, 0.8),
+            )
+        )
+    if frame_material is None:
+        frame_material = cabinet_material_rand(rng_material, pf.nodes.shader.coord().uv)
+    if handle is None:
+        handle = handles.bar_pull_handle_rand(rng_handle).mesh
+    if drawer_fraction is None:
+        drawer_fraction = pf.random.uniform(rng_draws, 0.18, 0.35)
+    door_height = dimensions.z * (1.0 - drawer_fraction)
+    cabinet = cabinet_with_door_rand(
+        rng_door,
+        pf.Vector((dimensions.x, dimensions.y, door_height)),
+        frame_material,
+        handle.clone(),
+    ).mesh
+    top_dimensions = pf.Vector(
+        (dimensions.x - 0.018, dimensions.y, dimensions.z - door_height)
+    )
+    board = pf.random.uniform(rng_draws, 0.016, 0.019)
+    params = storage_params_rand(
+        rng_params,
+        top_dimensions,
+        1,
+        None,
+        frame_material,
+        frame_thickness=board,
+        row_divider_width=board,
+        col_divider_width=board,
+    )
+    n_rows = params.n_spaces_z
+    back = params.back_width
+    top = storage_cell_shelf_rand(
+        rng_shelf, top_dimensions, 1, n_rows, frame_material, back, board, board, board
+    ).mesh
+    slots = storage_cell_bounds(top_dimensions, 1, n_rows, board, board, board, back)
+    drawers = _storage_drawers_rand(
+        rng_drawers, slots, frame_material, board, board, board, handle
+    )
+    pf.ops.object.join(top, drawers)
+    pf.ops.object.set_transform(top, location=(0.0, 0.0, door_height))
+    pf.ops.object.join(cabinet, top)
+    return StorageResult(mesh=cabinet)

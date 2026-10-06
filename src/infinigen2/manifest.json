@@ -517,6 +517,11 @@
   },
   {
     "category": "Material",
+    "name": "infinigen2.shaders.functionality_lists.painted_wood_rand",
+    "integration_test_string": "painted_wood_rand material_plane_uv render_cycles"
+  },
+  {
+    "category": "Material",
     "name": "infinigen2.shaders.functionality_lists.wall_material_rand",
     "integration_test_string": "wall_material_rand material_plane_uv render_cycles"
   },
@@ -683,6 +688,16 @@
   },
   {
     "category": "Scene",
+    "name": "infinigen2.scenes.room.kitchen_setup.kitchen_setup_rand",
+    "integration_test_string": "kitchen_setup_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.kitchen_setup.kitchen_module_array_rand",
+    "integration_test_string": "kitchen_module_array_rand object_demo render_cycles"
+  },
+  {
+    "category": "Scene",
     "name": "infinigen2.scenes.room.room.room_livingroom_rand"
   },
   {
@@ -697,6 +712,10 @@
   {
     "category": "Scene",
     "name": "infinigen2.scenes.room.room.room_bathroom_rand"
+  },
+  {
+    "category": "Scene",
+    "name": "infinigen2.scenes.room.room.room_kitchen_rand"
   },
   {
     "category": "Scene",
@@ -1062,6 +1081,10 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.storage.cabinet_with_door_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.storage.storage_drawer_door_rand"
   },
   {
     "category": "Object",

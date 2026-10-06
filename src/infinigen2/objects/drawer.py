@@ -139,8 +139,10 @@ def drawer_rand(
     frame_widths: tuple[float, float, float, float] = (0.02, 0.02, 0.02, 0.02),
     front_thickness: float = 0.018,
     opening_fraction: float | None = None,
+    handle: pf.MeshObject | None = None,
 ) -> DrawerResult:
-    """Sample a drawer; frame widths follow left/right/bottom/top slot edges."""
+    """Sample a drawer; frame widths are the left/right/bottom/top board shares an
+    overlay front covers up to a small reveal."""
     r_size, r_material, r_handle, r_front, r_bevel, r_open = rng.spawn(6)
     r_front_choice, r_front_body = r_front.spawn(2)
     r_bevel_choice, r_bevel_body = r_bevel.spawn(2)
@@ -176,11 +178,11 @@ def drawer_rand(
         return origin, pf.Vector(size)
 
     def overlay_front(r: pf.RNG) -> tuple[pf.Vector, pf.Vector]:
-        fraction = pf.random.uniform(r, 0.2, 1 / 3)
-        left = fraction * frame_widths[0]
-        right = fraction * frame_widths[1]
-        bottom = fraction * frame_widths[2]
-        top = fraction * frame_widths[3]
+        reveal = pf.random.uniform(r, 0.0015, 0.003)
+        left = max(frame_widths[0] - reveal, 0.0)
+        right = max(frame_widths[1] - reveal, 0.0)
+        bottom = max(frame_widths[2] - reveal, 0.0)
+        top = max(frame_widths[3] - reveal, 0.0)
         origin = pf.Vector((dimensions.x, -left, -bottom))
         size = (
             front_thickness,
@@ -207,7 +209,8 @@ def drawer_rand(
         front_bevel=front_bevel,
         opening_fraction=opening_fraction,
     )
-    handle = drawer_handle_rand(r_handle, front[1])
+    if handle is None:
+        handle = drawer_handle_rand(r_handle, front[1])
     pf.ops.object.set_transform(
         handle,
         location=(

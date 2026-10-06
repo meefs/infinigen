@@ -64,6 +64,7 @@ from infinigen2.shaders.masks.tile_shapes import (
 __all__ = [
     "all_materials_rand",
     "boulder_material_rand",
+    "cabinet_material_rand",
     "castor_wheel_material_rand",
     "ceiling_material_rand",
     "decorative_material_rand",
@@ -75,10 +76,12 @@ __all__ = [
     "furniture_material_rand",
     "furniture_surface_material_rand",
     "glass_material_rand",
+    "kitchen_counter_rand",
     "mirror_material_rand",
     "paint_flaked_rand",
     "paint_patterned_rand",
     "paint_wall_rand",
+    "painted_wood_rand",
     "rug_material_rand",
     "skirt_material_rand",
     "table_top_material_rand",
@@ -185,6 +188,37 @@ def table_top_material_rand(rng: pf.RNG, vec) -> pf.Material:
     return wear(rng_wear, vec, material)
 
 
+def kitchen_counter_rand(rng: pf.RNG, vec) -> pf.Material:
+    rng_uv, rng_choice, rng_mat, rng_wear_choice, rng_wear = rng.spawn(5)
+    vec = uv_maybe_rotate_90(rng_uv, vec)
+    material_func = pf.control.choice(
+        rng_choice,
+        [
+            (granite.granite_smooth_rand, 3.0),
+            (granite.granite_rand, 1.0),
+            (marble.marble_rand, 2.0),
+            (ceramic.ceramic_rand, 1.5),
+            (terrazzo.terrazzo_rand, 0.75),
+            (stone_smooth.stone_smooth_rand, 0.75),
+            (concrete.concrete_rand, 0.5),
+            (wood_grain.wood_grain_rand, 1.0),
+            (metal_brushed.metal_brushed_linear_rand, 0.8),
+            (metal_hammered.metal_hammered_rand, 0.2),
+            (plastic.plastic_opaque_rand, 0.5),
+        ],
+    )
+    material = material_func(rng_mat, vec)
+    wear = pf.control.choice(
+        rng_wear_choice,
+        [
+            (lambda r, v, m: m, 4.0),
+            (scratches_overlay_rand, 1.0),
+            (splats_overlay_rand, 0.5),
+        ],
+    )
+    return wear(rng_wear, vec, material)
+
+
 def _glass_splats_gradient(rng: pf.RNG, vector, glass_height) -> pf.ProcNode[float]:
     rng, rng_splat = rng.spawn(2)
     uv = pf.nodes.shader.coord().uv
@@ -256,6 +290,59 @@ def _furniture_material_func_rand(rng: pf.RNG) -> Callable[..., pf.Material]:
             (plastic.plastic_grayscale_rand, 1.0),
         ],
     )
+
+
+def painted_wood_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
+    rng_color, rng_grain, rng_params = rng.spawn(3)
+    color = paint.paint_color_rand(rng_color, saturation_power=3.0)
+    grain_vector = pf.nodes.math.combine_xyz(x=vector.y, y=vector.x)
+    grain = wood_grain.wood_grain_generator_rand(rng_grain, grain_vector).grain_map
+
+    roughness = pf.random.uniform(rng_params, 0.15, 0.45)
+    grain_roughness = pf.random.uniform(rng_params, 0.02, 0.08)
+    grain_darken = pf.random.uniform(rng_params, 0.0, 0.04)
+    grain_height = pf.random.uniform(rng_params, 0.00002, 0.00012)
+
+    base_color = pf.nodes.color.mix_rgb(
+        blend_type="MULTIPLY",
+        factor=grain * grain_darken,
+        a=color,
+        b=pf.Color((0.5, 0.5, 0.5)),
+    )
+    surface = pf.nodes.shader.principled_bsdf(
+        base_color=base_color,
+        roughness=roughness + grain * grain_roughness,
+        specular_ior_level=pf.random.uniform(rng_params, 0.4, 0.6),
+    )
+    displacement = pf.nodes.shader.displacement(
+        height=grain * grain_height, midlevel=0.0
+    )
+    return pf.Material(surface=surface, displacement=displacement)
+
+
+def cabinet_material_rand(rng: pf.RNG, vec: pf.ProcNode[pf.Vector]) -> pf.Material:
+    rng_uv, rng_choice, rng_mat, rng_wear_choice, rng_wear = rng.spawn(5)
+    vec = uv_maybe_rotate_90(rng_uv, vec)
+    material_func = pf.control.choice(
+        rng_choice,
+        [
+            (painted_wood_rand, 4.0),
+            (wood_grain.wood_grain_rand, 2.5),
+            (wood_planks.wood_planks_rand, 1.0),
+            (plastic.plastic_grayscale_rand, 1.5),
+            (metal_brushed.metal_brushed_linear_rand, 0.5),
+        ],
+    )
+    material = material_func(rng_mat, vec)
+    wear = pf.control.choice(
+        rng_wear_choice,
+        [
+            (lambda r, v, m: m, 4.0),
+            (scratches_overlay_rand, 1.0),
+            (splats_overlay_rand, 0.5),
+        ],
+    )
+    return wear(rng_wear, vec, material)
 
 
 def furniture_material_rand(rng: pf.RNG, vec) -> pf.Material:
