@@ -38,10 +38,8 @@ class WallStorageSetupResult(NamedTuple):
 def wall_storage_setup_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject] | None = None,
-    room_dimensions: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
 ) -> WallStorageSetupResult:
-    del room_dimensions
     standalone_walls: list[pf.MeshObject] = []
     if wall_planes is None:
         wall_planes = standalone_wall_planes()
@@ -71,7 +69,7 @@ def wall_storage_setup_rand(
             storage[i],
             colliders,
             snap_back_front,
-            attempts=12,
+            attempts=32,
             parents=wall_planes,
             margin=wall_margins[i],
             accept_fn=grounded,

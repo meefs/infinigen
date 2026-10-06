@@ -9,6 +9,7 @@ from typing import NamedTuple, TypeVar
 
 import numpy as np
 import procfunc as pf
+import shapely
 from procfunc.nodes import types as t
 
 from infinigen2.objects import bowl, chair, plant_pot, table, vase
@@ -19,6 +20,7 @@ from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.scenes.setup_utils import (
     MeshResult,
     back_face_grounded,
+    center_inside,
     jitter_object_rotation_rand,
     retry_place,
     snap_on_top,
@@ -38,7 +40,6 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 MR = TypeVar("MR", bound=MeshResult)
-_CHAIR_POSITION_JITTER = 0.30
 
 
 class DiningSetupResult(NamedTuple):
@@ -57,38 +58,40 @@ class DiningTableSetupResult(NamedTuple):
 
 
 def _place_on_floor(
-    rng: pf.RNG, child: MR, room_dimensions: pf.Vector, clearance: float
+    rng: pf.RNG,
+    child: MR,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
+    clearance: float,
 ) -> None:
     bmin, bmax = pf.ops.attr.bbox_min_max(child.mesh, global_coords=False)
     half_x = (bmax[0] - bmin[0]) / 2
     half_y = (bmax[1] - bmin[1]) / 2
     centre_x = pf.random.uniform(
-        rng, clearance + half_x, room_dimensions.x - clearance - half_x
+        rng, bbox_min.x + clearance + half_x, bbox_max.x - clearance - half_x
     )
     centre_y = pf.random.uniform(
-        rng, clearance + half_y, room_dimensions.y - clearance - half_y
+        rng, bbox_min.y + clearance + half_y, bbox_max.y - clearance - half_y
     )
     child.mesh.item().location = (
         centre_x - (bmin[0] + bmax[0]) / 2,
         centre_y - (bmin[1] + bmax[1]) / 2,
-        0.001 - bmin[2],
+        bbox_min.z + 0.001 - bmin[2],
     )
 
 
 def _place_in_free_floorspace(
     rng: pf.RNG,
     child: MR,
-    room_dimensions: pf.Vector,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
     colliders: ccol.CollisionSet,
+    region: shapely.Polygon | None,
     clearance: float,
-    attempts: int = 64,
 ) -> MR | None:
-    """Place `child` at a random floor location where its footprint grown by
-    `clearance` metres on every side stays inside the room and clears all
-    existing colliders. Returns the placed child, or None if no clear spot is found.
-    """
-
     def footprint_clears(mesh: pf.MeshObject) -> bool:
+        if region is not None and not center_inside(region, mesh):
+            return False
         lo, hi = (
             np.array(b) for b in pf.ops.attr.bbox_min_max(mesh, global_coords=True)
         )
@@ -106,33 +109,12 @@ def _place_in_free_floorspace(
         child,
         colliders,
         _place_on_floor,
-        attempts=attempts,
+        attempts=64,
         accept_fn=footprint_clears,
-        room_dimensions=room_dimensions,
+        bbox_min=bbox_min,
+        bbox_max=bbox_max,
         clearance=clearance,
     )
-
-
-def _rectangular_table_in_room_rand(
-    rng: pf.RNG, max_x: float, max_y: float
-) -> table.TableResult:
-    rng_dims, rng_table = rng.spawn(2)
-    width, depth, height = table.table_dimensions_rand(rng_dims)
-    long_side = min(max(width, depth), max(max_x, max_y))
-    short_side = min(min(width, depth), min(max_x, max_y))
-    dimensions = (short_side, long_side, height)
-    if max_x > max_y:
-        dimensions = (long_side, short_side, height)
-    return table.dining_table_rand(rng_table, dimensions=dimensions)
-
-
-def _circular_table_in_room_rand(
-    rng: pf.RNG, max_x: float, max_y: float
-) -> table.TableResult:
-    rng_diameter, rng_table = rng.spawn(2)
-    diameter = pf.random.clip_gaussian(rng_diameter, 1.15, 0.2, 0.95, 1.5)
-    diameter = min(diameter, max_x, max_y)
-    return table.circular_dining_table_rand(rng_table, diameter=diameter)
 
 
 @pf.nodes.node_function
@@ -146,7 +128,7 @@ def chairs_on_edge(
     seed: t.SocketOrVal[int],
 ) -> pf.ProcNode[t.Instances]:
     points = pf.nodes.geo.curve_to_points_length(curve=edge, length=spacing)
-    position_jitter = disorder * _CHAIR_POSITION_JITTER
+    position_jitter = disorder * 0.30
     backward = pf.nodes.func.random_value(
         min=0.0,
         max=position_jitter,
@@ -362,30 +344,65 @@ def dining_setup_rand(
     )
 
 
+def _rectangular_dining_table_rand(
+    rng: pf.RNG, length: float | None, max_x: float, max_y: float
+) -> table.TableResult:
+    rng_dims, rng_table = rng.spawn(2)
+    width, depth, height = table.table_dimensions_rand(rng_dims, depth=length)
+    long_side = min(max(width, depth), max(max_x, max_y))
+    short_side = min(min(width, depth), min(max_x, max_y))
+    dimensions = (short_side, long_side, height)
+    if max_x > max_y:
+        dimensions = (long_side, short_side, height)
+    return table.dining_table_rand(rng_table, dimensions=dimensions)
+
+
+def _circular_dining_table_rand(
+    rng: pf.RNG, length: float | None, max_x: float, max_y: float
+) -> table.TableResult:
+    rng_diameter, rng_table = rng.spawn(2)
+    diameter = pf.random.clip_gaussian(rng_diameter, 1.15, 0.2, 0.95, 1.5)
+    if length is not None:
+        diameter = min(max(0.6 * length, 0.95), 1.5)
+    diameter = min(diameter, max_x, max_y)
+    return table.circular_dining_table_rand(rng_table, diameter=diameter)
+
+
 def dining_table_setup_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject] | None = None,
-    room_dimensions: pf.Vector | None = None,
+    bbox_min: pf.Vector | None = None,
+    bbox_max: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
+    region: shapely.Polygon | None = None,
+    table_length: float | None = None,
 ) -> DiningTableSetupResult:
     """Place a dining table in clear floor space and arrange chairs around it."""
     del wall_planes
-    if room_dimensions is None:
-        room_dimensions = pf.Vector((5.0, 15.0, 3.0))
+    if bbox_min is None:
+        bbox_min = pf.Vector((0.0, 0.0, 0.0))
+    if bbox_max is None:
+        bbox_max = pf.Vector((5.0, 15.0, 3.0))
     if colliders is None:
         colliders = ccol.collision_set([])
     rng_table_choice, rng_table, rng_place, rng_seat = rng.spawn(4)
     clearance = 0.6
     door_slack = 1.0
-    max_x = room_dimensions.x - 2 * clearance - door_slack
-    max_y = room_dimensions.y - 2 * clearance - door_slack
+    max_x = max(bbox_max.x - bbox_min.x - 2 * clearance - door_slack, 0.7)
+    max_y = max(bbox_max.y - bbox_min.y - 2 * clearance - door_slack, 0.7)
     table_fn = pf.control.choice(
         rng_table_choice,
-        [(_rectangular_table_in_room_rand, 1.0), (_circular_table_in_room_rand, 1.0)],
+        [(_rectangular_dining_table_rand, 1.0), (_circular_dining_table_rand, 1.0)],
     )
-    dining_table = table_fn(rng_table, max_x, max_y)
+    dining_table = table_fn(rng_table, table_length, max_x, max_y)
     placed = _place_in_free_floorspace(
-        rng_place, dining_table, room_dimensions, colliders, clearance=clearance
+        rng_place,
+        dining_table,
+        bbox_min,
+        bbox_max,
+        colliders,
+        region,
+        clearance=clearance,
     )
     return _seated_table_rand(rng_seat, placed, colliders)
 

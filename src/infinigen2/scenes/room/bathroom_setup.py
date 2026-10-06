@@ -34,7 +34,7 @@ from infinigen2.scenes.setup_utils import (
     standalone_wall_planes,
 )
 from infinigen2.util.errors import RejectedScene
-from infinigen2.util.scene_cleanup import delete_object
+from infinigen2.util.scene_cleanup import delete_object, delete_objects
 
 if TYPE_CHECKING:
     from infinigen2.scenes.room.wall_base import WallResult
@@ -391,10 +391,9 @@ def _bathtub_against_wall_side_rand(
         hardware=hardware,
     )
     if placed is None:
-        delete_object(result.mesh.item())
-        delete_object(tap_result.mesh.item())
-        for item in hardware:
-            delete_object(item.mesh.item())
+        doomed = [result.mesh.item(), tap_result.mesh.item()]
+        doomed += [item.mesh.item() for item in hardware]
+        delete_objects(doomed)
         return None
     return _BathtubSetupResult([result], [tap_result], hardware)
 
@@ -655,7 +654,8 @@ def bathroom_setup_accept_pred(
 def _bathroom_fixtures_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
-    room_dimensions: pf.Vector,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
     colliders: ccol.CollisionSet,
     sink_obj: pf.MeshObject | None,
     include_bathtub: bool,
@@ -686,7 +686,8 @@ def _bathroom_fixtures_rand(
         rng_sink,
         sink_obj=sink_obj,
         wall_planes=wall_planes,
-        room_dimensions=room_dimensions,
+        bbox_min=bbox_min,
+        bbox_max=bbox_max,
         colliders=colliders,
     )
     if not sink_setup.bathroom_sinks:
@@ -708,10 +709,8 @@ def _delete_objects(
     objects: list[pf.MeshObject],
     preserve: pf.MeshObject | None,
 ) -> None:
-    for obj in objects:
-        if preserve is not None and obj.item() is preserve.item():
-            continue
-        delete_object(obj.item())
+    preserved = None if preserve is None else preserve.item()
+    delete_objects([obj.item() for obj in objects if obj.item() is not preserved])
 
 
 def _name_materials(obj: pf.MeshObject, base: str) -> None:
@@ -779,7 +778,8 @@ def _finalize_bathroom_setup_rand(
 def _bathroom_setup_attempt_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
-    room_dimensions: pf.Vector,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
     colliders: ccol.CollisionSet,
     sink_obj: pf.MeshObject | None,
     include_bathtub: bool,
@@ -788,7 +788,8 @@ def _bathroom_setup_attempt_rand(
     fixtures = _bathroom_fixtures_rand(
         rng_fixtures,
         wall_planes,
-        room_dimensions,
+        bbox_min,
+        bbox_max,
         colliders,
         sink_obj,
         include_bathtub,
@@ -807,7 +808,8 @@ def _bathroom_setup_attempt_rand(
 def _repeat_bathroom_setup_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
-    room_dimensions: pf.Vector,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
     colliders: ccol.CollisionSet,
     sink_obj: pf.MeshObject | None,
 ) -> BathroomSetupResult:
@@ -818,7 +820,8 @@ def _repeat_bathroom_setup_rand(
         rng_attempts,
         attempts=12,
         wall_planes=wall_planes,
-        room_dimensions=room_dimensions,
+        bbox_min=bbox_min,
+        bbox_max=bbox_max,
         colliders=colliders,
         sink_obj=sink_obj,
         include_bathtub=include_bathtub,
@@ -829,7 +832,8 @@ def _repeat_bathroom_setup_rand(
             rng_without_bathtub,
             attempts=12,
             wall_planes=wall_planes,
-            room_dimensions=room_dimensions,
+            bbox_min=bbox_min,
+            bbox_max=bbox_max,
             colliders=colliders,
             sink_obj=sink_obj,
             include_bathtub=False,
@@ -843,16 +847,15 @@ def _bathroom_setup_demo_rand(
     rng: pf.RNG,
     sink: pf.MeshObject | None,
 ) -> BathroomSetupResult:
-    room_dimensions = pf.Vector((5.0, 5.0, 3.0))
-    wall = standalone_wall_planes(
-        length=room_dimensions.y,
-        height=room_dimensions.z,
-    )[0]
+    bbox_min = pf.Vector((0.0, 0.0, 0.0))
+    bbox_max = pf.Vector((5.0, 5.0, 3.0))
+    wall = standalone_wall_planes(length=5.0, height=3.0)[0]
     colliders = ccol.collision_set([wall])
     setup = _repeat_bathroom_setup_rand(
         rng,
         [wall],
-        room_dimensions,
+        bbox_min,
+        bbox_max,
         colliders,
         sink,
     )
@@ -875,19 +878,23 @@ def bathroom_setup_rand(
     rng: pf.RNG,
     sink: pf.MeshObject | None = None,
     wall_planes: list[pf.MeshObject] | None = None,
-    room_dimensions: pf.Vector | None = None,
+    bbox_min: pf.Vector | None = None,
+    bbox_max: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
 ) -> BathroomSetupResult:
     if wall_planes is None:
         return _bathroom_setup_demo_rand(rng, sink)
-    if room_dimensions is None:
-        room_dimensions = pf.Vector((5.0, 5.0, 3.0))
+    if bbox_min is None:
+        bbox_min = pf.Vector((0.0, 0.0, 0.0))
+    if bbox_max is None:
+        bbox_max = pf.Vector((5.0, 5.0, 3.0))
     if colliders is None:
         colliders = ccol.collision_set(wall_planes)
     return _repeat_bathroom_setup_rand(
         rng,
         wall_planes,
-        room_dimensions,
+        bbox_min,
+        bbox_max,
         colliders,
         sink,
     )
@@ -1703,7 +1710,8 @@ def bathroom_sink_setup_rand(
     rng: pf.RNG,
     sink_obj: pf.MeshObject | None = None,
     wall_planes: list[pf.MeshObject] | None = None,
-    room_dimensions: pf.Vector | None = None,
+    bbox_min: pf.Vector | None = None,
+    bbox_max: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
     width: float | None = None,
     size: float | None = None,
@@ -1772,8 +1780,8 @@ def bathroom_sink_setup_rand(
         ],
     )
     room_height = None
-    if room_dimensions is not None:
-        room_height = room_dimensions[2]
+    if bbox_min is not None and bbox_max is not None:
+        room_height = bbox_max.z - bbox_min.z
     if wall_planes is None:
         result = _bathroom_wall_feature_rand(
             rng_wall_feature,

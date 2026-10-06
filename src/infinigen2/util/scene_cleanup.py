@@ -12,25 +12,30 @@ import procfunc as pf
 __all__ = [
     "cleanup_except",
     "delete_object",
+    "delete_objects",
 ]
 
 logger = logging.getLogger(__name__)
 
 
-def delete_object(obj: bpy.types.Object) -> None:
-    data = getattr(obj, "data", None)
-    item_type = getattr(obj, "type", None)
-    name = obj.name
-    bpy.data.objects.remove(obj, do_unlink=True)
-    if data is None or not hasattr(data, "users") or data.users != 0:
-        logger.debug(f"Deleting {name} ({item_type}) but NOT deleting its data")
+def delete_objects(objs: Iterable[bpy.types.Object]) -> None:
+    unique = list({obj.as_pointer(): obj for obj in objs}.values())
+    if not unique:
         return
-    else:
-        logger.debug(f"Deleting {name} ({item_type}) and associated data")
-    if item_type == "MESH":
-        bpy.data.meshes.remove(data)
-    elif item_type == "LIGHT":
-        bpy.data.lights.remove(data)
+    owned = {
+        obj.data.as_pointer(): obj.data
+        for obj in unique
+        if obj.type in ("MESH", "LIGHT") and obj.data is not None
+    }
+    logger.debug(f"Deleting {len(unique)} objects: {[obj.name for obj in unique]}")
+    bpy.data.batch_remove(unique)
+    orphans = [data for data in owned.values() if data.users == 0]
+    if orphans:
+        bpy.data.batch_remove(orphans)
+
+
+def delete_object(obj: bpy.types.Object) -> None:
+    delete_objects([obj])
 
 
 def cleanup_except(keep: Iterable[pf.Object]) -> list[str]:
@@ -42,12 +47,11 @@ def cleanup_except(keep: Iterable[pf.Object]) -> list[str]:
     objects/cameras/lights you want kept and this removes the rest.
     """
     valid = {o.item() for o in keep}
+    doomed = [asset for asset in bpy.data.objects if asset not in valid]
     cleaned = []
-    for asset in list(bpy.data.objects):
-        if asset in valid:
-            continue
+    for asset in doomed:
         cleaned.append(asset.name)
         asset.name = asset.name + "_CLEANED"
-        delete_object(asset)
+    delete_objects(doomed)
     logger.info(f"Cleaned {len(cleaned)} stray objects from scene")
     return cleaned

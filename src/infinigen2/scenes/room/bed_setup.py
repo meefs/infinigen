@@ -46,22 +46,18 @@ class BedSetupResult(NamedTuple):
     storages: list[pf.MeshObject]
 
 
-_WALL_MARGIN_MIN = 0.0254
-_WALL_MARGIN_MAX = 0.127
-_BED_GENERATION_ATTEMPTS = 8
-
-
 def bed_dimensions_rand(
     rng: pf.RNG,
-    room_dimensions: pf.Vector | None = None,
+    bbox_min: pf.Vector | None = None,
+    bbox_max: pf.Vector | None = None,
     area: float | None = None,
     aspect: float | None = None,
 ) -> pf.Vector:
     rng_room, rng_size, rng_thickness = rng.spawn(3)
-    if room_dimensions is None:
+    if bbox_min is None or bbox_max is None:
         room_size = pf.random.uniform(rng_room, 0.0, 1.0)
     else:
-        room_area = room_dimensions.x * room_dimensions.y
+        room_area = (bbox_max.x - bbox_min.x) * (bbox_max.y - bbox_min.y)
         room_size = min(max((room_area - 11.0) / 11.0, 0.0), 1.0)
     size = 0.5 * room_size + pf.random.uniform(rng_size, 0.0, 0.5)
     nominal_width = 0.97 + 1.06 * size
@@ -72,8 +68,8 @@ def bed_dimensions_rand(
         aspect = nominal_length / nominal_width
     length = math.sqrt(area * aspect)
     width = max(0.6, min(math.sqrt(area / aspect), 2.1))
-    if room_dimensions is not None:
-        minimum_span = min(room_dimensions.x, room_dimensions.y)
+    if bbox_min is not None and bbox_max is not None:
+        minimum_span = min(bbox_max.x - bbox_min.x, bbox_max.y - bbox_min.y)
         length = min(length, max(1.2, minimum_span - 0.6))
         width = max(0.6, min(width, minimum_span - 0.9))
     thickness = pf.random.uniform(rng_thickness, 0.20, 0.24)
@@ -87,7 +83,7 @@ def _place_bed_against_wall(
     colliders: collision.CollisionSet,
     furniture: Sequence[pf.MeshObject],
 ) -> MeshResult | None:
-    margin = pf.random.uniform(rng, _WALL_MARGIN_MIN, _WALL_MARGIN_MAX)
+    margin = pf.random.uniform(rng, 0.0254, 0.127)
     clearance = pf.random.uniform(rng, 0.5, 0.9)
     walls = collision.collision_set(cast(list[pf.Object], wall_planes))
 
@@ -145,7 +141,7 @@ def _generated_bed_rand(
     if placed is not None:
         return result
     _delete_bed_result(result)
-    for retry_rng in rng_retry.spawn(_BED_GENERATION_ATTEMPTS - 1):
+    for retry_rng in rng_retry.spawn(7):
         rng_asset, rng_placement = retry_rng.spawn(2)
         result = bed_rand(rng_asset, dimensions=dimensions)
         placed = _place_bed_against_wall(
@@ -188,8 +184,10 @@ def _bed_pillows_rand(
 def bed_setup_rand(
     rng: pf.RNG,
     bed: pf.MeshObject | None = None,
+    mattress: pf.MeshObject | None = None,
     wall_planes: list[pf.MeshObject] | None = None,
-    room_dimensions: pf.Vector | None = None,
+    bbox_min: pf.Vector | None = None,
+    bbox_max: pf.Vector | None = None,
     colliders: collision.CollisionSet | None = None,
     bed_dimensions: pf.Vector | None = None,
     furniture: Sequence[pf.MeshObject] | None = None,
@@ -210,7 +208,7 @@ def bed_setup_rand(
         furniture = []
     dimensions = bed_dimensions
     if dimensions is None:
-        dimensions = bed_dimensions_rand(r_dimensions, room_dimensions)
+        dimensions = bed_dimensions_rand(r_dimensions, bbox_min, bbox_max)
     generated_bed = bed is None
     if colliders is None:
         wall_objects = cast(list[pf.Object], wall_planes or [])
@@ -229,14 +227,6 @@ def bed_setup_rand(
         mattress = bed_result.mattress_child
     else:
         bed_mesh = bed
-        mattress = next(
-            (
-                pf.MeshObject(child)
-                for child in bed_mesh.item().children
-                if child.type == "MESH" and child.name.startswith("mattress")
-            ),
-            None,
-        )
         external = [
             obj
             for obj in colliders.objs
@@ -378,7 +368,8 @@ def bed_setup_rand(
 def multi_bed_setup_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
-    room_dimensions: pf.Vector,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
     colliders: collision.CollisionSet,
 ) -> list[BedSetupResult]:
     rng_count, rng_beds = rng.spawn(2)
@@ -388,14 +379,15 @@ def multi_bed_setup_rand(
         area = pf.random.uniform(rng_area, 1.8, 2.2)
         aspect = pf.random.uniform(rng_aspect, 1.85, 2.05)
         dimensions = bed_dimensions_rand(
-            rng_dimensions, room_dimensions, area=area, aspect=aspect
+            rng_dimensions, bbox_min, bbox_max, area=area, aspect=aspect
         )
         furniture = [obj for setup in setups for obj in setup.all_objects]
         try:
             setup = bed_setup_rand(
                 rng_bed,
                 wall_planes=wall_planes,
-                room_dimensions=room_dimensions,
+                bbox_min=bbox_min,
+                bbox_max=bbox_max,
                 colliders=colliders,
                 bed_dimensions=dimensions,
                 furniture=furniture,

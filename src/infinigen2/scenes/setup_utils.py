@@ -20,6 +20,7 @@ __all__ = [
     "MeshResult",
     "back_face_grounded",
     "bbox_face_grounded",
+    "center_inside",
     "clear_of",
     "inset_floor_point_rand",
     "jitter_object_rotation_rand",
@@ -169,6 +170,12 @@ def standalone_wall_planes(
     wall = pf.nodes.to_mesh_object(geometry)
     wall.item().name = "standalone_wall"
     return [wall]
+
+
+def center_inside(region: shapely.Polygon, obj: pf.MeshObject) -> bool:
+    lower, upper = pf.ops.attr.bbox_min_max(obj, global_coords=True)
+    center = shapely.Point((lower[0] + upper[0]) / 2, (lower[1] + upper[1]) / 2)
+    return region.contains(center)
 
 
 def _footprint(obj: pf.MeshObject) -> shapely.Polygon:

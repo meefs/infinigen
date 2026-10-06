@@ -38,7 +38,7 @@ from infinigen2.scenes.room.room_shape import (
 )
 from infinigen2.scenes.room.skirting import skirting_rand
 from infinigen2.scenes.room.sofa_setup import (
-    sofa_setup_rand,
+    centered_sofa_setup_rand,
     wall_sofa_setup_rand,
     wall_tv_setup_rand,
 )
@@ -68,6 +68,7 @@ from infinigen2.util.scene_cleanup import delete_object
 
 __all__ = [
     "RoomResult",
+    "decorate_room_small_objects_rand",
     "livingroom_rand",
     "room_bathroom_rand",
     "room_bedroom_rand",
@@ -115,6 +116,7 @@ def wall_arrangement_rand(
     window_bottom: float | None = None,
     wall_thickness: float = 0.05,
     colliders: ccol.CollisionSet | None = None,
+    window_reveal_depth: float | None = None,
 ) -> WallResult:
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
 
@@ -132,6 +134,7 @@ def wall_arrangement_rand(
             bottom_profile_height=bottom_profile_height,
             window_spacing=window_spacing,
             window_bottom=window_bottom,
+            reveal_depth=window_reveal_depth,
             wall_thickness=wall_thickness,
         )
 
@@ -453,7 +456,7 @@ def _with_objects(
 
 
 @pf.tracer.grammar
-def _decorate_room_small_objects_rand(
+def decorate_room_small_objects_rand(
     rng: pf.RNG,
     objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
@@ -572,10 +575,11 @@ def room_livingroom_rand(
         rng_dimensions,
         rng_room,
         rng_sofa,
+        rng_tv,
         rng_desk,
         rng_storage,
         rng_decor,
-    ) = rng.spawn(6)
+    ) = rng.spawn(7)
     if dimensions is None:
         dimensions = _livingroom_dimensions_rand(rng_dimensions)
 
@@ -586,14 +590,39 @@ def room_livingroom_rand(
         frame_end=frame_end,
     )
 
-    sofa_setup = sofa_setup_rand(
-        rng_sofa,
-        wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
-        colliders=room.colliders,
+    rng_sofa_choice, rng_sofa_setup = rng_sofa.spawn(2)
+    sofa_func = pf.control.choice(
+        rng_sofa_choice,
+        [
+            (
+                lambda sofa_rng: wall_sofa_setup_rand(
+                    sofa_rng,
+                    wall_planes=room.wall_planes,
+                    bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+                    colliders=room.colliders,
+                ),
+                3.0,
+            ),
+            (
+                lambda sofa_rng: centered_sofa_setup_rand(
+                    sofa_rng,
+                    bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+                    bbox_max=dimensions,
+                    colliders=room.colliders,
+                ),
+                7.0,
+            ),
+        ],
     )
+    sofa_setup = sofa_func(rng_sofa_setup)
     name_objects([result.mesh for result in sofa_setup.sofas], "sofa")
     colliders = _with_objects(room.colliders, sofa_setup.all_objects)
+    tv_setups = wall_tv_setup_rand(
+        rng_tv, wall_planes=room.wall_planes, colliders=colliders
+    )
+    tv_objects = [obj for setup in tv_setups for obj in setup.all_objects]
+    tv_storages = [setup.mesh for setup in tv_setups]
+    colliders = _with_objects(colliders, tv_objects)
 
     desk_objects = []
     desk_containers = []
@@ -618,21 +647,31 @@ def room_livingroom_rand(
     storage_setup = wall_storage_setup_rand(
         rng_storage,
         wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
         colliders=colliders,
     )
-    furniture = sofa_setup.all_objects + desk_objects + storage_setup.all_objects
+    furniture = (
+        sofa_setup.all_objects + tv_objects + desk_objects + storage_setup.all_objects
+    )
     storage_containers = (
         room.storage_containers
         + sofa_setup.storage_containers
+        + tv_storages
         + desk_containers
         + storage_setup.storage_containers
     )
     supports = (
-        room.supports + sofa_setup.supports + desk_supports + storage_setup.supports
+        room.supports
+        + sofa_setup.supports
+        + tv_storages
+        + desk_supports
+        + storage_setup.supports
     )
     storages = (
-        room.storages + sofa_setup.storages + desk_storages + storage_setup.storages
+        room.storages
+        + sofa_setup.storages
+        + tv_storages
+        + desk_storages
+        + storage_setup.storages
     )
     rng_floor, rng_surface, rng_small = rng_decor.spawn(3)
     floor_result = decorate_floor_objects_rand(
@@ -650,7 +689,7 @@ def room_livingroom_rand(
         support_tops=supports,
         storages=storages,
     )
-    small_result = _decorate_room_small_objects_rand(
+    small_result = decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
@@ -701,7 +740,8 @@ def room_diningroom_rand(
     dining_setup = dining_table_setup_rand(
         rng_dining,
         wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
+        bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+        bbox_max=dimensions,
         colliders=room.colliders,
     )
     name_objects([r.mesh for r in dining_setup.dining_tables], "dining_table")
@@ -710,7 +750,6 @@ def room_diningroom_rand(
     storage_setup = wall_storage_setup_rand(
         rng_storage,
         wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
         colliders=colliders,
     )
     furniture = dining_setup.all_objects + storage_setup.all_objects
@@ -737,7 +776,7 @@ def room_diningroom_rand(
         support_tops=supports,
         storages=storages,
     )
-    small_result = _decorate_room_small_objects_rand(
+    small_result = decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
@@ -793,7 +832,8 @@ def room_bedroom_rand(
             bed_setup_rand(
                 rng_bed_setup,
                 wall_planes=room.wall_planes,
-                room_dimensions=dimensions,
+                bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+                bbox_max=dimensions,
                 colliders=room.colliders,
             )
         ]
@@ -802,7 +842,8 @@ def room_bedroom_rand(
         return multi_bed_setup_rand(
             rng_bed_setup,
             wall_planes=room.wall_planes,
-            room_dimensions=dimensions,
+            bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+            bbox_max=dimensions,
             colliders=room.colliders,
         )
 
@@ -823,7 +864,7 @@ def room_bedroom_rand(
         return wall_sofa_setup_rand(
             rng_sofa_setup,
             wall_planes=room.wall_planes,
-            room_dimensions=dimensions,
+            bbox_min=pf.Vector((0.0, 0.0, 0.0)),
             colliders=colliders,
         )
 
@@ -883,7 +924,6 @@ def room_bedroom_rand(
     storage_setup = wall_storage_setup_rand(
         rng_storage,
         wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
         colliders=colliders,
     )
     furniture = (
@@ -934,7 +974,7 @@ def room_bedroom_rand(
         support_tops=supports,
         storages=storages,
     )
-    small_result = _decorate_room_small_objects_rand(
+    small_result = decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
@@ -985,7 +1025,8 @@ def room_bathroom_rand(
     bathroom_setup = bathroom_setup_rand(
         rng_setup,
         wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
+        bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+        bbox_max=dimensions,
         colliders=room.colliders,
     )
     colliders = bathroom_setup.colliders
@@ -998,7 +1039,6 @@ def room_bathroom_rand(
         storage_setup = wall_storage_setup_rand(
             rng_storage_setup,
             wall_planes=room.wall_planes,
-            room_dimensions=dimensions,
             colliders=bathroom_setup.colliders,
         )
         storage_objects = storage_setup.all_objects
@@ -1028,7 +1068,7 @@ def room_bathroom_rand(
         support_tops=supports,
         storages=storages,
     )
-    small_result = _decorate_room_small_objects_rand(
+    small_result = decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,
@@ -1109,7 +1149,8 @@ def room_kitchen_rand(
         rng_setup,
         wall_planes=[p for p in room.wall_planes if id(p) not in plain_ids],
         reserved_wall_planes=room.plain_wall_planes,
-        room_dimensions=dimensions,
+        bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+        bbox_max=dimensions,
         colliders=room.colliders,
         wall_overlap=ROOM_WALL_THICKNESS,
     )
@@ -1134,7 +1175,6 @@ def room_kitchen_rand(
     storage_setup = wall_storage_setup_rand(
         rng_storage,
         wall_planes=room.wall_planes,
-        room_dimensions=dimensions,
         colliders=_with_objects(kitchen_setup.colliders, tables.all_objects),
     )
     furniture = (
@@ -1174,7 +1214,7 @@ def room_kitchen_rand(
         support_tops=supports,
         storages=storages,
     )
-    small_result = _decorate_room_small_objects_rand(
+    small_result = decorate_room_small_objects_rand(
         rng_small,
         objects=surface_result.all_objects,
         colliders=surface_result.colliders,

@@ -765,15 +765,19 @@ def table_dimensions_rand(
     rng: pf.RNG,
     width: float | None = None,
     height: float | None = None,
+    depth: float | None = None,
 ) -> pf.Vector:
     """Default dining table dimensions."""
     aspect = pf.random.clip_gaussian(rng, 0.6, 0.2, 0.4, 1)
 
+    if width is None and depth is not None:
+        width = min(max(depth * aspect, 0.8), 1.1)
     if width is None:
         width = pf.random.clip_gaussian(rng, 0.975, 0.3, 0.675, 1.5)
     if height is None:
         height = pf.random.uniform(rng, 0.72, 0.76)
-    depth = width / aspect
+    if depth is None:
+        depth = width / aspect
     width = min(width, 1.875)
     return (width, depth, height)
 

@@ -478,6 +478,7 @@ def window_spaced_rand(
     wall_thickness: float = 0.05,
     top_profile_height: float = 0.0,
     bottom_profile_height: float = 0.0,
+    reveal_depth: float | None = None,
 ) -> "CutoutResult":
     width = window_obj.item().dimensions.y
     wmin, _ = pf.ops.attr.bbox_min_max(window_obj)
@@ -504,7 +505,8 @@ def window_spaced_rand(
         wall, wall_thick = plain_wall(wall, wall_material, wall_thickness)
         return CutoutResult(wall, None, wall_thick, [], None)
 
-    reveal_depth = pf.random.uniform(rng, 0.1, 0.7)
+    if reveal_depth is None:
+        reveal_depth = pf.random.uniform(rng, 0.1, 0.7)
     recess_pct = 0.9 + 0.1 * pf.random.uniform(rng, 0.0, 1.0)
 
     res = cutout_spaced_instances(
@@ -543,6 +545,7 @@ def wall_windows_rand(
     window_spacing: float | None = None,
     window_bottom: float | None = None,
     wall_thickness: float = 0.05,
+    reveal_depth: float | None = None,
 ) -> WallResult:
     rng, wall, wall_material = resolve_wall_inputs(rng, wall, wall_material)
     (
@@ -573,6 +576,7 @@ def wall_windows_rand(
         wall_thickness,
         top_profile_height=top_profile_height,
         bottom_profile_height=bottom_profile_height,
+        reveal_depth=reveal_depth,
     )
     portals = []
     if window_portal is not None and res.aliases:

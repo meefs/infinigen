@@ -8,6 +8,7 @@ from typing import Callable, NamedTuple
 
 import numpy as np
 import procfunc as pf
+import shapely
 from procfunc.nodes import types as t
 
 from infinigen2.objects import bathroom_hardware, chair, handles, sink, storage, tap
@@ -21,6 +22,7 @@ from infinigen2.scenes.room.room_shape import room_shape_rand
 from infinigen2.scenes.room.wall_base import name_objects, plane_to_posed_canonical_mesh
 from infinigen2.scenes.setup_utils import (
     back_face_grounded,
+    center_inside,
     inset_floor_point_rand,
     retry_place,
 )
@@ -791,19 +793,22 @@ def kitchen_cabinets_wall_setup_rand(
 def _place_island(
     rng: pf.RNG,
     box: _Box,
-    room_dimensions: pf.Vector,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
     length: float,
     depth: float,
     margin: float,
 ) -> None:
-    """Centre the island inside the room inset by `margin` and its own half size,
-    its length along the long axis."""
-    along_y = room_dimensions.y >= room_dimensions.x
+    """Centre the island inside the room bbox inset by `margin` and its own half
+    size, its length along the long axis."""
+    extent = bbox_max - bbox_min
+    along_y = extent.y >= extent.x
     half = pf.Vector((depth / 2.0, length / 2.0))
     half = half if along_y else pf.Vector((half.y, half.x))
-    x, y = inset_floor_point_rand(rng, room_dimensions, (half.x, half.y), margin)
+    x, y = inset_floor_point_rand(rng, extent, (half.x, half.y), margin)
     yaw = 0.0 if along_y else math.pi / 2.0
-    pose = pf.Matrix.Translation((x, y, 0.0)) @ pf.Matrix.Rotation(yaw, 4, "Z")
+    location = (bbox_min.x + x, bbox_min.y + y, bbox_min.z)
+    pose = pf.Matrix.Translation(location) @ pf.Matrix.Rotation(yaw, 4, "Z")
     centre = pf.Matrix.Translation((0.0, -length / 2.0, 0.0))
     box.mesh.item().matrix_world = pose @ centre
 
@@ -894,7 +899,9 @@ def island_setup_rand(
     plinth: pf.Vector,
     cabinet_material: pf.Material,
     countertop_material: pf.Material,
-    room_dimensions: pf.Vector,
+    bbox_min: pf.Vector,
+    bbox_max: pf.Vector,
+    region: shapely.Polygon | None,
     walkway: ccol.CollisionSet,
     colliders: ccol.CollisionSet,
 ) -> KitchenSetupResult:
@@ -903,14 +910,21 @@ def island_setup_rand(
     rng_place, rng_island, rng_stool_choice, rng_stools = rng.spawn(4)
     length = count * module_width
     box = _module_array_box(counter_depth, counter_depth, length, height)
+
+    def accepted(mesh: pf.MeshObject) -> bool:
+        if region is not None and not center_inside(region, mesh):
+            return False
+        return _walkway_clear(mesh, walkway, height)
+
     placed = retry_place(
         rng_place,
         box,
         colliders,
         _place_island,
         attempts=10,
-        accept_fn=lambda mesh: _walkway_clear(mesh, walkway, height),
-        room_dimensions=room_dimensions,
+        accept_fn=accepted,
+        bbox_min=bbox_min,
+        bbox_max=bbox_max,
         length=length,
         depth=2.0 * counter_depth,
         margin=counter_depth + 1.07,
@@ -1010,7 +1024,13 @@ def _kitchen_setup_demo_rand(rng: pf.RNG) -> KitchenSetupResult:
         for wall in shape.flat_walls
     ]
     colliders = ccol.collision_set(walls + [shape.walls])
-    setup = kitchen_setup_rand(rng_setup, walls, room_dimensions, colliders)
+    setup = kitchen_setup_rand(
+        rng_setup,
+        walls,
+        bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+        bbox_max=room_dimensions,
+        colliders=colliders,
+    )
     for obj in walls + shape.flat_walls + [shape.walls, shape.floor, shape.ceiling]:
         delete_object(obj.item())
     ground = pf.ops.primitives.mesh_single_vertex()
@@ -1026,10 +1046,12 @@ def _kitchen_setup_demo_rand(rng: pf.RNG) -> KitchenSetupResult:
 def kitchen_setup_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject] | None = None,
-    room_dimensions: pf.Vector | None = None,
+    bbox_min: pf.Vector | None = None,
+    bbox_max: pf.Vector | None = None,
     colliders: ccol.CollisionSet | None = None,
     wall_overlap: float = 0.0,
     reserved_wall_planes: list[pf.MeshObject] | None = None,
+    region: shapely.Polygon | None = None,
 ) -> KitchenSetupResult:
     """Cabinet arrays on every `reserved_wall_planes` wall and some `wall_planes`
     walls, then an island and wall hardware. `wall_overlap` is how far each wall
@@ -1038,8 +1060,10 @@ def kitchen_setup_rand(
         reserved_wall_planes = []
     if wall_planes is None:
         return _kitchen_setup_demo_rand(rng)
-    if room_dimensions is None:
-        room_dimensions = pf.Vector((4.5, 5.5, 2.7))
+    if bbox_min is None:
+        bbox_min = pf.Vector((0.0, 0.0, 0.0))
+    if bbox_max is None:
+        bbox_max = pf.Vector((4.5, 5.5, 2.7))
     if colliders is None:
         colliders = ccol.collision_set(wall_planes)
     rng_params, rng_materials, rng_modules, rng_walls, rng_island, rng_hardware = (
@@ -1054,7 +1078,7 @@ def kitchen_setup_rand(
     plinth_height = pf.random.uniform(rng_params, 0.09, 0.15)
     plinth_recess = pf.random.uniform(rng_params, 0.05, 0.08)
     plinth = pf.Vector((depth - plinth_recess, 0.0, plinth_height))
-    ceiling = float(room_dimensions.z)
+    ceiling = float(bbox_max.z - bbox_min.z)
     upper_bottom = min(
         height + pf.random.uniform(rng_params, 0.45, 0.55), ceiling - 0.65
     )
@@ -1117,7 +1141,8 @@ def kitchen_setup_rand(
 
     rng_island_params, rng_island_setup = rng_island.spawn(2)
     island_margin = counter_depth + 1.07
-    island_free = max(room_dimensions.x, room_dimensions.y) - 2.0 * island_margin
+    extent = bbox_max - bbox_min
+    island_free = max(extent.x, extent.y) - 2.0 * island_margin
     island_length = island_free * pf.random.uniform(rng_island_params, 0.7, 1.0)
     walkway = wall_planes + reserved_wall_planes + arrays.all_objects
     islands = island_setup_rand(
@@ -1133,7 +1158,9 @@ def kitchen_setup_rand(
         plinth,
         cabinet_material,
         countertop_material,
-        room_dimensions,
+        bbox_min,
+        bbox_max,
+        region,
         ccol.collision_set(walkway),
         arrays.colliders,
     )

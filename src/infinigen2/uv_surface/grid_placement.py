@@ -215,6 +215,39 @@ def _footprint_uv_bounds(
     return bb_min, bb_max
 
 
+def _uv_is_on_surface(
+    surface: pf.ProcNode[pf.MeshObject],
+    uv_field: t.SocketOrVal[pf.Vector],
+    query_uv: t.SocketOrVal[pf.Vector],
+    offset_u: t.SocketOrVal[float],
+    offset_v: t.SocketOrVal[float],
+) -> pf.ProcNode[bool]:
+    return pf.nodes.geo.sample_uv_surface(
+        mesh=surface,
+        value=pf.nodes.geo.input_position(),
+        sample_uv=query_uv + pf.nodes.math.combine_xyz(x=offset_u, y=offset_v),
+        uv_map=uv_field,
+    ).is_valid
+
+
+@pf.nodes.node_function
+def _instance_footprint_is_valid(
+    surface: pf.ProcNode[pf.MeshObject],
+    uv_field: t.SocketOrVal[pf.Vector],
+    query_uv: t.SocketOrVal[pf.Vector],
+    instance: pf.ProcNode[pf.MeshObject],
+    rotation_offset: t.SocketOrVal[pf.Vector],
+) -> pf.ProcNode[bool]:
+    lo, hi = _footprint_uv_bounds(instance, rotation_offset)
+    lower_left = _uv_is_on_surface(surface, uv_field, query_uv, lo.x, lo.y)
+    lower_right = _uv_is_on_surface(surface, uv_field, query_uv, hi.x, lo.y)
+    upper_left = _uv_is_on_surface(surface, uv_field, query_uv, lo.x, hi.y)
+    upper_right = _uv_is_on_surface(surface, uv_field, query_uv, hi.x, hi.y)
+    lower = pf.nodes.func.boolean_and(a=lower_left, b=lower_right)
+    upper = pf.nodes.func.boolean_and(a=upper_left, b=upper_right)
+    return pf.nodes.func.boolean_and(a=lower, b=upper)
+
+
 @pf.nodes.node_function
 def grid_from_spacing(
     uv_surface: pf.ProcNode[pf.MeshObject],
@@ -644,12 +677,12 @@ def place_instances_on_uv_grid(
     rotation_offset: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
     normal_offset: t.SocketOrVal[float] = 0.0,
 ) -> pf.ProcNode[t.Instances]:
-    position = pf.nodes.geo.sample_uv_surface(
+    position_sample = pf.nodes.geo.sample_uv_surface(
         mesh=surface,
         value=pf.nodes.geo.input_position(),
         sample_uv=query_uv,
         uv_map=uv_field,
-    ).value
+    )
     normal = pf.nodes.geo.sample_uv_surface(
         mesh=surface,
         value=pf.nodes.geo.input_normal(),
@@ -657,7 +690,19 @@ def place_instances_on_uv_grid(
         uv_map=uv_field,
     ).value
 
-    seated = position + normal * normal_offset
+    footprint_valid = _instance_footprint_is_valid(
+        surface=surface,
+        uv_field=uv_field,
+        query_uv=query_uv,
+        instance=instance,
+        rotation_offset=rotation_offset,
+    )
+    sample_valid = pf.nodes.func.boolean_and(
+        a=position_sample.is_valid,
+        b=footprint_valid,
+    )
+
+    seated = position_sample.value + normal * normal_offset
     grid_positioned = pf.nodes.geo.set_position(geometry=grid_mesh, position=seated)
 
     # local +X -> normal (out), +Z -> secondary reference (world up on walls),
@@ -673,5 +718,8 @@ def place_instances_on_uv_grid(
     )
 
     return pf.nodes.geo.instance_on_points(
-        points=grid_positioned, instance=instance, rotation=rotation
+        points=grid_positioned,
+        instance=instance,
+        rotation=rotation,
+        selection=sample_valid,
     )
