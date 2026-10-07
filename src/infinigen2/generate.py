@@ -485,11 +485,17 @@ def _execute_step(
 
     result = generator_func(**step_kwargs)
 
-    if pf.context.globals.current_trace_level is not None:
-        varname = generator_func.__name__.removesuffix("_rand")
-        for name, val in pf.util.pytree.PyTree(result).items():
-            if isinstance(val, pf.compute_graph.Proxy):
-                val.node.metadata["varname"] = f"{varname}_{name}" if name else varname
+    if pf.context.globals.current_trace_level is None:
+        return result
+
+    varname = generator_func.__name__.removesuffix("_rand")
+    for name, val in pf.util.pytree.PyTree(result).items():
+        if not isinstance(val, pf.compute_graph.Proxy):
+            continue
+        node_varname = f"{varname}_{name}" if name else varname
+        val.node = val.node._replace(
+            metadata={**val.node.metadata, "varname": node_varname}
+        )
 
     return result
 
