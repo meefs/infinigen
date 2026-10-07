@@ -22,18 +22,15 @@ import procfunc as pf
 from infinigen2 import context
 from infinigen2.exporters.camera_pose import save_camera_poses
 from infinigen2.exporters.render_error_check import (
-    assert_adaptive_sampling_converged,
-    assert_displacement_coords_safe,
-    assert_frames_not_black,
-    assert_geometry_finite,
-    assert_material_attributes_present,
-    assert_material_nodes_valid,
-    assert_render_objects_visible,
-    assert_shader_complexity_ok,
-    assert_transforms_nonsingular,
-    assert_uv_coords_satisfied,
-    configure_sample_count_output,
     detect_cycles_errors,
+    render_validity_check,
+)
+from infinigen2.exporters.render_error_check.adaptive_sampling import (
+    assert_adaptive_sampling_converged,
+    configure_sample_count_output,
+)
+from infinigen2.exporters.render_error_check.check_frames_valid import (
+    assert_frames_not_black,
 )
 from infinigen2.exporters.util.blender_render import (
     DisplacementMode,
@@ -58,8 +55,6 @@ __all__ = [
     "RENDER_CYCLES_GT_PASS_TYPES",
     "RENDER_CYCLES_PASS_TYPES",
     "DenoiseMode",
-    "configure_cycles_devices",
-    "configure_cycles_performance",
     "render_cycles",
     "render_cycles_ground_truth",
 ]
@@ -462,14 +457,7 @@ def _render_cycles_impl(
     if len(render_passes) == 0:
         return result
 
-    assert_displacement_coords_safe(objects, displacement_mode)
-    assert_shader_complexity_ok(objects)
-    assert_uv_coords_satisfied(objects)
-    assert_material_nodes_valid(objects)
-    assert_geometry_finite(objects)
-    assert_transforms_nonsingular(objects)
-    assert_material_attributes_present(objects)
-    assert_render_objects_visible(objects)
+    render_validity_check(objects, displacement_mode)
 
     check_convergence = _should_check_convergence(fail_for_unconverged_pix_frac)
     if check_convergence:

@@ -66,10 +66,6 @@ class InfinigenContext:
     """A ShaderNodeTex* has an unlinked Vector input, so Cycles samples Generated
     coordinates instead of the intended sample vector."""
 
-    error_mode_material_floating_interface: ErrorMode
-    """A node group contains a floating output/input node instead of routing through
-    the group interface."""
-
     error_mode_finite_geometry: ErrorMode
     """A mesh has non-finite (NaN/Inf) vertex coordinates."""
 
@@ -97,9 +93,6 @@ globals = InfinigenContext(
     error_mode_uv_coords=_mode("uv_coords", "error"),
     error_mode_material_normal_input=_mode("material_normal_input", "error"),
     error_mode_material_texture_vector=_mode("material_texture_vector", "error"),
-    error_mode_material_floating_interface=_mode(
-        "material_floating_interface", "error"
-    ),
     error_mode_finite_geometry=_mode("finite_geometry", "error"),
     error_mode_singular_transform=_mode("singular_transform", "error"),
     error_mode_cycles_shader=_mode("cycles_shader", "error"),

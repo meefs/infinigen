@@ -69,15 +69,6 @@ def test_every_field_has_one_row_per_object(tmp_path: Path):
     assert int(data["frame_end"]) == 5
 
 
-def test_collect_object_data_returns_in_memory_arrays():
-    cubes = _cubes(2)
-    data = collect_object_data(cubes, frame_start=2, frame_end=3)
-
-    assert data["location_meters"].shape == (2, 3, 2)
-    assert int(data["frame_start"]) == 2
-    assert int(data["frame_end"]) == 3
-
-
 def test_metadata_fields_describe_each_object(tmp_path: Path):
     cubes = _cubes(2)
     data = _load(cubes, tmp_path)

@@ -1,7 +1,8 @@
+import ast
 import importlib.util
 import re
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONF = REPO_ROOT / "docs" / "source" / "conf.py"
@@ -62,6 +63,48 @@ def test_preset_images_point_at_directory_launch_sh_renders() -> None:
     directory = conf._preset_image_url("pkg.mod.demo_preset")
     directory = directory.rsplit(f"/{conf.VERSION_SLUG}/", 1)[-1].split("/", 1)[0]
     assert _matches_any(directory, _launch_dir_patterns())
+
+
+def test_manifest_presets_render_under_owning_generator() -> None:
+    conf = _load_conf()
+    parent = "infinigen2.shaders.base_materials.carpet.carpet_rand"
+    lines = []
+    conf._inject_images(None, "function", parent, None, None, lines)
+    text = "\n".join(lines)
+    assert ".. rubric:: Presets" in text
+    assert "carpet_noisy_preset" in text
+
+
+def _module_exports(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        is_all = isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets
+        )
+        if is_all:
+            return ast.literal_eval(node.value)
+    return []
+
+
+def test_manifest_presets_are_public_module_exports() -> None:
+    conf = _load_conf()
+    for parent, presets in conf._PRESETS_BY_PARENT.items():
+        module = parent.rsplit(".", 1)[0]
+        path = REPO_ROOT / "src" / Path(*module.split(".")).with_suffix(".py")
+        exports = _module_exports(path)
+        missing = [preset.rsplit(".", 1)[-1] for preset in presets]
+        missing = [preset for preset in missing if preset not in exports]
+        assert not missing, f"{path.relative_to(REPO_ROOT)} does not export {missing}"
+
+
+def test_manifest_presets_skip_standalone_autodoc_members() -> None:
+    conf = _load_conf()
+    for presets in conf._PRESETS_BY_PARENT.values():
+        preset = presets[0]
+        module, name = preset.rsplit(".", 1)
+        obj = SimpleNamespace(__module__=module)
+        skip = conf._skip_imported(None, "function", name, obj, False, None)
+        assert skip is True
 
 
 def test_still_and_trajectory_media_names() -> None:

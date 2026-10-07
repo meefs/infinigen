@@ -44,7 +44,7 @@ def _material_sampled_uv_layers(material: bpy.types.Material) -> set:
     if not material.use_nodes or material.node_tree is None:
         return set()
     layers = set()
-    for node, _ in iter_all_nodes(material.node_tree):
+    for node in iter_all_nodes(material.node_tree):
         layer = _node_sampled_layer(node)
         if layer is not None:
             layers.add(layer)

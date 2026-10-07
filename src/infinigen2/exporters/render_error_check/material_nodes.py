@@ -16,10 +16,6 @@ from infinigen2.exporters.render_error_check.util import (
 
 logger = logging.getLogger(__name__)
 
-NORMAL_INPUT_CHECK = "material_normal_input"
-TEXTURE_VECTOR_CHECK = "material_texture_vector"
-FLOATING_INTERFACE_CHECK = "material_floating_interface"
-
 
 class MaterialNodeError(ValueError):
     pass
@@ -47,57 +43,62 @@ _NORMAL_INPUT_NODE_TYPES = frozenset(
 _NORMAL_INPUT_SOCKETS = ("Normal", "Coat Normal")
 
 
-def _node_issues(node: bpy.types.Node, nested: bool) -> list[tuple[str, str]]:
+def _material_nodes(material: bpy.types.Material) -> list[bpy.types.Node]:
+    if not material.use_nodes or material.node_tree is None:
+        return []
+    return list(iter_all_nodes(material.node_tree))
+
+
+def _node_normal_inputs(node: bpy.types.Node) -> list[str]:
     name = node.bl_idname
     if name == "ShaderNodeNormalMap":
-        msg = f"{name}: use the displacement output instead of normals"
-        return [(NORMAL_INPUT_CHECK, msg)]
-    if name in _NORMAL_INPUT_NODE_TYPES:
-        return [
-            (
-                NORMAL_INPUT_CHECK,
-                f"{name}: {sock!r} input set; use displacement instead",
-            )
-            for sock in _NORMAL_INPUT_SOCKETS
-            if node.inputs.get(sock) is not None and node.inputs[sock].is_linked
-        ]
-    if name.startswith("ShaderNodeTex"):
-        vec = node.inputs.get("Vector")
-        if vec is None or not vec.enabled or vec.is_linked:
-            return []
-        msg = (
-            f"{name}: Vector input unlinked, so Cycles samples Generated coords "
-            "instead of the intended sample vector; pass an explicit vector"
-        )
-        return [(TEXTURE_VECTOR_CHECK, msg)]
-    if nested and name.startswith("ShaderNodeOutput"):
-        msg = f"{name}: floating output node; route through the interface"
-        return [(FLOATING_INTERFACE_CHECK, msg)]
-    if name.startswith(("FunctionNodeInput", "GeometryNodeInput")):
-        msg = f"{name}: floating input node; route through the interface"
-        return [(FLOATING_INTERFACE_CHECK, msg)]
-    return []
+        return [f"{name}: use the displacement output instead of normals"]
+    if name not in _NORMAL_INPUT_NODE_TYPES:
+        return []
+    return [
+        f"{name}: {sock!r} input set; use displacement instead"
+        for sock in _NORMAL_INPUT_SOCKETS
+        if node.inputs.get(sock) is not None and node.inputs[sock].is_linked
+    ]
 
 
-def material_node_issues(material: bpy.types.Material) -> dict[str, list[str]]:
-    if not material.use_nodes or material.node_tree is None:
-        return {}
-    issues: dict[str, list[str]] = {}
-    for node, nested in iter_all_nodes(material.node_tree):
-        for check, msg in _node_issues(node, nested):
-            issues.setdefault(check, []).append(f"{material.name}: {msg}")
-    return issues
+def normal_input_used(material: bpy.types.Material) -> list[str]:
+    return [
+        f"{material.name}: {msg}"
+        for node in _material_nodes(material)
+        for msg in _node_normal_inputs(node)
+    ]
+
+
+def _node_vector_unlinked(node: bpy.types.Node) -> bool:
+    if not node.bl_idname.startswith("ShaderNodeTex"):
+        return False
+    vec = node.inputs.get("Vector")
+    return vec is not None and vec.enabled and not vec.is_linked
+
+
+def unlinked_texture_vector(material: bpy.types.Material) -> list[str]:
+    return [
+        f"{material.name}: {node.bl_idname}: Vector input unlinked, so Cycles samples "
+        "Generated coords instead of the intended sample vector; pass an explicit vector"
+        for node in _material_nodes(material)
+        if _node_vector_unlinked(node)
+    ]
+
+
+def _raise_or_warn_issues(check: str, issues: list[str]):
+    if not issues:
+        return
+    error = MaterialNodeError(
+        f"materials contain invalid shader nodes [{check}]: {issues}"
+    )
+    mode = getattr(context.globals, "error_mode_" + check)
+    context.raise_or_warn(mode, error, logger)
 
 
 def assert_material_nodes_valid(objects: list[pf.MeshObject] | None = None):
-    grouped: dict[str, list[str]] = {}
-    for material in context_materials(objects):
-        for check, msgs in material_node_issues(material).items():
-            grouped.setdefault(check, []).extend(msgs)
-
-    for check, msgs in grouped.items():
-        error = MaterialNodeError(
-            f"materials contain invalid shader nodes [{check}]: {msgs}"
-        )
-        mode = getattr(context.globals, "error_mode_" + check)
-        context.raise_or_warn(mode, error, logger)
+    materials = context_materials(objects)
+    normal = [i for m in materials for i in normal_input_used(m)]
+    vector = [i for m in materials for i in unlinked_texture_vector(m)]
+    _raise_or_warn_issues("material_normal_input", normal)
+    _raise_or_warn_issues("material_texture_vector", vector)

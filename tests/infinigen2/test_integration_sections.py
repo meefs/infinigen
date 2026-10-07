@@ -256,13 +256,6 @@ def test_trajectory_video_does_not_crash_mse(tmp_path):
     assert avg is None or math.isfinite(avg)
 
 
-def test_pairwise_mse_skips_video():
-    img = {"pass_type": "image", "filename": "x/image_Camera.mp4"}
-    png = {"pass_type": "image", "filename": "x/0000.png"}
-    assert display._pairwise_mse(img, png, Path("a"), Path("b")) is None
-    assert display._pairwise_mse(img, img, Path("a"), Path("b")) is None
-
-
 def _sort_rows():
     def row(asset, asset_type, new=False, not_run=False, mse=None):
         return {

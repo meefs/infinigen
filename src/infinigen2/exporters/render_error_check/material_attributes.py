@@ -37,7 +37,7 @@ def _material_required_attributes(material: bpy.types.Material) -> set[str]:
     if not material.use_nodes or material.node_tree is None:
         return set()
     names = set()
-    for node, _ in iter_all_nodes(material.node_tree):
+    for node in iter_all_nodes(material.node_tree):
         name = _node_required_attribute(node)
         if name is not None:
             names.add(name)

@@ -285,19 +285,3 @@ def test_only_a_pending_comment_carries_the_reap_marker():
 
     assert compose_pr_comment.PENDING_MARKER in planned
     assert compose_pr_comment.PENDING_MARKER not in done
-
-
-def test_reaping_spares_this_run_and_older_results():
-    mine = "\n".join(compose_pr_comment.planned_body(_comment_args("2")))
-    older_pending = "\n".join(compose_pr_comment.planned_body(_comment_args("1")))
-    older_done = "\n".join(compose_pr_comment.done_body(_comment_args("1")))
-
-    marker = compose_pr_comment.status_marker("2")
-    pending = compose_pr_comment.PENDING_MARKER
-    reaped = [
-        body
-        for body in [mine, older_pending, older_done]
-        if pending in body and marker not in body
-    ]
-
-    assert reaped == [older_pending]

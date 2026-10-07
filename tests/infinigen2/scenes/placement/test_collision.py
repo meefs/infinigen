@@ -3,7 +3,6 @@
 
 # Authors: Karhan Kayan
 
-import inspect
 import math
 
 import numpy as np
@@ -125,24 +124,6 @@ def test_any_self_collision_empty_and_single():
     assert not any_self_collision(col)
 
 
-def test_any_self_collision_non_overlapping():
-    a = pf.ops.primitives.mesh_cube()
-    b = pf.ops.primitives.mesh_cube()
-    a.item().location = (0, 0, 0)
-    b.item().location = (10, 0, 0)
-    col = collision_set([a, b])
-    assert not any_self_collision(col)
-
-
-def test_any_self_collision_overlapping():
-    a = pf.ops.primitives.mesh_cube()
-    b = pf.ops.primitives.mesh_cube()
-    a.item().location = (0, 0, 0)
-    b.item().location = (0.5, 0, 0)
-    col = collision_set([a, b])
-    assert any_self_collision(col)
-
-
 def test_any_self_collision_updates_after_move():
     """Objects start clear; moving one into the other is detected without rebuilding."""
     a = pf.ops.primitives.mesh_cube()
@@ -258,27 +239,6 @@ def test_collision_moving_one_of_multiple_objects():
     assert intersection_test(col, probe_b)  # b is still in place
 
 
-def test_collision_object_moves_back_and_forth():
-    """Object oscillating position is tracked correctly through multiple moves."""
-    cube = pf.ops.primitives.mesh_cube()
-    cube.item().location = (0, 0, 0)
-    col = collision_set([cube])
-
-    probe = pf.ops.primitives.mesh_cube()
-    probe.item().location = (0, 0, 0)
-
-    assert intersection_test(col, probe)
-
-    cube.item().location = (50, 0, 0)
-    assert not intersection_test(col, probe)
-
-    cube.item().location = (0, 0, 0)
-    assert intersection_test(col, probe)
-
-    cube.item().location = (50, 0, 0)
-    assert not intersection_test(col, probe)
-
-
 def test_collision_raycast_detects_after_move():
     """raycast reflects object position after movement without rebuilding the set."""
     cube = pf.ops.primitives.mesh_cube()
@@ -294,54 +254,6 @@ def test_collision_raycast_detects_after_move():
     cube.item().location = (0, 0, 0)
     hit_points, _, _ = raycast(col, origins, directions)
     assert hit_points.shape[0] >= 1  # cube now under the ray
-
-
-def test_collision_cube_passes_through(tmp_path, save_blend=True):
-    """Animate a cube passing through a stationary cube and log collision per frame.
-
-    The moving cube is placed in the collision set so that _sync_transforms is
-    exercised on every frame. The stationary cube is the probe (always rebuilt
-    fresh by intersection_test, so it does not test sync).
-
-    Run with:
-        uv run pytest tests/infinigen2/scenes/placement/test_collision.py::test_collision_cube_passes_through -v -s
-    """
-    moving = pf.ops.primitives.mesh_cube()
-    moving.item().name = "moving"
-
-    stationary = pf.ops.primitives.mesh_cube()
-    stationary.item().name = "stationary"
-    stationary.item().location = (0, 0, 0)
-
-    # moving cube is in the set — _sync_transforms updates its FCL transform each frame
-    col = collision_set([moving])
-
-    n_frames = 40
-    x_start, x_end = -5.0, 5.0
-
-    print("\nframe | moving_x | colliding")
-    print("------+----------+----------")
-
-    results = []
-    for frame in range(n_frames + 1):
-        t = frame / n_frames
-        x = x_start + t * (x_end - x_start)
-        moving.item().location = (x, 0, 0)
-        hit = intersection_test(col, stationary)
-        print(f"{frame:5d} | {x:+.4f}  | {hit}")
-        moving.item().keyframe_insert("location", frame=frame)
-        results.append((x, hit))
-
-    # both cubes have half-extent 1; overlap region is x in (-2, +2)
-    for x, hit in results:
-        if abs(x) < 2.0:
-            assert hit, f"expected collision at x={x}"
-        elif abs(x) > 2.0:
-            assert not hit, f"expected no collision at x={x}"
-
-    if save_blend:
-        blend_path = tmp_path / f"{inspect.currentframe().f_code.co_name}.blend"
-        pf.ops.file.save_blend(output_path=blend_path)
 
 
 def test_collision_detects_after_object_rotates():

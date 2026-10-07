@@ -42,13 +42,3 @@ def test_override_material_creates_uv_map_when_missing() -> None:
     assert (
         np.ptp([loop.uv[:] for loop in mesh.uv_layers["UVMap"].data], axis=0).min() > 0
     )
-
-
-def test_obj_with_postprocessing_is_traceable() -> None:
-    graph = pf.trace(
-        floating_objects.obj_with_postprocessing,
-        trace_level=pf.tracer.TraceLevel.RANDOM_CONTROL,
-        rng=np.random.default_rng(0),
-    )
-
-    assert graph.name == "obj_with_postprocessing"

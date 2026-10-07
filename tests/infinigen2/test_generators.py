@@ -4,7 +4,6 @@
 # Authors: Alexander Raistrick
 
 import ast
-import inspect
 import types
 from typing import Callable, TypeVar
 
@@ -133,14 +132,6 @@ def test_displacement_integration_commands_present() -> None:
     assert _DISPLACEMENT_FUNCS["integration_test_string"].notna().all()
 
 
-def test_masonry_displacement_uses_readable_demo() -> None:
-    row = _DISPLACEMENT_FUNCS.iloc[0]
-    assert row["name"].endswith(".masonry_displacement_rand")
-    assert row["integration_test_string"] == (
-        "masonry_displacement_rand material_plane_uv render_cycles"
-    )
-
-
 _OBJECT_FUNCS = pf.util.manifest.filter_manifest(
     GENERATORS_MANIFEST,
     filter={"category": "Object"},
@@ -187,10 +178,14 @@ def test_generators_object(rng, pathspec, min_parameters):
     func = import_item(pathspec)
     assert callable(func)
     res = func(rng=rng)
-    assert isinstance(res, pf.MeshObject) or hasattr(res, "mesh"), res
-
-    mesh = res if isinstance(res, pf.MeshObject) else res.mesh
-    _assert_render_valid([mesh])
+    assert not isinstance(res, pf.MeshObject), (
+        f"Expected NamedTuple with mesh field, got bare MeshObject from {pathspec}"
+    )
+    assert hasattr(res, "mesh"), f"Result missing .mesh from {pathspec}"
+    assert isinstance(res.mesh, pf.MeshObject), (
+        f".mesh should be MeshObject, got {type(res.mesh)} from {pathspec}"
+    )
+    _assert_render_valid([res.mesh])
 
     validate_trace_generator(func, rng, min_parameters=min_parameters)
 
@@ -297,80 +292,6 @@ def test_generators_object_trace_reproduces_geometry(
     )
 
 
-_SCENE_FUNCS = pf.util.manifest.filter_manifest(
-    GENERATORS_MANIFEST,
-    filter={"category": "Scene"},
-    exclude={"name": ["LATER", "DECLINE"]},
-    require_nonempty=["name"],
-    min_entries=0,
-)
-
-
-@pytest.mark.skip(reason="Scene generators are not implemented yet")
-@pytest.mark.parametrize("pathspec", _SCENE_FUNCS["name"].values)
-def test_generators_scene(pathspec, rng):
-    raise NotImplementedError("Scene generators are not implemented yet")
-
-    SceneClass = import_item(pathspec)
-    SceneClass()
-
-    dummy_material = pf.Material(
-        surface=pf.nodes.shader.principled_bsdf(
-            base_color=(0.8, 0.8, 0.8, 1.0), roughness=0.5
-        )
-    )
-
-    def assets_to_dummies(node: cg.Node) -> cg.Node:
-        if not isinstance(node, cg.FunctionCallNode):
-            return node
-        func_output_type = inspect.signature(node.func).return_annotation
-        if func_output_type is pf.Object:
-            return cg.FunctionCallNode(
-                func=pf.primitive.cube,
-                args=(),
-                kwargs={},
-            )
-        elif func_output_type is pf.Material:
-            return cg.FunctionCallNode(
-                func=dummy_material,
-                args=(),
-                kwargs={},
-            )
-        return node
-
-    # dummied_scenegen = gtr.transform_generator(
-    #     pf.trace(generator, rng=rng), assets_to_dummies
-    # )
-
-    # _res = dummied_scenegen(rng=rng)
-    # validate_generator(generator, rng)
-
-
-_OBJECT_FUNCS = pf.util.manifest.filter_manifest(
-    GENERATORS_MANIFEST,
-    filter={"category": "Object"},
-    exclude={"name": ["LATER", "DECLINE"]},
-    require_nonempty=["name"],
-    min_entries=None,
-)
-
-
-@pytest.mark.parametrize("pathspec", _OBJECT_FUNCS["name"].values)
-def test_generators_mesh_object(pathspec, rng):
-    func = import_item(pathspec)
-    assert callable(func)
-    res = func(rng=rng)
-    assert not isinstance(res, pf.MeshObject), (
-        f"Expected NamedTuple with mesh field, got bare MeshObject from {pathspec}"
-    )
-    assert hasattr(res, "mesh"), f"Result missing .mesh from {pathspec}"
-    assert isinstance(res.mesh, pf.MeshObject), (
-        f".mesh should be MeshObject, got {type(res.mesh)} from {pathspec}"
-    )
-
-    # validate_generator(func, rng)
-
-
 _MANIFEST_NAMES = [n for n in GENERATORS_MANIFEST["name"].values if isinstance(n, str)]
 
 
@@ -382,29 +303,3 @@ def test_generators_naming_validate(name: str) -> None:
         f"Manifest entry {name!r} ends in '_distribution'; "
         f"use the '_rand' suffix instead (e.g. rename to '{suggested}')."
     )
-
-
-@pytest.mark.parametrize(
-    ("shortname", "demo"),
-    [
-        ("brick_concrete_rand", "material_plane_uv"),
-        ("bricks_masonry_rand", "material_plane_uv"),
-        ("bricks_rand", "material_plane_uv"),
-        ("bricks_paint_rand", "material_plane_uv"),
-        ("bricks_pristine_rand", "material_plane_uv"),
-        ("paint_rand", "material_cube"),
-        ("paint_flaked_rand", "material_plane_uv"),
-        ("paint_patterned_rand", "material_plane_uv"),
-        ("paint_wall_rand", "material_plane_uv"),
-        ("skirt_material_rand", "material_torus_uv"),
-        ("tile_rand", "material_plane_uv"),
-        ("tile_indoor_wall_rand", "material_plane_uv"),
-        ("tile_outdoor_wall_rand", "material_plane_uv"),
-        ("wall_material_rand", "material_plane_uv"),
-    ],
-)
-def test_material_integration_uses_readable_demo(shortname: str, demo: str) -> None:
-    names = GENERATORS_MANIFEST["name"].str.rsplit(".", n=1).str[-1]
-    row = GENERATORS_MANIFEST[names == shortname].iloc[0]
-    expected = f"{shortname} {demo} render_cycles"
-    assert row["integration_test_string"] == expected

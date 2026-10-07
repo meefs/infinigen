@@ -543,7 +543,14 @@
   {
     "category": "Material",
     "name": "infinigen2.shaders.base_materials.leaf.leaf_rand",
-    "integration_test_string": "leaf_rand material_banana render_cycles"
+    "integration_test_string": "leaf_rand material_banana render_cycles",
+    "presets": [
+      "leaf_preset",
+      "leaf_ridged_preset",
+      "leaf_rounded_sections_preset",
+      "leaf_streaks_preset",
+      "leaf_velvet_preset"
+    ]
   },
   {
     "category": "Material",
