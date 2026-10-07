@@ -104,6 +104,64 @@ def test_launch_shell_plans_full_house_tour(tmp_path: Path) -> None:
     assert call[render_index + 1 : render_index + 3] == [b"0", b"3"]
 
 
+def _scene_outputs_for_slot(tmp_path: Path, slot_idx: int, slot_count: int) -> set:
+    repo = Path(__file__).resolve().parents[2]
+    slot_dir = tmp_path / f"slot{slot_idx}"
+    fake_bin = slot_dir / "bin"
+    fake_bin.mkdir(parents=True)
+    _write_fake_uv(fake_bin / "uv")
+    categories = {
+        name: ""
+        for name in (
+            "MATERIALS",
+            "OBJECTS",
+            "MASKS",
+            "DISPLACEMENTS",
+            "PRESETS",
+            "ENVIRONMENTS",
+            "CAMERAS",
+        )
+    }
+    env = os.environ | categories
+    env |= {
+        "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        "UV_CALLS": str(slot_dir / "uv-calls.txt"),
+        "SCENES": "slow_rand\nfast_rand",
+        "SCENE_CMDS": "slow_rand\x1f\x1f3\nfast_rand\x1f\x1f2\nskipped_rand\x1f\x1f2",
+        "INTEGRATION_SLOT_INDEX": str(slot_idx),
+        "INTEGRATION_SLOT_COUNT": str(slot_count),
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/integration_v2/launch.sh", str(slot_dir / "out"), "1"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    calls = [path.read_bytes().split(b"\0") for path in slot_dir.glob("uv-calls.*")]
+    outputs = [
+        call[call.index(b"--output") + 1] for call in calls if b"--output" in call
+    ]
+    return {Path(o.decode()).name for o in outputs if b"/scene-" in o}
+
+
+def test_launch_shell_spreads_scene_seeds_across_slots(tmp_path: Path) -> None:
+    per_slot = [_scene_outputs_for_slot(tmp_path, idx, 3) for idx in range(3)]
+
+    assert per_slot[0] == {
+        "scene-slow_rand-demo-cycles-0",
+        "scene-fast_rand-demo-cycles-0",
+    }
+    assert per_slot[1] == {
+        "scene-slow_rand-demo-cycles-1",
+        "scene-fast_rand-demo-cycles-1",
+    }
+    assert per_slot[2] == {"scene-slow_rand-demo-cycles-2"}
+
+
 def test_launcher_marks_each_render_slot(monkeypatch, tmp_path):
     launched = []
 

@@ -207,17 +207,23 @@ SCENE_CMDS=${SCENE_CMDS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS 
     --columns shortname integration_test_string num_seeds --missing_values keep \
     --separator $'\x1f' $REST_ARGS)}
 
-# launch_andromeda shards scenes via SCENES; unfiltered, every slot renders every scene
+# SCENES filters to the gated scene list; unset, every scene is eligible
 if [ -n "${SCENES+set}" ]; then
     SCENE_CMDS=$(awk -F$'\x1f' 'NR==FNR{keep[$1];next} $1 in keep' <(echo "$SCENES") <(echo "$SCENE_CMDS"))
 fi
 
+# each slot takes every SLOT_COUNT-th (scene, seed) pair, so a slow scene's seeds run in parallel
+SLOT_COUNT=${INTEGRATION_SLOT_COUNT:-1}
+SLOT_INDEX=${INTEGRATION_SLOT_INDEX:-0}
+SCENE_JOB=0
 while IFS=$'\x1f' read -r sn cmd num_seeds; do
     [ -z "$sn" ] && continue
     cmd=${cmd:-"$sn render_cycles"}
     num_seeds=${num_seeds%.*}
     num_seeds=${num_seeds:-9}
     for ((i = 0; i < num_seeds; i++)); do
+        SCENE_JOB=$((SCENE_JOB + 1))
+        [ $(((SCENE_JOB - 1) % SLOT_COUNT)) = "$SLOT_INDEX" ] || continue
         echo "+ scene $sn -> $cmd $NORMAL_STEPS (seed $i)"
         "${RENDER_RUNNER_ARGS[@]}" $cmd $NORMAL_STEPS \
             $GEN_ARGS --output $OUTPUT_PATH/scene-$sn-demo-cycles-$i --seed $i \
