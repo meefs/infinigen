@@ -625,11 +625,12 @@ def _house_ceiling_rand(
     ceiling: pf.MeshObject,
     height: float,
     thickness: float,
+    floor_material: pf.Material,
 ) -> CeilingFeaturesResult:
     """One room's floor and ceiling, with lamps, skylights or light bars inside it."""
     vec_pos = pf.nodes.shader.geometry().position
-    rng_floor, rng_ceiling, rng_choice, rng_feature = rng.spawn(4)
-    _finish_surface(floor, floor_material_rand(rng_floor, vec_pos))
+    _, rng_ceiling, rng_choice, rng_feature = rng.spawn(4)
+    _finish_surface(floor, floor_material)
     material = ceiling_material_rand(rng_ceiling, vec_pos)
     _finish_surface(ceiling, material)
     option = pf.control.choice(
@@ -653,6 +654,7 @@ def house_walls_rand(
     height: float,
     feature_min_width: float = 1.4,
     door_open_angle_deg: float | None = None,
+    room_wall_materials: list[pf.Material] | None = None,
 ) -> HouseWallResult:
     """Treat both sides of every partition and the inside of every outer wall.
 
@@ -666,9 +668,11 @@ def house_walls_rand(
         rng_exterior,
         rng_door_open,
     ) = rng.spawn(6)
-    vec_wall = pf.nodes.shader.coord().uv
-    room_rngs = rng_materials.spawn(room_count)
-    materials = [wall_material_rand(room_rng, vec_wall) for room_rng in room_rngs]
+    materials = room_wall_materials
+    if materials is None:
+        vec_wall = pf.nodes.shader.coord().uv
+        room_rngs = rng_materials.spawn(room_count)
+        materials = [wall_material_rand(r, vec_wall) for r in room_rngs]
     exterior_widths = [plane.length for plane in planes_exterior]
     usable_widths = [width for width in exterior_widths if width >= feature_min_width]
     window_width = max(1.0, min(2.0, 0.5 * min(usable_widths, default=1.0)))
@@ -777,6 +781,13 @@ def house_walls_rand(
     )
 
 
+def _pick_room_materials(
+    rng: pf.RNG, palette: list[pf.Material], room_count: int
+) -> list[pf.Material]:
+    rngs = rng.spawn(room_count)
+    return [palette[pf.random.randint(r, 0, len(palette))] for r in rngs]
+
+
 @pf.tracer.grammar
 def house_unfurnished_rand(
     rng: pf.RNG,
@@ -785,8 +796,14 @@ def house_unfurnished_rand(
     height: float | None = None,
     wall_thickness: float | None = None,
     door_open_angle_deg: float | None = None,
+    floor_materials: list[pf.Material] | None = None,
+    wall_materials: list[pf.Material] | None = None,
 ) -> HouseResult:
-    """Dress a house shell with surface, wall, ceiling, and lighting options."""
+    """Dress a house shell with surface, wall, ceiling, and lighting options.
+
+    Every room picks its floor from `floor_materials` and its walls from
+    `wall_materials`, so the house shares a small palette.
+    """
     (
         rng_outline,
         rng_profile,
@@ -796,7 +813,19 @@ def house_unfurnished_rand(
         rng_surfaces,
         rng_sky,
         rng_room_count,
-    ) = rng.spawn(8)
+        rng_floor_palette,
+        rng_wall_palette,
+    ) = rng.spawn(10)
+    rng_floor_make, rng_floor_pick = rng_floor_palette.spawn(2)
+    rng_wall_make, rng_wall_pick = rng_wall_palette.spawn(2)
+    if floor_materials is None:
+        vec_pos = pf.nodes.shader.geometry().position
+        floor_rngs = rng_floor_make.spawn(2)
+        floor_materials = [floor_material_rand(r, vec_pos) for r in floor_rngs]
+    if wall_materials is None:
+        vec_wall = pf.nodes.shader.coord().uv
+        wall_rngs = rng_wall_make.spawn(3)
+        wall_materials = [wall_material_rand(r, vec_wall) for r in wall_rngs]
     if room_count is None:
         room_count = pf.random.randint(rng_room_count, 3, 9)
     if height is None:
@@ -816,13 +845,30 @@ def house_unfurnished_rand(
     shape = house_floor_profile_to_planes(boundaries, segments, height=height)
     logger.info(f"Solved a house of {len(boundaries)} rooms")
     thickness = segments[0].thickness
+    room_floor_materials = _pick_room_materials(
+        rng_floor_pick, floor_materials, len(boundaries)
+    )
+    room_wall_materials = _pick_room_materials(
+        rng_wall_pick, wall_materials, len(boundaries)
+    )
     room_rngs = rng_surfaces.spawn(len(shape.ceilings))
     surfaces = [
         _house_ceiling_rand(
-            room_rng, house_room_polygon(rings), floor, ceiling, height, thickness
+            room_rng,
+            house_room_polygon(rings),
+            floor,
+            ceiling,
+            height,
+            thickness,
+            floor_material,
         )
-        for room_rng, rings, floor, ceiling in zip(
-            room_rngs, boundaries, shape.floors, shape.ceilings, strict=True
+        for room_rng, rings, floor, ceiling, floor_material in zip(
+            room_rngs,
+            boundaries,
+            shape.floors,
+            shape.ceilings,
+            room_floor_materials,
+            strict=True,
         )
     ]
     floors = [surface.floor for surface in surfaces]
@@ -836,6 +882,7 @@ def house_unfurnished_rand(
         len(boundaries),
         height,
         door_open_angle_deg=door_open_angle_deg,
+        room_wall_materials=room_wall_materials,
     )
     sky = sky_lighting.sky_hosek_wilkie_with_sun_lamp_rand(rng_sky)
     storage_objects = _unique_objects([*walls.storage_containers, *walls.supports])

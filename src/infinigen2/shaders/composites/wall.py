@@ -59,7 +59,7 @@ def _tile_layer_rand(
     vector: pf.ProcNode[pf.Vector],
 ) -> tuple[pf.Material, pf.ProcNode[pf.Vector]]:
     rng_scale, rng_transform, rng_mask, rng_shift, rng_tile, rng_material = rng.spawn(6)
-    scale = pf.random.clip_gaussian(rng_scale, 15, 10, 7, 40)
+    scale = 1.0 / pf.random.clip_gaussian(rng_scale, 0.2, 0.4, 0.04, 1.0)
     mask_vector = tile_coord_transform_rand(rng_transform, vector, scale=scale)
     tile_mask = tile_mask_rand(rng_mask, mask_vector)
     tile_vector = tiles.shifted_vector_rand(rng_shift, vector, tile_mask)

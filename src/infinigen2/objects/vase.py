@@ -5,6 +5,7 @@
 # - Yiming Zuo: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/table_decorations/vase.py)
 # - Alexander Raistrick: transpile to procfunc/v2
 
+import math
 from typing import NamedTuple
 
 import procfunc as pf
@@ -18,6 +19,7 @@ from infinigen2.shaders.base_materials import (
     marble,
     metal_brushed,
     metal_hammered,
+    plastic,
     terrazzo,
 )
 from infinigen2.shaders.composites import tiles
@@ -25,6 +27,7 @@ from infinigen2.util import mesh as mesh_util
 
 __all__ = [
     "VaseResult",
+    "cup_material_rand",
     "cup_rand",
     "vase",
     "vase_body",
@@ -194,6 +197,7 @@ def _vase_profile(
     shoulder_thickness: t.SocketOrVal[float],
     foot_scale: t.SocketOrVal[float],
     foot_height: t.SocketOrVal[float],
+    twist: t.SocketOrVal[float] = 0.0,
 ) -> t.ProcNode[pf.CurveObject]:
     transform_translation = pf.nodes.math.combine_xyz(z=height)
     transform_scale = top_scale * diameter
@@ -201,7 +205,7 @@ def _vase_profile(
         geometry=profile_curve,
         translation=transform_translation,
         scale=transform_scale.astype(dtype=pf.Vector),
-        rotation=(0, 0, 0),
+        rotation=pf.nodes.math.combine_xyz(z=twist),
     )
     transform_a_a_2 = pf.nodes.math.clamp(1.0 - neck_position)
     transform_a_2 = pf.nodes.math.multiply_add(
@@ -216,7 +220,7 @@ def _vase_profile(
         geometry=profile_curve,
         translation=transform_1_translation,
         scale=transform_1_scale.astype(dtype=pf.Vector),
-        rotation=(0, 0, 0),
+        rotation=pf.nodes.math.combine_xyz(z=twist * transform_a_2),
     )
     transform_2_translation = pf.nodes.math.combine_xyz(z=height * neck_position)
     transform_2_scale = diameter * neck_scale
@@ -224,7 +228,7 @@ def _vase_profile(
         geometry=profile_curve,
         translation=transform_2_translation,
         scale=transform_2_scale.astype(dtype=pf.Vector),
-        rotation=(0, 0, 0),
+        rotation=pf.nodes.math.combine_xyz(z=twist * neck_position),
     )
 
     join_1 = pf.nodes.geo.join_geometry([transform, transform_1, transform_2])
@@ -243,7 +247,7 @@ def _vase_profile(
         geometry=profile_curve,
         translation=transform_3_translation,
         scale=diameter.astype(dtype=pf.Vector),
-        rotation=(0, 0, 0),
+        rotation=pf.nodes.math.combine_xyz(z=twist * transform_a_1),
     )
     transform_a_0 = pf.nodes.math.maximum(
         a=transform_a_a_1 - transform_a_a_0, b=foot_height
@@ -253,7 +257,7 @@ def _vase_profile(
         geometry=profile_curve,
         translation=transform_4_translation,
         scale=diameter.astype(dtype=pf.Vector),
-        rotation=(0, 0, 0),
+        rotation=pf.nodes.math.combine_xyz(z=twist * transform_a_0),
     )
 
     join_2 = pf.nodes.geo.join_geometry([transform_3, transform_4])
@@ -264,7 +268,7 @@ def _vase_profile(
         geometry=profile_curve,
         translation=transform_5_translation,
         scale=transform_5_scale.astype(dtype=pf.Vector),
-        rotation=(0, 0, 0),
+        rotation=pf.nodes.math.combine_xyz(z=twist * foot_height),
     )
     transform_6 = pf.nodes.geo.transform(
         geometry=profile_curve,
@@ -294,6 +298,7 @@ def vase_body(
     shoulder_thickness: t.SocketOrVal[float],
     foot_scale: t.SocketOrVal[float],
     foot_height: t.SocketOrVal[float],
+    twist: t.SocketOrVal[float] = 0.0,
 ) -> t.ProcNode[pf.MeshObject]:
     profile = _star_profile(
         resolution=u_resolution,
@@ -313,6 +318,7 @@ def vase_body(
         shoulder_thickness=shoulder_thickness,
         foot_scale=foot_scale,
         foot_height=foot_height,
+        twist=twist,
     )
 
     lofting_result = _lofting(
@@ -465,46 +471,74 @@ def vase_rand(rng: pf.RNG) -> VaseResult:
     return VaseResult(mesh=obj)
 
 
+def _cup_glass_colored_rand(
+    rng: pf.RNG, _vector: pf.ProcNode[pf.Vector]
+) -> pf.Material:
+    rng_color, rng_glass = rng.spawn(2)
+    base_color = glass_colored.glass_colored_color_rand(rng_color)
+    return glass_colored.glass_colored_rand(rng_glass, base_color=base_color)
+
+
+def cup_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
+    rng_choice, rng_func = rng.spawn(2)
+    material_func = pf.control.choice(
+        rng_choice,
+        [
+            (plastic.plastic_translucent_rand, 3.0),
+            (_cup_glass_colored_rand, 3.0),
+            (ceramic.ceramic_rand, 3.0),
+            (plastic.plastic_opaque_rand, 1.0),
+            (vase_material_rand, 2.0),
+        ],
+    )
+    return material_func(rng_func, vector)
+
+
 def cup_rand(rng: pf.RNG, material: pf.Material | None = None) -> VaseResult:
     (
         rng_diameter,
         rng_height,
+        rng_ridges,
+        rng_facet,
         rng_flute,
-        rng_points,
         rng_top,
-        rng_neck,
         rng_neck_position,
         rng_shoulder,
+        rng_shoulder_thickness,
         rng_foot,
         rng_foot_height,
+        rng_twist,
         rng_thickness,
         rng_material,
-    ) = rng.spawn(12)
+    ) = rng.spawn(14)
     diameter = pf.random.uniform(rng_diameter, 0.06, 0.09)
     height = diameter * pf.random.uniform(rng_height, 0.7, 1.6)
-    profile_inner_radius = 1.0 - 0.12 * pf.random.uniform(rng_flute, 0.0, 1.0) ** 4
-    profile_star_points = pf.random.randint(rng_points, 16, 33)
-    top_scale = pf.random.uniform(rng_top, 0.95, 1.2)
-    neck_scale = top_scale * pf.random.uniform(rng_neck, 0.95, 1.0)
+    ridges = 5 + round(75 * pf.random.uniform(rng_ridges, 0.0, 1.0) ** 2)
+    facet_depth = 1.0 - math.cos(math.pi / ridges)
+    flute_depth = 1.2 / ridges * pf.random.uniform(rng_flute, 0.0, 1.0) ** 3
+    ridge_depth = facet_depth * pf.random.uniform(rng_facet, 0.3, 1.0) + flute_depth
+    top_scale = pf.random.uniform(rng_top, 1.0, 1.4)
+    twist = 1.2 * pf.random.uniform(rng_twist, -1.0, 1.0) ** 3
 
     if material is None:
-        material = vase_material_rand(rng_material, pf.nodes.shader.coord().uv)
+        material = cup_material_rand(rng_material, pf.nodes.shader.coord().uv)
 
     geo = vase_body(
-        u_resolution=2 * profile_star_points,
+        u_resolution=4 * ridges,
         v_resolution=16,
         height=height,
         diameter=diameter / 2,
-        profile_inner_radius=profile_inner_radius,
-        profile_star_points=profile_star_points,
+        profile_inner_radius=1.0 - ridge_depth,
+        profile_star_points=ridges,
         top_scale=top_scale,
         neck_mid_position=0.5,
         neck_position=pf.random.uniform(rng_neck_position, 0.85, 0.95),
-        neck_scale=neck_scale,
-        shoulder_position=pf.random.uniform(rng_shoulder, 0.3, 0.7),
-        shoulder_thickness=pf.random.uniform(rng_shoulder, 0.15, 0.3),
-        foot_scale=pf.random.uniform(rng_foot, 0.7, 0.95),
-        foot_height=pf.random.uniform(rng_foot_height, 0.02, 0.08),
+        neck_scale=top_scale,
+        shoulder_position=pf.random.uniform(rng_shoulder, 0.1, 0.3),
+        shoulder_thickness=pf.random.uniform(rng_shoulder_thickness, 0.05, 0.15),
+        foot_scale=pf.random.uniform(rng_foot, 0.6, 1.0),
+        foot_height=pf.random.uniform(rng_foot_height, 0.01, 0.08),
+        twist=twist,
     )
     geo = pf.nodes.geo.set_material(geo, material)
     obj = pf.nodes.to_mesh_object(geo)

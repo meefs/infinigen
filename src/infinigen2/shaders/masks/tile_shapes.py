@@ -2400,13 +2400,13 @@ def tile_mask_rand(
             (star, 1.0),
             (spanish_bound, 1.0),
             (shell, 1.0),
-            (hexagon, 1.0),
+            (hexagon, 3.0),
             (herringbone, 1.9),
             (diamond, 1.0),
             (chevron, 1.0),
             (brick, 0.5),
             (basket_weave, 1.0),
-            (square, 2.0),
+            (square, 6.0),
         ],
     )
     return func(vector=vector, **params)

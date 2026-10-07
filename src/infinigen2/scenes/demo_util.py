@@ -71,6 +71,7 @@ def hardcoded_camera(
 
 def grid_plane() -> pf.MeshObject:
     plane = pf.ops.primitives.mesh_plane(location=t.Vector((0, 0, 0)), size=8)
+    plane.item().name = "demo_grid_plane"
     material = developer_grid(vector=pf.nodes.shader.coord().generated)
     pf.ops.object.set_material(plane, material=material)
     return plane

@@ -64,6 +64,7 @@ logger = logging.getLogger(__name__)
 def _subdivide_rounded_cutout(
     mesh: pf.ProcNode[pf.MeshObject],
     threshold_degrees: float,
+    sharp_edges: t.SocketOrVal[bool] = False,
 ) -> pf.MeshObject:
     """Crease folds and corners only, so arch edge chains subdivide into curves."""
     creased = mesh_util.crease_sharp(mesh, threshold_degrees=threshold_degrees)
@@ -73,7 +74,7 @@ def _subdivide_rounded_cutout(
         name="crease_edge",
         value=1.0,
         domain="EDGE",
-        selection=is_boundary,
+        selection=pf.nodes.func.boolean_or(is_boundary, sharp_edges),
     )
     obj = pf.nodes.to_mesh_object(creased)
     pf.ops.modifier.subdivide_surface(
@@ -86,11 +87,7 @@ def _subdivide_rounded_cutout(
 
 
 @pf.nodes.node_function
-def _smooth_outline_curve(
-    curve: pf.ProcNode[pf.CurveObject],
-    corner_degrees: t.SocketOrVal[float],
-) -> pf.ProcNode[pf.CurveObject]:
-    """Bezier through the outline points, keeping turns above `corner_degrees` sharp."""
+def _outline_corner(corner_degrees: t.SocketOrVal[float]) -> pf.ProcNode[bool]:
     position = pf.nodes.geo.input_position()
     prev_index = pf.nodes.geo.offset_point_in_curve(offset=-1).point_index
     next_index = pf.nodes.geo.offset_point_in_curve(offset=1).point_index
@@ -100,8 +97,32 @@ def _smooth_outline_curve(
     outgoing = pf.nodes.math.vector_normalize(next_position - position)
     turn_cos = pf.nodes.math.vector_dot_product(a=incoming, b=outgoing)
     corner_cos = pf.nodes.math.cos(pf.nodes.math.deg_to_rad(corner_degrees))
+    return pf.nodes.func.less_than(a=turn_cos, b=corner_cos)
+
+
+@pf.nodes.node_function
+def _corner_ring_edges(
+    ring: t.SocketOrVal[float],
+    is_corner: t.SocketOrVal[float],
+) -> pf.ProcNode[bool]:
+    ends = pf.nodes.geo.input_mesh_edge_vertices()
+    ring_1 = pf.nodes.geo.field_at_index(value=ring, index=ends.vertex_index_1)
+    ring_2 = pf.nodes.geo.field_at_index(value=ring, index=ends.vertex_index_2)
+    corner_1 = pf.nodes.geo.field_at_index(value=is_corner, index=ends.vertex_index_1)
+    corner_2 = pf.nodes.geo.field_at_index(value=is_corner, index=ends.vertex_index_2)
+    same_ring = pf.nodes.math.absolute(ring_1 - ring_2) < 1e-4
+    both_corner = pf.nodes.math.minimum(corner_1, corner_2) > 0.999
+    return pf.nodes.func.boolean_and(same_ring, both_corner)
+
+
+@pf.nodes.node_function
+def _smooth_outline_curve(
+    curve: pf.ProcNode[pf.CurveObject],
+    corner_degrees: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.CurveObject]:
+    """Bezier through the outline points, keeping turns above `corner_degrees` sharp."""
     marked = pf.nodes.geo.capture_attribute(
-        geometry=curve, is_corner=pf.nodes.func.less_than(a=turn_cos, b=corner_cos)
+        geometry=curve, is_corner=_outline_corner(corner_degrees)
     )
     bezier = pf.nodes.geo.curve_spline_type(marked.geometry, spline_type="BEZIER")
     smooth = pf.nodes.geo.curve_set_handles(bezier, handle_type="AUTO")
@@ -354,10 +375,18 @@ def cutout_trim_rand(
         width = height * pf.random.uniform(rng, 0.2, 0.5)
         profile_curve = trim_profile_rand(rng, width=width, height=height)
     curve_geo = pf.nodes.geo.object_info(trim_edges).geometry
+    marked = pf.nodes.geo.capture_attribute(
+        geometry=curve_geo,
+        ring=pf.nodes.geo.input_index().astype(dtype=float),
+        is_corner=_outline_corner(45.0).astype(dtype=float),
+    )
     profile_geo = pf.nodes.geo.object_info(profile_curve).geometry
-    trim = curve_to_mesh_with_uv(curve_geo, profile_geo).mesh
+    trim = curve_to_mesh_with_uv(marked.geometry, profile_geo).mesh
     trim = pf.nodes.geo.flip_faces(trim)
-    obj = pf.nodes.to_mesh_object(trim)
+    corner_edges = _corner_ring_edges(ring=marked.ring, is_corner=marked.is_corner)
+    obj = _subdivide_rounded_cutout(
+        trim, threshold_degrees=35.0, sharp_edges=corner_edges
+    )
     pf.ops.object.set_transform(
         obj, trim_edges.item().location, trim_edges.item().rotation_euler
     )

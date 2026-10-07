@@ -649,7 +649,7 @@ def wall_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Materi
             (bricks.bricks_rand, 2.0),
             (bricks.bricks_paint_rand, 1.0),
             (bricks.bricks_pristine_rand, 0.5),
-            (tiles.tile_indoor_wall_rand, 1.5),  # SVM stack overflow -> black
+            (tiles.tile_indoor_wall_rand, 3.0),  # SVM stack overflow -> black
         ],
     )
     # non_brick minus paint_flaked and raw granite: both overflow the SVM stack with an overlay
@@ -703,7 +703,7 @@ def floor_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mater
         rng_choice,
         [
             (lambda r, v: layerable(r, v), 2.0),
-            (tiles.tile_indoor_ground_rand, 2.0),
+            (tiles.tile_indoor_ground_rand, 2.7),
             (lambda r, v: _layer_rand(r, v, layerable(r, v)), 2.0),
         ],
     )
@@ -727,6 +727,7 @@ def ceiling_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mat
             (concrete.concrete_rand, 1.0),
             (_paint_ceiling_rand, 3.0),
             (wood_planks.wood_planks_rand, 0.5),
+            (tiles.tile_indoor_wall_rand, 0.5),
         ],
     )
     return func(rng_func, vector)
