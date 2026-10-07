@@ -576,11 +576,21 @@ def _place_on_targets(
         [pf.RNG, pf.MeshObject, list[pf.MeshObject], ccol.CollisionSet],
         tuple[list[pf.MeshObject], ccol.CollisionSet],
     ],
+    inter_object_collide: bool = True,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
+    """inter_object_collide=False checks each target's placements against the
+    original `colliders` and each other, not against other targets' placements."""
     instances: list[pf.MeshObject] = []
     try:
         colliders = _place_hidden_on_targets(
-            rng, targets, list(pool), colliders, fraction, on_target, instances
+            rng,
+            targets,
+            list(pool),
+            colliders,
+            fraction,
+            on_target,
+            instances,
+            inter_object_collide,
         )
     finally:
         for instance in instances:
@@ -599,12 +609,15 @@ def _place_hidden_on_targets(
         tuple[list[pf.MeshObject], ccol.CollisionSet],
     ],
     instances: list[pf.MeshObject],
+    inter_object_collide: bool,
 ) -> ccol.CollisionSet:
     for rng_target, parent in zip(rng.spawn(len(targets)), targets, strict=True):
         rng_active, rng_place = rng_target.spawn(2)
         if pf.random.uniform(rng_active, 0.0, 1.0) >= fraction:
             continue
-        placed, colliders = on_target(rng_place, parent, pool_list, colliders)
+        placed, grown = on_target(rng_place, parent, pool_list, colliders)
+        if inter_object_collide:
+            colliders = grown
         for obj in placed:
             obj.item().hide_viewport = True
         instances.extend(placed)
@@ -663,6 +676,7 @@ def scatter_small_objects_on_containers(
     density: float | None = None,
     fraction: float | None = None,
     spacing_factor: float | None = None,
+    inter_object_collide: bool = True,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
     """Scatter on recessed upward faces, drawing a collection when omitted."""
     rng_fraction, rng_place, rng_collection, rng_max_per_area = rng.spawn(4)
@@ -679,7 +693,13 @@ def scatter_small_objects_on_containers(
         max_per_area=max_per_area,
     )
     return _place_on_targets(
-        rng_place, targets, collection, colliders, fraction, on_target
+        rng_place,
+        targets,
+        collection,
+        colliders,
+        fraction,
+        on_target,
+        inter_object_collide,
     )
 
 
@@ -690,6 +710,7 @@ def scatter_small_objects_on_support_tops(
     collection: pf.Collection | None = None,
     density: float | None = None,
     fraction: float | None = None,
+    inter_object_collide: bool = True,
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
     """Scatter on topmost upward faces, drawing a collection when omitted."""
     rng_fraction, rng_place, rng_collection = rng.spawn(3)
@@ -704,7 +725,13 @@ def scatter_small_objects_on_support_tops(
         scatter_func=_smallobj_scatter_support_tops,
     )
     return _place_on_targets(
-        rng_place, targets, collection, colliders, fraction, on_target
+        rng_place,
+        targets,
+        collection,
+        colliders,
+        fraction,
+        on_target,
+        inter_object_collide,
     )
 
 

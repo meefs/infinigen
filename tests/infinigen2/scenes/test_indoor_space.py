@@ -24,13 +24,15 @@ def test_sink_wall_row_passes_room_box(
 
     def capture_row(
         _rng: pf.RNG,
-        _unit: list[pf.MeshObject],
+        _unit: indoor_space.SetupGridResult,
         _room_dimensions: pf.Vector,
         _colliders: ccol.CollisionSet,
         _wall_colliders: ccol.CollisionSet,
         yaw: float,
     ) -> indoor_space.WallRowResult:
-        return indoor_space.WallRowResult([], yaw)
+        return indoor_space.WallRowResult(
+            indoor_space.SetupGridResult([], [], [], []), yaw
+        )
 
     monkeypatch.setattr(indoor_space, "bathroom_sink_setup_rand", capture_setup)
     monkeypatch.setattr(indoor_space, "_wall_row_of_unit_rand", capture_row)
