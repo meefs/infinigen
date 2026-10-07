@@ -11,10 +11,9 @@ from procfunc.nodes import types as t
 from procfunc.nodes.util.bpy_node_info import NodeDataType
 
 from infinigen2.shaders.functionality_lists import decorative_material_rand
-from infinigen2.util.curve import curve_to_mesh_with_uv
-from infinigen2.util.mesh import metric_box_uv
+from infinigen2.util import curve, mesh
 
-__all__ = ["TapResult", "tap", "tap_rand"]
+__all__ = ["TapResult", "tap_rand"]
 
 
 class TapResult(NamedTuple):
@@ -22,8 +21,93 @@ class TapResult(NamedTuple):
 
 
 @pf.nodes.node_function
+def _tube(
+    path: t.SocketOrVal[pf.CurveObject],
+    radius: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    profile = pf.nodes.geo.curve_circle(resolution=16, radius=radius)
+    mesh_result = curve.curve_to_mesh_with_uv(path, profile, fill_caps=True)
+    return mesh_result.mesh
+
+
+@pf.nodes.node_function
+def _tap_base(
+    width: t.SocketOrVal[float],
+    length: t.SocketOrVal[float],
+    height: t.SocketOrVal[float],
+    radius: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    outline = pf.nodes.geo.curve_quadrilateral(width=width, height=length)
+    outline = pf.nodes.geo.fillet_curve_poly(outline, radius=radius, count=6)
+    face = pf.nodes.geo.fill_curve(outline)
+    base = pf.nodes.geo.extrude_mesh(face, offset_scale=height).mesh
+    return mesh.metric_box_uv(base)
+
+
+@pf.nodes.node_function
+def _mount(
+    base_height: t.SocketOrVal[float],
+    radius: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    height = radius * 5.0
+    mount = mesh.quad_cylinder(radius=radius * 1.65, depth=height, resolution=24)
+    mount = pf.nodes.geo.transform(
+        mount,
+        translation=pf.nodes.math.combine_xyz(z=base_height + height * 0.5),
+    )
+    return mesh.metric_box_uv(mount)
+
+
+@pf.nodes.node_function
+def _arc_spout(
+    base_height: t.SocketOrVal[float],
+    height: t.SocketOrVal[float],
+    reach: t.SocketOrVal[float],
+    drop: t.SocketOrVal[float],
+    radius: t.SocketOrVal[float],
+    rotation_z: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    rise = height - base_height
+    path = pf.nodes.geo.curve_bezier_segment(
+        start=pf.nodes.math.combine_xyz(z=base_height),
+        start_handle=pf.nodes.math.combine_xyz(z=base_height + rise * 0.75),
+        end_handle=pf.nodes.math.combine_xyz(x=reach, z=height),
+        end=pf.nodes.math.combine_xyz(x=reach, z=height - drop),
+        resolution=32,
+    )
+    spout = _tube(path, radius)
+    rotation = pf.nodes.math.combine_xyz(z=rotation_z).astype(dtype=pf.Euler)
+    return pf.nodes.geo.transform(spout, rotation=rotation)
+
+
+@pf.nodes.node_function
+def _curved_spout(
+    base_height: t.SocketOrVal[float],
+    height: t.SocketOrVal[float],
+    reach: t.SocketOrVal[float],
+    drop: t.SocketOrVal[float],
+    radius: t.SocketOrVal[float],
+    rotation_z: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    rise = height - base_height
+    path = pf.nodes.geo.curve_bezier_segment(
+        start=pf.nodes.math.combine_xyz(z=base_height),
+        start_handle=pf.nodes.math.combine_xyz(
+            x=reach * 0.2,
+            z=base_height + rise * 0.45,
+        ),
+        end_handle=pf.nodes.math.combine_xyz(x=reach * 1.1, z=height),
+        end=pf.nodes.math.combine_xyz(x=reach, z=height - drop),
+        resolution=32,
+    )
+    spout = _tube(path, radius)
+    rotation = pf.nodes.math.combine_xyz(z=rotation_z).astype(dtype=pf.Euler)
+    return pf.nodes.geo.transform(spout, rotation=rotation)
+
+
+@pf.nodes.node_function
 def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
-    curve = pf.nodes.geo.curve_bezier_segment(
+    path = pf.nodes.geo.curve_bezier_segment(
         start=(0.0, 0.0, 0.0),
         start_handle=(0.0, 0.0, 0.28),
         end_handle=(0.08, 0.0, 0.28),
@@ -35,13 +119,9 @@ def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
         value=spline_parameter.factor,
         curve=np.array([[0.0, 0.975], [1.0, 0.1625]], dtype=np.float64),
     )
-    curve = pf.nodes.geo.set_curve_radius(curve=curve, radius=radius * 1.3)
+    path = pf.nodes.geo.set_curve_radius(path, radius=radius * 1.3)
     profile = pf.nodes.geo.curve_circle(resolution=16, radius=0.08)
-    handle = curve_to_mesh_with_uv(
-        curve=curve,
-        profile=profile,
-        fill_caps=True,
-    ).mesh
+    handle = curve.curve_to_mesh_with_uv(path, profile, fill_caps=True).mesh
     position = pf.nodes.geo.input_position()
     y_scale = pf.nodes.math.map_range(
         value=position.x,
@@ -56,357 +136,279 @@ def _lever_handle() -> pf.ProcNode[pf.MeshObject]:
         y=position.y * y_scale,
         z=position.z,
     )
-    handle = pf.nodes.geo.set_position(
-        geometry=handle,
-        position=position,
-        offset=(0.0, 0.0, 0.0),
-    )
-    handle = pf.nodes.geo.subdivision_surface(mesh=handle)
+    handle = pf.nodes.geo.set_position(handle, position=position)
+    handle = pf.nodes.geo.subdivision_surface(handle)
     return pf.nodes.geo.set_shade_smooth(handle)
 
 
 @pf.nodes.node_function
-def _tap_geometry(
-    material: t.SocketOrVal[pf.Material],
-    base_width: t.SocketOrVal[float] = 0.1,
-    tap_head: t.SocketOrVal[float] = 0.9,
-    rotation_z: t.SocketOrVal[float] = 6.25,
-    tap_height: t.SocketOrVal[float] = 0.75,
-    base_radius: t.SocketOrVal[float] = 0.02,
-    switch: t.SocketOrVal[bool] = False,
-    curl: t.SocketOrVal[float] = -0.112,
-    hand_type: t.SocketOrVal[bool] = True,
-    hands_length_x: t.SocketOrVal[float] = 1.0,
-    hands_length_y: t.SocketOrVal[float] = 1.25,
-    one_side: t.SocketOrVal[bool] = False,
-    different_type: t.SocketOrVal[bool] = False,
-    length_one_side: t.SocketOrVal[bool] = False,
+def _lever_handles(
+    _hands_length_x: t.SocketOrVal[float],
+    _hands_length_y: t.SocketOrVal[float],
 ) -> pf.ProcNode[pf.MeshObject]:
-    base_curve = pf.nodes.geo.curve_quadrilateral(width=base_width, height=0.28)
-    base_curve = pf.nodes.geo.fillet_curve_poly(
-        curve=base_curve,
-        radius=base_radius,
-        count=6,
-    )
-    base = pf.nodes.geo.fill_curve(base_curve)
-    base = pf.nodes.geo.extrude_mesh(mesh=base, offset_scale=0.02)
-    base_mesh = metric_box_uv(base.mesh)
-
-    stem_cap_curve = pf.nodes.geo.curve_circle(resolution=24, radius=0.02)
-    stem_cap = pf.nodes.geo.fill_curve(stem_cap_curve)
-    stem_cap = pf.nodes.geo.extrude_mesh(mesh=stem_cap, offset_scale=0.06)
-    stem_cap_mesh = metric_box_uv(stem_cap.mesh)
-
     lever = _lever_handle()
-    lever_left = pf.nodes.geo.transform(
-        geometry=lever,
+    left = pf.nodes.geo.transform(
+        lever,
         translation=(0.0, 0.08, 0.0),
         rotation=(0.0, 0.0, 2.618),
         scale=(0.3, 0.3, 0.3),
     )
-    lever_right = pf.nodes.geo.transform(
-        geometry=lever,
+    right = pf.nodes.geo.transform(
+        lever,
         translation=(0.0, -0.08, 0.0),
         rotation=(0.0, 0.0, 3.6652),
         scale=(0.3, 0.3, 0.3),
     )
-    lever_handles = pf.nodes.geo.join_geometry([lever_left, lever_right])
+    handles = pf.nodes.geo.join_geometry([left, right])
+    return pf.nodes.geo.transform(handles, rotation=(0.0, 0.0, 3.14159265))
 
+
+@pf.nodes.node_function
+def _bar_handles(
+    hands_length_x: t.SocketOrVal[float],
+    hands_length_y: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
     thin_handle = pf.nodes.geo.mesh_cylinder(
         vertices=8,
         side_segments=1,
         radius=0.002,
         depth=0.04,
     )
-    thin_handle_mesh = metric_box_uv(thin_handle.mesh)
-    thin_right_short = pf.nodes.geo.transform(
-        geometry=thin_handle_mesh,
+    thin_handle = mesh.metric_box_uv(thin_handle.mesh)
+    thin_right = pf.nodes.geo.transform(
+        thin_handle,
         translation=(0.0, -0.032, 0.06),
         rotation=(0.0, 0.0, 0.0855),
         scale=(1.0, 1.0, 1.1),
     )
-    thin_right_long = pf.nodes.geo.transform(
-        geometry=thin_right_short,
-        translation=(0.0, -0.004, -0.002),
-        scale=(4.1, 1.0, 1.0),
-    )
-    thin_right_length = pf.nodes.func.switch(
-        switch=length_one_side,
-        a=thin_right_short,
-        b=thin_right_long,
-        data_type=NodeDataType.GEOMETRY,
-    )
-    thin_right = pf.nodes.func.switch(
-        switch=one_side,
-        a=thin_right_short,
-        b=thin_right_length,
-        data_type=NodeDataType.GEOMETRY,
-    )
     thin_left = pf.nodes.geo.transform(
-        geometry=thin_handle_mesh,
+        thin_handle,
         translation=(0.0, 0.032, 0.06),
         scale=(1.0, 1.0, 1.1),
     )
-    thin_left = pf.nodes.func.switch(
-        switch=one_side,
-        a=thin_left,
-        data_type=NodeDataType.GEOMETRY,
-    )
-    thin_handles = pf.nodes.geo.join_geometry([thin_right, thin_left])
-
     thick_handle = pf.nodes.geo.mesh_cylinder(
         vertices=16,
         side_segments=1,
         radius=0.012,
         depth=0.04,
     )
-    thick_handle_mesh = metric_box_uv(thick_handle.mesh)
+    thick_handle = mesh.metric_box_uv(thick_handle.mesh)
     thick_right = pf.nodes.geo.transform(
-        geometry=thick_handle_mesh,
+        thick_handle,
         translation=(0.0, -0.02, 0.04),
         rotation=(1.5708, 0.0, 0.0),
     )
     thick_left = pf.nodes.geo.transform(
-        geometry=thick_handle_mesh,
+        thick_handle,
         translation=(0.0, 0.02, 0.04),
         rotation=(1.5708, 0.0, 0.0),
     )
-    thick_left = pf.nodes.func.switch(
-        switch=one_side,
-        a=thick_left,
-        data_type=NodeDataType.GEOMETRY,
+    handles = pf.nodes.geo.join_geometry(
+        [thin_right, thin_left, thick_right, thick_left]
     )
-    bar_handles = pf.nodes.geo.join_geometry([thin_handles, thick_right, thick_left])
-    bar_handles = pf.nodes.geo.transform(
-        geometry=bar_handles,
+    handles = pf.nodes.geo.transform(
+        handles,
         scale=pf.nodes.math.combine_xyz(
             x=hands_length_x,
             y=hands_length_y,
             z=1.0,
         ),
     )
-    handles = pf.nodes.func.switch(
-        switch=hand_type,
-        a=lever_handles,
-        b=bar_handles,
-        data_type=NodeDataType.GEOMETRY,
-    )
+    return pf.nodes.geo.transform(handles, rotation=(0.0, 0.0, 3.14159265))
 
-    arc = pf.nodes.geo.curve_circle(resolution=48, radius=0.08)
-    arc = pf.nodes.geo.transform(
-        geometry=arc,
-        translation=(0.0, 0.08, 0.0),
-    )
-    arc = pf.nodes.geo.transform(
-        geometry=arc,
-        rotation=(-1.5708, 1.5708, 0.0),
-        scale=(1.0, 0.7, 1.0),
-    )
-    curve = pf.nodes.geo.curve_bezier_segment(
-        start=(0.0, 0.0, 0.0),
-        start_handle=(0.0, 0.48, 0.0),
-        end_handle=pf.nodes.math.combine_xyz(x=0.08, y=curl),
-        end=(-0.02, 0.04, 0.0),
-        resolution=32,
-    )
-    curve = pf.nodes.geo.trim_curve(curve=curve, end=0.6625)
-    curve = pf.nodes.geo.transform(
-        geometry=curve,
-        rotation=(1.5708, 0.0, 2.522),
-        scale=(5.2, 0.5, 7.8),
-    )
-    profile = pf.nodes.geo.curve_circle(resolution=16, radius=0.012)
-    arc_spout = curve_to_mesh_with_uv(curve=arc, profile=profile).mesh
-    curved_spout = curve_to_mesh_with_uv(
-        curve=curve,
-        profile=profile,
-    ).mesh
-    spout_curve = pf.nodes.func.switch(
-        switch=switch,
-        a=arc_spout,
-        b=curved_spout,
-        data_type=NodeDataType.GEOMETRY,
-    )
-    position = pf.nodes.geo.input_position()
-    selection = pf.nodes.func.switch(
-        switch=switch,
-        a=position.z > -0.004,
-        b=1.0,
-        data_type=NodeDataType.FLOAT,
-    )
-    spout_curve = pf.nodes.geo.separate_geometry(
-        geometry=spout_curve,
-        selection=selection.astype(dtype=bool),
-    )
-    spout_scale = pf.nodes.math.combine_xyz(x=1.0, y=1.0, z=tap_head)
-    spout_scale = pf.nodes.func.switch(
-        switch=switch,
-        a=spout_scale,
-        b=(1.0, 1.0, 1.0),
-        data_type=NodeDataType.FLOAT_VECTOR,
-    )
-    spout_curve = pf.nodes.geo.transform(
-        geometry=spout_curve.selection,
-        translation=(0.0, 0.0, 0.24),
-        scale=spout_scale,
-    )
-    stem = pf.nodes.geo.curve_line(
-        start=(0.0, 0.0, 0.0),
-        end=(0.0, 0.0, 0.24),
-    )
-    stem = curve_to_mesh_with_uv(curve=stem, profile=profile).mesh
-    spout = pf.nodes.geo.join_geometry([spout_curve, stem])
-    spout = pf.nodes.geo.transform(
-        geometry=spout,
-        rotation=pf.nodes.math.combine_xyz(z=rotation_z).astype(dtype=pf.Euler),
-        scale=pf.nodes.math.combine_xyz(x=1.0, y=1.0, z=tap_height),
-    )
-    standard = pf.nodes.geo.join_geometry([stem_cap_mesh, handles, spout])
 
-    vessel_tip = pf.nodes.geo.mesh_cylinder(vertices=16, radius=0.008, depth=0.012)
-    vessel_tip = pf.nodes.geo.transform(
-        geometry=vessel_tip.mesh,
-        translation=(0.238, 0.0, 0.152),
-    )
-    vessel_tip = metric_box_uv(vessel_tip)
-    vessel_tube = pf.nodes.geo.mesh_cylinder(vertices=16, radius=0.004, depth=0.28)
-    vessel_tube = pf.nodes.geo.set_position(
-        geometry=vessel_tube.mesh,
-        offset=(0.0, 0.0, 0.0),
-    )
-    vessel_tube = pf.nodes.geo.transform(
-        geometry=vessel_tube,
-        translation=(0.12, 0.0, 0.1),
-        rotation=(0.0, -2.042, 0.0),
-        scale=(1.7, 3.1, 1.0),
-    )
-    vessel_tube = metric_box_uv(vessel_tube)
-    vessel_spout = pf.nodes.geo.join_geometry([vessel_tip, vessel_tube])
-    vessel_spout = pf.nodes.geo.transform(
-        geometry=vessel_spout,
-        scale=(0.9, 1.0, 1.0),
-    )
+@pf.nodes.node_function
+def _tap_geometry(
+    material: t.SocketOrVal[pf.Material],
+    base_width: t.SocketOrVal[float],
+    base_length: t.SocketOrVal[float],
+    base_height: t.SocketOrVal[float],
+    base_radius: t.SocketOrVal[float],
+    spout_radius: t.SocketOrVal[float],
+    handle_geometry: t.SocketOrVal[pf.MeshObject],
+    spout: t.SocketOrVal[pf.MeshObject],
+) -> pf.ProcNode[pf.MeshObject]:
+    base = _tap_base(base_width, base_length, base_height, base_radius)
+    mount = _mount(base_height, spout_radius)
+    body = pf.nodes.geo.join_geometry([base, mount, handle_geometry, spout])
+    return pf.nodes.geo.set_material(body, material)
 
-    vessel_base_curve = pf.nodes.geo.curve_circle(resolution=24, radius=0.022)
-    vessel_base = pf.nodes.geo.fill_curve(vessel_base_curve)
-    vessel_base = pf.nodes.geo.extrude_mesh(mesh=vessel_base, offset_scale=0.06)
-    vessel_base_mesh = metric_box_uv(vessel_base.mesh)
-    vessel_handle_curve = pf.nodes.geo.curve_bezier_segment(
-        start=(0.0, 0.0, 0.0),
-        start_handle=(0.0, 0.0, 0.28),
-        end_handle=(0.08, 0.0, 0.28),
-        end=(0.4, 0.0, 0.36),
-        resolution=16,
-    )
-    spline_parameter = pf.nodes.geo.spline_parameter()
-    vessel_radius = pf.nodes.math.float_curve(
-        factor=1.0,
-        value=spline_parameter.factor,
-        curve=np.array(
-            [[0.0, 0.975], [0.6295, 0.4125], [1.0, 0.1625]],
-            dtype=np.float64,
+
+@pf.nodes.node_function
+def _vessel_spout(
+    base_height: t.SocketOrVal[float],
+    height: t.SocketOrVal[float],
+    reach: t.SocketOrVal[float],
+    drop: t.SocketOrVal[float],
+    radius: t.SocketOrVal[float],
+    rotation_z: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.MeshObject]:
+    rise = height - base_height
+    path = pf.nodes.geo.curve_bezier_segment(
+        start=pf.nodes.math.combine_xyz(z=base_height),
+        start_handle=pf.nodes.math.combine_xyz(
+            x=reach * 0.35,
+            z=base_height + rise * 0.35,
         ),
+        end_handle=pf.nodes.math.combine_xyz(
+            x=reach * 0.85,
+            z=height - drop * 0.25,
+        ),
+        end=pf.nodes.math.combine_xyz(x=reach, z=height - drop),
+        resolution=24,
     )
-    vessel_handle_curve = pf.nodes.geo.set_curve_radius(
-        curve=vessel_handle_curve,
-        radius=vessel_radius * 1.3,
-    )
-    vessel_profile = pf.nodes.geo.curve_circle(resolution=24, radius=0.04)
-    vessel_handle = curve_to_mesh_with_uv(
-        curve=vessel_handle_curve,
-        profile=vessel_profile,
-        fill_caps=True,
-    ).mesh
-    position = pf.nodes.geo.input_position()
-    vessel_y_scale = pf.nodes.math.map_range(
-        value=position.x,
-        from_min=0.08,
-        from_max=0.4,
-        to_max=2.5,
-        to_min=1.0,
-        data_type=NodeDataType.FLOAT,
-    )
-    vessel_position = pf.nodes.math.combine_xyz(
-        x=position.x,
-        y=position.y * vessel_y_scale,
-        z=position.z,
-    )
-    vessel_handle = pf.nodes.geo.set_position(
-        geometry=vessel_handle,
-        position=vessel_position,
-        offset=(0.0, 0.0, 0.0),
-    )
-    vessel_handle = pf.nodes.geo.set_shade_smooth(vessel_handle)
-    vessel_handle = pf.nodes.geo.transform(
-        geometry=vessel_handle,
-        translation=(0.0, 0.0, 0.04),
-        rotation=(0.0, 0.0, 0.6807),
-        scale=(0.4, 0.4, 0.3),
-    )
-    vessel = pf.nodes.geo.join_geometry([vessel_spout, vessel_base_mesh, vessel_handle])
-    vessel = pf.nodes.geo.transform(
-        geometry=vessel,
-        rotation=(0.0, 0.0, 3.1416),
-    )
-
-    body = pf.nodes.func.switch(
-        switch=different_type,
-        a=standard,
-        b=vessel,
-        data_type=NodeDataType.GEOMETRY,
-    )
-    body = pf.nodes.geo.join_geometry([base_mesh, body])
-    return pf.nodes.geo.set_material(geometry=body, material=material)
+    spout = _tube(path, radius)
+    rotation = pf.nodes.math.combine_xyz(z=rotation_z).astype(dtype=pf.Euler)
+    return pf.nodes.geo.transform(spout, rotation=rotation)
 
 
-def _finish(geometry: pf.ProcNode) -> TapResult:
-    geometry = pf.nodes.geo.transform(
-        geometry=geometry,
-        rotation=(0.0, 0.0, 3.14159265),
-    )
-    bounds = pf.nodes.geo.bound_box(geometry)
-    geometry = pf.nodes.geo.transform(
-        geometry=geometry,
-        translation=pf.nodes.math.combine_xyz(z=bounds.min.z * -1.0),
-    )
-    geometry = metric_box_uv(geometry)
+def _finish(geometry: pf.ProcNode[pf.MeshObject]) -> TapResult:
+    geometry = mesh.metric_box_uv(geometry)
     obj = pf.nodes.to_mesh_object(pf.nodes.geo.realize_instances(geometry))
+    obj.item().name = "tap"
     return TapResult(mesh=obj)
 
 
-def tap(
-    material: pf.Material | None = None,
-    base_width: float = 0.1,
-    tap_head: float = 0.9,
-    rotation_z: float = 6.25,
-    tap_height: float = 0.75,
-    base_radius: float = 0.02,
-    switch: bool = False,
-    curl: float = -0.112,
-    hand_type: bool = True,
-    hands_length_x: float = 1.0,
-    hands_length_y: float = 1.25,
-    one_side: bool = False,
-    different_type: bool = False,
-    length_one_side: bool = False,
+def _tap_material_rand(
+    rng: pf.RNG,
+    material: pf.Material | None,
+) -> pf.Material:
+    if material is not None:
+        return material
+    coord = pf.nodes.shader.coord()
+    return decorative_material_rand(rng, coord.uv)
+
+
+def _standard_tap_rand(
+    rng: pf.RNG,
+    material: pf.Material | None,
+    base_width: float | None,
+    base_length: float | None,
+    base_height: float | None,
+    base_radius: float | None,
+    spout_height: float | None,
+    spout_reach: float | None,
+    spout_drop: float | None,
+    spout_radius: float | None,
+    rotation_z: float | None,
+    hands_length_x: float | None,
+    hands_length_y: float | None,
 ) -> TapResult:
-    if material is None:
-        material = pf.Material(surface=pf.nodes.shader.principled_bsdf(metallic=1.0))
+    rng_spout, rng_handles, rng_dimensions, rng_material = rng.spawn(4)
+    spout_func = pf.control.choice(
+        rng_spout,
+        [(_arc_spout, 1.0), (_curved_spout, 1.0)],
+    )
+    handle_func = pf.control.choice(
+        rng_handles,
+        [(_lever_handles, 4.0), (_bar_handles, 1.0)],
+    )
+    material = _tap_material_rand(rng_material, material)
+    if base_width is None:
+        base_width = pf.random.uniform(rng_dimensions, 0.08, 0.12)
+    if base_length is None:
+        base_length = pf.random.uniform(rng_dimensions, 0.24, 0.32)
+    if base_height is None:
+        base_height = pf.random.uniform(rng_dimensions, 0.015, 0.025)
+    if base_radius is None:
+        base_radius = pf.random.uniform(rng_dimensions, 0.0, base_width * 0.4)
+    if spout_height is None:
+        spout_height = pf.random.uniform(rng_dimensions, 0.18, 0.3)
+    if spout_reach is None:
+        spout_reach = pf.random.uniform(rng_dimensions, 0.07, 0.11)
+    if spout_drop is None:
+        spout_drop = pf.random.uniform(rng_dimensions, 0.02, 0.06)
+    if spout_radius is None:
+        spout_radius = pf.random.uniform(rng_dimensions, 0.009, 0.014)
+    if rotation_z is None:
+        rotation_z = pf.random.uniform(rng_dimensions, -0.08, 0.08)
+    if hands_length_x is None:
+        hands_length_x = pf.random.uniform(rng_dimensions, 0.75, 1.25)
+    if hands_length_y is None:
+        hands_length_y = pf.random.uniform(rng_dimensions, 0.95, 1.55)
+    spout = spout_func(
+        base_height,
+        spout_height,
+        spout_reach,
+        spout_drop,
+        spout_radius,
+        rotation_z,
+    )
+    handles = handle_func(hands_length_x, hands_length_y)
     geometry = _tap_geometry(
-        material=material,
-        base_width=base_width,
-        tap_head=tap_head,
-        rotation_z=rotation_z,
-        tap_height=tap_height,
-        base_radius=base_radius,
-        switch=switch,
-        curl=curl,
-        hand_type=hand_type,
-        hands_length_x=hands_length_x,
-        hands_length_y=hands_length_y,
-        one_side=one_side,
-        different_type=different_type,
-        length_one_side=length_one_side,
+        material,
+        base_width,
+        base_length,
+        base_height,
+        base_radius,
+        spout_radius,
+        handles,
+        spout,
+    )
+    return _finish(geometry)
+
+
+def _vessel_tap_rand(
+    rng: pf.RNG,
+    material: pf.Material | None,
+    base_width: float | None,
+    base_length: float | None,
+    base_height: float | None,
+    base_radius: float | None,
+    spout_height: float | None,
+    spout_reach: float | None,
+    spout_drop: float | None,
+    spout_radius: float | None,
+    rotation_z: float | None,
+    hands_length_x: float | None,
+    hands_length_y: float | None,
+) -> TapResult:
+    rng_handles, rng_dimensions, rng_material = rng.spawn(3)
+    handle_func = pf.control.choice(
+        rng_handles,
+        [(_lever_handles, 4.0), (_bar_handles, 1.0)],
+    )
+    material = _tap_material_rand(rng_material, material)
+    if base_width is None:
+        base_width = pf.random.uniform(rng_dimensions, 0.08, 0.12)
+    if base_length is None:
+        base_length = pf.random.uniform(rng_dimensions, 0.24, 0.32)
+    if base_height is None:
+        base_height = pf.random.uniform(rng_dimensions, 0.015, 0.025)
+    if base_radius is None:
+        base_radius = pf.random.uniform(rng_dimensions, 0.0, base_width * 0.4)
+    if spout_height is None:
+        spout_height = pf.random.uniform(rng_dimensions, 0.14, 0.22)
+    if spout_reach is None:
+        spout_reach = pf.random.uniform(rng_dimensions, 0.09, 0.14)
+    if spout_drop is None:
+        spout_drop = pf.random.uniform(rng_dimensions, 0.0, 0.025)
+    if spout_radius is None:
+        spout_radius = pf.random.uniform(rng_dimensions, 0.005, 0.009)
+    if rotation_z is None:
+        rotation_z = pf.random.uniform(rng_dimensions, -0.08, 0.08)
+    if hands_length_x is None:
+        hands_length_x = pf.random.uniform(rng_dimensions, 0.75, 1.25)
+    if hands_length_y is None:
+        hands_length_y = pf.random.uniform(rng_dimensions, 0.95, 1.55)
+    spout = _vessel_spout(
+        base_height,
+        spout_height,
+        spout_reach,
+        spout_drop,
+        spout_radius,
+        rotation_z,
+    )
+    handles = handle_func(hands_length_x, hands_length_y)
+    geometry = _tap_geometry(
+        material,
+        base_width,
+        base_length,
+        base_height,
+        base_radius,
+        spout_radius,
+        handles,
+        spout,
     )
     return _finish(geometry)
 
@@ -415,83 +417,34 @@ def tap_rand(
     rng: pf.RNG,
     material: pf.Material | None = None,
     base_width: float | None = None,
-    tap_head: float | None = None,
-    rotation_z: float | None = None,
-    tap_height: float | None = None,
+    base_length: float | None = None,
+    base_height: float | None = None,
     base_radius: float | None = None,
-    switch: bool | None = None,
-    curl: float | None = None,
-    hand_type: bool | None = None,
+    spout_height: float | None = None,
+    spout_reach: float | None = None,
+    spout_drop: float | None = None,
+    spout_radius: float | None = None,
+    rotation_z: float | None = None,
     hands_length_x: float | None = None,
     hands_length_y: float | None = None,
-    one_side: bool | None = None,
-    different_type: bool | None = None,
-    length_one_side: bool | None = None,
 ) -> TapResult:
-    (
-        rng_material,
-        rng_base_width,
-        rng_tap_head,
-        rng_rotation,
-        rng_height,
-        rng_base_radius,
-        rng_switch,
-        rng_curl,
-        rng_hand_type,
-        rng_hand_x,
-        rng_hand_y,
-        rng_one_side,
-        rng_different_type,
-        rng_length_one_side,
-    ) = rng.spawn(14)
-    vector = pf.nodes.shader.coord().uv
-    if material is None:
-        material = decorative_material_rand(rng_material, vector)
-    if base_width is None:
-        base_width = pf.random.uniform(rng_base_width, 0.08, 0.12)
-    if tap_head is None:
-        tap_head = pf.random.uniform(rng_tap_head, 0.7, 1.1)
-    if rotation_z is None:
-        rotation_z = pf.random.uniform(rng_rotation, 5.5, 7.0)
-    if tap_height is None:
-        tap_height = pf.random.uniform(rng_height, 0.5, 1.0)
-    if base_radius is None:
-        base_radius = pf.random.uniform(rng_base_radius, 0.0, 0.04)
-    if switch is None:
-        switch = pf.control.choice(rng_switch, [(True, 1.0), (False, 1.0)])
-    if curl is None:
-        curl = pf.random.uniform(rng_curl, -0.2, -0.024)
-    if hand_type is None:
-        hand_type = pf.control.choice(rng_hand_type, [(True, 4.0), (False, 1.0)])
-    if hands_length_x is None:
-        hands_length_x = pf.random.uniform(rng_hand_x, 0.75, 1.25)
-    if hands_length_y is None:
-        hands_length_y = pf.random.uniform(rng_hand_y, 0.95, 1.55)
-    if one_side is None:
-        one_side = pf.control.choice(rng_one_side, [(True, 1.0), (False, 1.0)])
-    if different_type is None:
-        different_type = pf.control.choice(
-            rng_different_type,
-            [(True, 1.0), (False, 4.0)],
-        )
-    if length_one_side is None:
-        length_one_side = pf.control.choice(
-            rng_length_one_side,
-            [(True, 1.0), (False, 4.0)],
-        )
-    return tap(
-        material=material,
-        base_width=base_width,
-        tap_head=tap_head,
-        rotation_z=rotation_z,
-        tap_height=tap_height,
-        base_radius=base_radius,
-        switch=switch,
-        curl=curl,
-        hand_type=hand_type,
-        hands_length_x=hands_length_x,
-        hands_length_y=hands_length_y,
-        one_side=one_side,
-        different_type=different_type,
-        length_one_side=length_one_side,
+    rng_choice, rng_tap = rng.spawn(2)
+    producer = pf.control.choice(
+        rng_choice,
+        [(_standard_tap_rand, 4.0), (_vessel_tap_rand, 1.0)],
+    )
+    return producer(
+        rng_tap,
+        material,
+        base_width,
+        base_length,
+        base_height,
+        base_radius,
+        spout_height,
+        spout_reach,
+        spout_drop,
+        spout_radius,
+        rotation_z,
+        hands_length_x,
+        hands_length_y,
     )

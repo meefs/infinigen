@@ -870,6 +870,22 @@
   },
   {
     "category": "Object",
+    "name": "infinigen2.objects.bathroom_hardware.hardware_hook_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bathroom_hardware.hardware_holder_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bathroom_hardware.hardware_bar_rand"
+  },
+  {
+    "category": "Object",
+    "name": "infinigen2.objects.bathroom_hardware.hardware_ring_rand"
+  },
+  {
+    "category": "Object",
     "name": "infinigen2.objects.bathtub.bathtub_rand"
   },
   {
@@ -1248,11 +1264,6 @@
   {
     "category": "Object",
     "name": "infinigen2.objects.storage.storage_composite_rand"
-  },
-  {
-    "category": "Object",
-    "name": "infinigen2.objects.bedside_table.table_bedside_composite_rand",
-    "old_names": ["bedside_table_composite_rand"]
   },
   {
     "category": "Object",

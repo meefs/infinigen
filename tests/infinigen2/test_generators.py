@@ -142,7 +142,6 @@ _OBJECT_FUNCS = pf.util.manifest.filter_manifest(
 
 _PRIMITIVES_TRACE_EXCLUDES = {
     "infinigen2.objects.bed.bed_rand",
-    "infinigen2.objects.bedside_table.table_bedside_composite_rand",
     "infinigen2.objects.chair.chair_back_rand",
     "infinigen2.objects.desk.desk_rand",
     "infinigen2.objects.table.table_cocktail_rand",

@@ -231,9 +231,9 @@ def sink_rand(
         rng_margin,
         rng_tap_margin,
     ) = rng.spawn(8)
-    vector = pf.nodes.shader.coord().uv
+    coord = pf.nodes.shader.coord()
     if material is None:
-        material = decorative_material_rand(rng_material, vector)
+        material = decorative_material_rand(rng_material, coord.uv)
     if width is None:
         width = pf.random.uniform(rng_width, 0.4, 1.0)
     if depth is None:

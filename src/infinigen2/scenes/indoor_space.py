@@ -301,17 +301,10 @@ def sink_wall_row_rand(
         bbox_min=pf.Vector((0.0, 0.0, 0.0)),
         bbox_max=room_dimensions,
     )
-    parts = (
-        setup.bathroom_sinks
-        + setup.sink_taps
-        + setup.sink_supports
-        + setup.mirrors
-        + setup.wall_storage
-    )
     sinks = [part.mesh for part in setup.bathroom_sinks]
     storages = [part.mesh for part in setup.storages + setup.wall_storage]
     unit = SetupGridResult(
-        [part.mesh for part in parts], sinks + storages, sinks + storages, storages
+        setup.all_objects, sinks + storages, sinks + storages, storages
     )
     return _wall_row_of_unit_rand(
         rng, unit, room_dimensions, colliders, wall_colliders, yaw

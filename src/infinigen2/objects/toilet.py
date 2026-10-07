@@ -13,6 +13,7 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 from infinigen2.shaders.base_materials import ceramic, metal_brushed, plastic
+from infinigen2.util import mesh
 
 __all__ = ["ToiletHardwareType", "ToiletResult", "toilet", "toilet_rand"]
 ToiletHardwareType = Literal["button", "handle"]
@@ -422,46 +423,22 @@ def _toilet_bowl(
     back_rear = -back_back_length - back_size
     back_bottom = -depth + thickness * 0.1
     back_top = extrude_height * 0.25
-    back_height = (
-        back_bottom
-        + (back_top - back_bottom)
-        * pf.nodes.math.minimum(shell_index.astype(dtype=float), 31.0)
-        / 31.0
-    )
-    back_height_2 = pf.nodes.func.switch(shell_index == 33, back_height, back_bottom)
     back_front = -back_back_length + back_thickness
-    back_x = pf.nodes.func.switch(shell_index < 32, back_rear, back_front)
-    back_loop = pf.nodes.geo.mesh_circle(vertices=34)
-    back_loop_2 = pf.nodes.geo.set_position(
-        back_loop, position=pf.nodes.math.combine_xyz(x=back_x, y=back_height_2)
-    )
-    back_curve = pf.nodes.geo.mesh_to_curve(back_loop_2)
-    back_corner = pf.nodes.func.boolean_or(shell_index == 0, shell_index >= 31)
-    back_radius = pf.nodes.func.switch(back_corner, 0.0, thickness * 0.1)
-    back_curve_2 = pf.nodes.geo.fillet_curve_poly(
-        back_curve, radius=back_radius, count=2, limit_radius=True
-    )
-    back_face = pf.nodes.geo.fill_curve(back_curve_2, mode="TRIANGLES")
     back_width = tank_width * back_scale * 0.5
-    back_face_2 = pf.nodes.geo.transform(
-        back_face,
-        rotation=(1.5707963267948966, 0.0, 0.0),
-        translation=pf.nodes.math.combine_xyz(y=back_width * -0.5),
+    back_dimensions = pf.nodes.math.combine_xyz(
+        x=back_front - back_rear,
+        y=back_width,
+        z=back_top - back_bottom,
     )
-    back_face_3 = pf.nodes.geo.flip_faces(back_face_2)
-    back_extruded = pf.nodes.geo.extrude_mesh(
-        back_face_3,
-        offset=pf.nodes.math.combine_xyz(y=back_width),
-        individual=False,
+    back_location = pf.nodes.math.combine_xyz(
+        x=back_rear,
+        y=back_width * -0.5,
+        z=back_bottom,
     )
-    back_bottom_face = pf.nodes.geo.flip_faces(back_face_3)
-    back_closed = pf.nodes.geo.join_geometry([back_bottom_face, back_extruded.mesh])
-    back_mesh = pf.nodes.geo.merge_by_distance(back_closed, distance=1e-06)
-    back_result = pf.nodes.geo.set_shade_smooth(
-        back_mesh,
-        selection=pf.nodes.geo.input_mesh_edge_angle().unsigned_angle > 0.5235987756,
-        shade_smooth=False,
-        domain="EDGE",
+    back_result = mesh.box(
+        size=back_dimensions,
+        location=back_location,
+        anchor=(0.0, 0.0, 0.0),
     )
     seat_xyz = pf.nodes.math.separate_xyz(loft_position)
     seat_top = pf.nodes.geo.separate_geometry(
@@ -533,24 +510,20 @@ def _toilet_bowl(
     seat_filled = pf.nodes.geo.join_geometry([seat_plane_2, seat_fill_grid_3])
     seat_filled_2 = pf.nodes.geo.merge_by_distance(seat_filled, distance=1e-06)
     seat_vertical = pf.nodes.math.combine_xyz(z=extrude_height)
+    seat_front = size_mid * size - thickness * 0.5
+    seat_opening = pf.nodes.func.boolean_and(
+        has_seat_cut, pf.nodes.geo.input_position().x > seat_front
+    )
+    seat_topology = pf.nodes.geo.delete_geometry(
+        seat_plane_2, selection=seat_opening, domain="FACE"
+    )
     seat_seat = pf.nodes.geo.extrude_mesh(
-        seat_plane_2, offset=seat_vertical, individual=False
+        seat_topology, offset=seat_vertical, individual=False
     ).mesh
     seat_seat_2 = pf.nodes.geo.join_geometry(
-        [pf.nodes.geo.flip_faces(seat_plane_2), seat_seat]
+        [pf.nodes.geo.flip_faces(seat_topology), seat_seat]
     )
-    seat_seat_3 = pf.nodes.geo.merge_by_distance(seat_seat_2, distance=1e-06)
-    seat_cutter = pf.nodes.geo.mesh_cube(
-        size=pf.nodes.math.combine_xyz(
-            x=2.0 * thickness, y=2.0 * thickness, z=2.0 * thickness
-        )
-    ).mesh
-    seat_cutter_2 = pf.nodes.geo.transform(
-        seat_cutter,
-        translation=pf.nodes.math.combine_xyz(x=thickness * 0.5 + size_mid * size),
-    )
-    seat_cut_seat = pf.nodes.geo.mesh_boolean(seat_seat_3, seat_cutter_2).mesh
-    seat_seat_4 = pf.nodes.func.switch(has_seat_cut, a=seat_seat_3, b=seat_cut_seat)
+    seat_seat_4 = pf.nodes.geo.merge_by_distance(seat_seat_2, distance=1e-06)
     seat_lid = pf.nodes.geo.extrude_mesh(
         seat_filled_2, offset=seat_vertical, individual=False
     ).mesh
@@ -1312,18 +1285,31 @@ def _toilet_bowl(
 
 
 @pf.nodes.node_function
-def _toilet_tank(
-    material: t.SocketOrVal[pf.Material],
+def _toilet_button(
     hardware_material: t.SocketOrVal[pf.Material],
-    back_length: t.SocketOrVal[float],
-    back_size: t.SocketOrVal[float],
+    tank_height: t.SocketOrVal[float],
+    tank_cap_height: t.SocketOrVal[float],
+    hardware_radius: t.SocketOrVal[float],
+) -> t.ProcNode[pf.MeshObject]:
+    button_result = pf.nodes.geo.mesh_cylinder(
+        vertices=32,
+        radius=hardware_radius,
+        depth=tank_cap_height * 0.5 + 0.001,
+        fill_type="NGON",
+    )
+    button_height = tank_height + tank_cap_height * 0.25 + 0.0005
+    button_2 = pf.nodes.geo.transform(
+        button_result.mesh, translation=pf.nodes.math.combine_xyz(z=button_height)
+    )
+    return pf.nodes.geo.set_material(button_2, material=hardware_material)
+
+
+@pf.nodes.node_function
+def _toilet_handle(
+    hardware_material: t.SocketOrVal[pf.Material],
     tank_width: t.SocketOrVal[float],
     tank_size: t.SocketOrVal[float],
     tank_height: t.SocketOrVal[float],
-    tank_cap_height: t.SocketOrVal[float],
-    tank_cap_extrude: t.SocketOrVal[float],
-    tank_cap_bevel_width: t.SocketOrVal[float],
-    use_handle: t.SocketOrVal[bool],
     hardware_on_side: t.SocketOrVal[bool],
     hardware_radius: t.SocketOrVal[float],
     hardware_cap: t.SocketOrVal[float],
@@ -1333,6 +1319,77 @@ def _toilet_tank(
     handle_lever_z_factor: t.SocketOrVal[float],
     handle_mount_offset: t.SocketOrVal[float],
     handle_height_offset: t.SocketOrVal[float],
+) -> t.ProcNode[pf.MeshObject]:
+    p = pf.nodes.geo.input_position()
+    az = pf.nodes.math.absolute(p.z)
+    handles = pf.nodes.geo.mesh_line(
+        start_location=(0, 0, 0), offset=(0, 0, 0), count=2
+    )
+    handle_id = pf.nodes.geo.capture_attribute(
+        handles, domain="POINT", lever=pf.nodes.geo.input_index() > 0
+    )
+    cylinder_result = pf.nodes.geo.mesh_cylinder(
+        vertices=16, side_segments=5, radius=1.0, depth=2.0, fill_type="NGON"
+    )
+    hardware_instances = pf.nodes.geo.instance_on_points(
+        handle_id.geometry, cylinder_result.mesh
+    )
+    hardware = pf.nodes.geo.realize_instances(hardware_instances)
+    lever = handle_id.attributes["lever"]
+    radius = pf.nodes.func.switch(lever, hardware_radius, hardware_radius * 0.5)
+    length = pf.nodes.func.switch(lever, hardware_cap, hardware_length)
+    hb = pf.nodes.math.minimum(
+        handle_bevel_width,
+        pf.nodes.math.minimum(hardware_cap * 0.5, hardware_radius * 0.5 * 0.9951847267),
+    )
+    inset = pf.nodes.func.switch(az > 0.4, 0.0, 0.2928932188)
+    inset_2 = pf.nodes.func.switch(az > 0.8, inset, 1.0)
+    radial = radius - hb * inset_2 / 0.9951847267
+    height_inset = pf.nodes.func.switch(az > 0.4, 1.0, 0.2928932188)
+    height_inset_2 = pf.nodes.func.switch(az > 0.8, height_inset, 0.0)
+    hz = (length * 0.5 - hb * height_inset_2) * pf.nodes.math.sign(p.z) + length * 0.5
+    hx = p.x * radial
+    hy = p.y * radial
+    mount_pos = pf.nodes.math.combine_xyz(hx, -hz, hy)
+    lever_pos = pf.nodes.math.combine_xyz(
+        hz - hardware_radius * handle_lever_x_factor,
+        hy - hardware_cap,
+        -hx - hardware_radius * handle_lever_z_factor,
+    )
+    handle_pos = pf.nodes.func.switch(lever, mount_pos, lever_pos)
+    front_pos = pf.nodes.math.combine_xyz(handle_pos.y, -handle_pos.x, handle_pos.z)
+    handle_pos_2 = pf.nodes.func.switch(hardware_on_side, front_pos, handle_pos)
+    handle_x = pf.nodes.func.switch(
+        hardware_on_side,
+        -tank_width * 0.5,
+        -tank_width * 0.5 + hardware_radius + handle_mount_offset,
+    )
+    handle_y = pf.nodes.func.switch(
+        hardware_on_side,
+        -tank_size * 0.5 + hardware_radius + handle_mount_offset,
+        -tank_size * 0.5,
+    )
+    handle_origin = pf.nodes.math.combine_xyz(
+        handle_x, handle_y, tank_height - hardware_radius - handle_height_offset
+    )
+    hardware_2 = pf.nodes.geo.set_position(
+        hardware, position=handle_pos_2 + handle_origin
+    )
+    return pf.nodes.geo.set_material(hardware_2, material=hardware_material)
+
+
+@pf.nodes.node_function
+def _toilet_tank(
+    material: t.SocketOrVal[pf.Material],
+    hardware: t.SocketOrVal[pf.MeshObject],
+    back_length: t.SocketOrVal[float],
+    back_size: t.SocketOrVal[float],
+    tank_width: t.SocketOrVal[float],
+    tank_size: t.SocketOrVal[float],
+    tank_height: t.SocketOrVal[float],
+    tank_cap_height: t.SocketOrVal[float],
+    tank_cap_extrude: t.SocketOrVal[float],
+    tank_cap_bevel_width: t.SocketOrVal[float],
 ) -> t.ProcNode[pf.MeshObject]:
     cube = pf.nodes.geo.mesh_cube(
         size=(6, 6, 6), vertices_x=7, vertices_y=7, vertices_z=7
@@ -1400,74 +1457,9 @@ def _toilet_tank(
     cap = pf.nodes.geo.transform(
         cap_mesh, translation=pf.nodes.math.combine_xyz(z=tank_height)
     )
-    handles = pf.nodes.geo.mesh_line(
-        start_location=(0, 0, 0), offset=(0, 0, 0), count=2
-    )
-    handle_id = pf.nodes.geo.capture_attribute(
-        handles, domain="POINT", lever=pf.nodes.geo.input_index() > 0
-    )
-    cylinder = pf.nodes.geo.mesh_cylinder(
-        vertices=16, side_segments=5, radius=1.0, depth=2.0, fill_type="NGON"
-    ).mesh
-    hardware_instances = pf.nodes.geo.instance_on_points(handle_id.geometry, cylinder)
-    hardware = pf.nodes.geo.realize_instances(hardware_instances)
-    lever = handle_id.attributes["lever"]
-    radius = pf.nodes.func.switch(lever, hardware_radius, hardware_radius * 0.5)
-    length = pf.nodes.func.switch(lever, hardware_cap, hardware_length)
-    hb = pf.nodes.math.minimum(
-        handle_bevel_width,
-        pf.nodes.math.minimum(hardware_cap * 0.5, hardware_radius * 0.5 * 0.9951847267),
-    )
-    inset = pf.nodes.func.switch(az > 0.4, 0.0, 0.2928932188)
-    inset_2 = pf.nodes.func.switch(az > 0.8, inset, 1.0)
-    radial = radius - hb * inset_2 / 0.9951847267
-    height_inset = pf.nodes.func.switch(az > 0.4, 1.0, 0.2928932188)
-    height_inset_2 = pf.nodes.func.switch(az > 0.8, height_inset, 0.0)
-    hz = (length * 0.5 - hb * height_inset_2) * pf.nodes.math.sign(z) + length * 0.5
-    hx = x * radial
-    hy = y * radial
-    mount_pos = pf.nodes.math.combine_xyz(hx, -hz, hy)
-    lever_pos = pf.nodes.math.combine_xyz(
-        hz - hardware_radius * handle_lever_x_factor,
-        hy - hardware_cap,
-        -hx - hardware_radius * handle_lever_z_factor,
-    )
-    handle_pos = pf.nodes.func.switch(lever, mount_pos, lever_pos)
-    front_pos = pf.nodes.math.combine_xyz(handle_pos.y, -handle_pos.x, handle_pos.z)
-    handle_pos_2 = pf.nodes.func.switch(hardware_on_side, front_pos, handle_pos)
-    handle_x = pf.nodes.func.switch(
-        hardware_on_side,
-        -tank_width * 0.5,
-        -tank_width * 0.5 + hardware_radius + handle_mount_offset,
-    )
-    handle_y = pf.nodes.func.switch(
-        hardware_on_side,
-        -tank_size * 0.5 + hardware_radius + handle_mount_offset,
-        -tank_size * 0.5,
-    )
-    handle_origin = pf.nodes.math.combine_xyz(
-        handle_x, handle_y, tank_height - hardware_radius - handle_height_offset
-    )
-    hardware_2 = pf.nodes.geo.set_position(
-        hardware, position=handle_pos_2 + handle_origin
-    )
-    button = pf.nodes.geo.mesh_cylinder(
-        vertices=32,
-        radius=hardware_radius,
-        depth=tank_cap_height * 0.5 + 0.001,
-        fill_type="NGON",
-    ).mesh
-    button_2 = pf.nodes.geo.transform(
-        button,
-        translation=pf.nodes.math.combine_xyz(
-            z=tank_height + tank_cap_height * 0.25 + 0.0005
-        ),
-    )
-    hardware_3 = pf.nodes.func.switch(use_handle, button_2, hardware_2)
     tank_3 = pf.nodes.geo.set_material(tank, material=material)
     cap_3 = pf.nodes.geo.set_material(cap, material=material)
-    hardware_6 = pf.nodes.geo.set_material(hardware_3, material=hardware_material)
-    mesh_2 = pf.nodes.geo.join_geometry([tank_3, cap_3, hardware_6])
+    mesh_2 = pf.nodes.geo.join_geometry([tank_3, cap_3, hardware])
     mesh_3 = pf.nodes.geo.transform(
         mesh_2,
         translation=pf.nodes.math.combine_xyz(
@@ -1568,29 +1560,45 @@ def toilet(
         curve_back_side=curve_scale[2],
         curve_back=curve_scale[3],
     )
+    if hardware_type == "handle":
+        hardware = _toilet_handle(
+            hardware_material=hardware_material,
+            tank_width=tank_width,
+            tank_size=tank_size,
+            tank_height=tank_height,
+            hardware_on_side=hardware_on_side,
+            hardware_radius=hardware_radius,
+            hardware_cap=hardware_cap,
+            hardware_length=hardware_length,
+            handle_bevel_width=handle_bevel_width,
+            handle_lever_x_factor=handle_lever_x_factor,
+            handle_lever_z_factor=handle_lever_z_factor,
+            handle_mount_offset=handle_mount_offset,
+            handle_height_offset=handle_height_offset,
+        )
+    else:
+        hardware = _toilet_button(
+            hardware_material=hardware_material,
+            tank_height=tank_height,
+            tank_cap_height=tank_cap_height,
+            hardware_radius=hardware_radius,
+        )
     tank = _toilet_tank(
-        back_size=back_size,
-        handle_bevel_width=handle_bevel_width,
-        handle_height_offset=handle_height_offset,
-        handle_lever_x_factor=handle_lever_x_factor,
-        handle_lever_z_factor=handle_lever_z_factor,
-        handle_mount_offset=handle_mount_offset,
-        hardware_cap=hardware_cap,
-        hardware_length=hardware_length,
-        hardware_material=hardware_material,
-        hardware_on_side=hardware_on_side,
-        hardware_radius=hardware_radius,
         material=material,
-        tank_cap_bevel_width=tank_cap_bevel_width,
-        tank_cap_extrude=tank_cap_extrude,
-        tank_cap_height=tank_cap_height,
-        tank_height=tank_height,
-        tank_size=tank_size,
-        tank_width=tank_width,
+        hardware=hardware,
         back_length=size * (1.0 - size_mid),
-        use_handle=hardware_type == "handle",
+        back_size=back_size,
+        tank_width=tank_width,
+        tank_size=tank_size,
+        tank_height=tank_height,
+        tank_cap_height=tank_cap_height,
+        tank_cap_extrude=tank_cap_extrude,
+        tank_cap_bevel_width=tank_cap_bevel_width,
     )
     geometry = pf.nodes.geo.join_geometry([bowl, tank])
+    geometry = pf.nodes.geo.transform(
+        geometry, translation=pf.nodes.math.combine_xyz(z=height)
+    )
     obj = pf.nodes.to_mesh_object(geometry)
     obj.item().name = toilet.__name__
     return ToiletResult(mesh=obj)
@@ -1610,9 +1618,17 @@ def toilet_rand(
     tank_cap_extrude: float | None = None,
     cover_rotation: float | None = None,
 ) -> ToiletResult:
-    rng_size, rng_shape, _rng_lid, rng_variant, rng_body, rng_seat, rng_hardware = (
-        rng.spawn(7)
-    )
+    (
+        rng_size,
+        rng_shape,
+        rng_hardware_type,
+        rng_hardware_side,
+        rng_seat_cut,
+        rng_cap,
+        rng_body,
+        rng_seat,
+        rng_hardware,
+    ) = rng.spawn(9)
     if size is None:
         size = pf.random.uniform(rng_size, 0.4, 0.5)
     if width is None:
@@ -1623,14 +1639,16 @@ def toilet_rand(
         cover_rotation = 0.0
     if hardware_type is None:
         hardware_type = pf.control.choice(
-            rng_variant, [("button", 1.0), ("handle", 1.0)]
+            rng_hardware_type, [("button", 1.0), ("handle", 1.0)]
         )
     if hardware_on_side is None:
-        hardware_on_side = pf.control.choice(rng_variant, [(True, 1.0), (False, 1.0)])
+        hardware_on_side = pf.control.choice(
+            rng_hardware_side, [(True, 1.0), (False, 1.0)]
+        )
     if has_seat_cut is None:
-        has_seat_cut = pf.control.choice(rng_variant, [(True, 1.0), (False, 9.0)])
+        has_seat_cut = pf.control.choice(rng_seat_cut, [(True, 1.0), (False, 9.0)])
     if tank_cap_extrude is None:
-        tank_cap_extrude = pf.control.choice(rng_variant, [(0.0, 1.0), (0.0075, 1.0)])
+        tank_cap_extrude = pf.control.choice(rng_cap, [(0.0, 1.0), (0.0075, 1.0)])
     size_mid = pf.random.uniform(rng_shape, 0.55, 0.7)
     curve = pf.random.log_uniform(rng_shape, 0.75, 1.3, size=(4,))
     depth = size * pf.random.uniform(rng_shape, 0.5, 0.6)

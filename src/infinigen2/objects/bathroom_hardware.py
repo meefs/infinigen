@@ -18,10 +18,14 @@ from infinigen2.util import curve, mesh
 __all__ = [
     "BathroomHardwareResult",
     "hardware_bar",
+    "hardware_bar_rand",
     "hardware_bathroom_rand",
     "hardware_holder",
+    "hardware_holder_rand",
     "hardware_hook",
+    "hardware_hook_rand",
     "hardware_ring",
+    "hardware_ring_rand",
 ]
 
 
@@ -120,7 +124,6 @@ def _hook_geometry(
     radius: float,
     depth: float,
     hook_length: float,
-    **_kwargs: float,
 ) -> pf.ProcNode[pf.MeshObject]:
     attachment = _attachment(square, attachment_radius, attachment_depth, radius, depth)
     hook = _prism(square, radius * 1.001, hook_length * 1.001)
@@ -138,7 +141,6 @@ def _holder_geometry(
     depth: float,
     holder_length: float,
     extension_length: float,
-    **_kwargs: float,
 ) -> pf.ProcNode[pf.MeshObject]:
     attachment = _attachment(square, attachment_radius, attachment_depth, radius, depth)
     rail = _rail(
@@ -159,7 +161,6 @@ def _bar_geometry(
     depth: float,
     bar_length: float,
     extension_length: float,
-    **_kwargs: float,
 ) -> pf.ProcNode[pf.MeshObject]:
     attachment = _attachment(square, attachment_radius, attachment_depth, radius, depth)
     rail = _rail(
@@ -183,7 +184,6 @@ def _ring_geometry(
     depth: float,
     ring_radius: float,
     ring_minor_scale: float,
-    **_kwargs: float,
 ) -> pf.ProcNode[pf.MeshObject]:
     attachment = _attachment(square, attachment_radius, attachment_depth, radius, depth)
     ring = _ring(attachment_depth, radius, depth, ring_radius, ring_minor_scale)
@@ -275,7 +275,21 @@ def hardware_ring(
     return _result(material, geometry)
 
 
-def hardware_bathroom_rand(  # noqa: C901
+def _hardware_material_rand(rng: pf.RNG) -> pf.Material:
+    rng_choice, rng_material = rng.spawn(2)
+    material_rand = pf.control.choice(
+        rng_choice,
+        [
+            (metal_brushed.metal_brushed_linear_rand, 2.0),
+            (metal_brushed.metal_brushed_radial_rand, 2.0),
+            (metal_hammered.metal_hammered_rand, 1.0),
+        ],
+    )
+    coord = pf.nodes.shader.coord()
+    return material_rand(rng_material, coord.object)
+
+
+def hardware_hook_rand(
     rng: pf.RNG,
     material: pf.Material | None = None,
     attachment_radius: float | None = None,
@@ -284,83 +298,165 @@ def hardware_bathroom_rand(  # noqa: C901
     depth: float | None = None,
     square: bool | None = None,
     hook_length: float | None = None,
-    holder_length: float | None = None,
-    bar_length: float | None = None,
-    extension_length: float | None = None,
-    ring_radius: float | None = None,
-    ring_minor_scale: float | None = None,
 ) -> BathroomHardwareResult:
-    (
-        rng_material_choice,
-        rng_material,
-        rng_kind,
-        rng_square,
-        rng_attachment_radius,
-        rng_attachment_depth,
-        rng_radius,
-        rng_depth,
-        rng_hook,
-        rng_holder,
-        rng_bar,
-        rng_extension,
-        rng_ring,
-        rng_minor,
-    ) = rng.spawn(14)
+    rng, rng_material, rng_square = rng.spawn(3)
     if material is None:
-        vector = pf.nodes.shader.coord().object
-        material_rand = pf.control.choice(
-            rng_material_choice,
-            [
-                (metal_brushed.metal_brushed_linear_rand, 2.0),
-                (metal_brushed.metal_brushed_radial_rand, 2.0),
-                (metal_hammered.metal_hammered_rand, 1.0),
-            ],
-        )
-        material = material_rand(rng_material, vector)
+        material = _hardware_material_rand(rng_material)
     if square is None:
         square = pf.control.choice(rng_square, [(False, 1.0), (True, 1.0)])
     if attachment_radius is None:
-        attachment_radius = pf.random.uniform(rng_attachment_radius, 0.02, 0.03)
+        attachment_radius = pf.random.uniform(rng, 0.02, 0.03)
     if attachment_depth is None:
-        attachment_depth = pf.random.uniform(rng_attachment_depth, 0.01, 0.015)
+        attachment_depth = pf.random.uniform(rng, 0.01, 0.015)
     if radius is None:
-        radius = pf.random.uniform(rng_radius, 0.01, 0.015)
+        radius = pf.random.uniform(rng, 0.01, 0.015)
     if depth is None:
-        depth = pf.random.uniform(rng_depth, 0.06, 0.1)
+        depth = pf.random.uniform(rng, 0.06, 0.1)
     if hook_length is None:
-        hook_length = attachment_radius * pf.random.uniform(rng_hook, 2.0, 4.0)
-    if holder_length is None:
-        holder_length = pf.random.uniform(rng_holder, 0.15, 0.25)
-    if bar_length is None:
-        bar_length = pf.random.uniform(rng_bar, 0.4, 0.8)
-    if extension_length is None:
-        extension_length = attachment_radius * pf.random.uniform(
-            rng_extension, 2.0, 3.0
-        )
-    if ring_radius is None:
-        ring_radius = attachment_radius * pf.random.log_uniform(rng_ring, 2.0, 6.0)
-    if ring_minor_scale is None:
-        ring_minor_scale = pf.random.uniform(rng_minor, 0.4, 0.7)
-    generator = pf.control.choice(
-        rng_kind,
-        [
-            (_hook_geometry, 1.0),
-            (_holder_geometry, 1.0),
-            (_bar_geometry, 1.0),
-            (_ring_geometry, 1.0),
-        ],
-    )
-    geometry = generator(
+        hook_length = attachment_radius * pf.random.uniform(rng, 2.0, 4.0)
+    return hardware_hook(
+        material=material,
         square=square,
         attachment_radius=attachment_radius,
         attachment_depth=attachment_depth,
         radius=radius,
         depth=depth,
         hook_length=hook_length,
+    )
+
+
+def hardware_holder_rand(
+    rng: pf.RNG,
+    material: pf.Material | None = None,
+    attachment_radius: float | None = None,
+    attachment_depth: float | None = None,
+    radius: float | None = None,
+    depth: float | None = None,
+    square: bool | None = None,
+    holder_length: float | None = None,
+    extension_length: float | None = None,
+) -> BathroomHardwareResult:
+    rng, rng_material, rng_square = rng.spawn(3)
+    if material is None:
+        material = _hardware_material_rand(rng_material)
+    if square is None:
+        square = pf.control.choice(rng_square, [(False, 1.0), (True, 1.0)])
+    if attachment_radius is None:
+        attachment_radius = pf.random.uniform(rng, 0.02, 0.03)
+    if attachment_depth is None:
+        attachment_depth = pf.random.uniform(rng, 0.01, 0.015)
+    if radius is None:
+        radius = pf.random.uniform(rng, 0.01, 0.015)
+    if depth is None:
+        depth = pf.random.uniform(rng, 0.06, 0.1)
+    if holder_length is None:
+        holder_length = pf.random.uniform(rng, 0.15, 0.25)
+    if extension_length is None:
+        extension_length = attachment_radius * pf.random.uniform(rng, 2.0, 3.0)
+    return hardware_holder(
+        material=material,
+        square=square,
+        attachment_radius=attachment_radius,
+        attachment_depth=attachment_depth,
+        radius=radius,
+        depth=depth,
         holder_length=holder_length,
+        extension_length=extension_length,
+    )
+
+
+def hardware_bar_rand(
+    rng: pf.RNG,
+    material: pf.Material | None = None,
+    attachment_radius: float | None = None,
+    attachment_depth: float | None = None,
+    radius: float | None = None,
+    depth: float | None = None,
+    square: bool | None = None,
+    bar_length: float | None = None,
+    extension_length: float | None = None,
+) -> BathroomHardwareResult:
+    rng, rng_material, rng_square = rng.spawn(3)
+    if material is None:
+        material = _hardware_material_rand(rng_material)
+    if square is None:
+        square = pf.control.choice(rng_square, [(False, 1.0), (True, 1.0)])
+    if attachment_radius is None:
+        attachment_radius = pf.random.uniform(rng, 0.02, 0.03)
+    if attachment_depth is None:
+        attachment_depth = pf.random.uniform(rng, 0.01, 0.015)
+    if radius is None:
+        radius = pf.random.uniform(rng, 0.01, 0.015)
+    if depth is None:
+        depth = pf.random.uniform(rng, 0.06, 0.1)
+    if bar_length is None:
+        bar_length = pf.random.uniform(rng, 0.4, 0.8)
+    if extension_length is None:
+        extension_length = attachment_radius * pf.random.uniform(rng, 2.0, 3.0)
+    return hardware_bar(
+        material=material,
+        square=square,
+        attachment_radius=attachment_radius,
+        attachment_depth=attachment_depth,
+        radius=radius,
+        depth=depth,
         bar_length=bar_length,
         extension_length=extension_length,
+    )
+
+
+def hardware_ring_rand(
+    rng: pf.RNG,
+    material: pf.Material | None = None,
+    attachment_radius: float | None = None,
+    attachment_depth: float | None = None,
+    radius: float | None = None,
+    depth: float | None = None,
+    square: bool | None = None,
+    ring_radius: float | None = None,
+    ring_minor_scale: float | None = None,
+) -> BathroomHardwareResult:
+    rng, rng_material, rng_square = rng.spawn(3)
+    if material is None:
+        material = _hardware_material_rand(rng_material)
+    if square is None:
+        square = pf.control.choice(rng_square, [(False, 1.0), (True, 1.0)])
+    if attachment_radius is None:
+        attachment_radius = pf.random.uniform(rng, 0.02, 0.03)
+    if attachment_depth is None:
+        attachment_depth = pf.random.uniform(rng, 0.01, 0.015)
+    if radius is None:
+        radius = pf.random.uniform(rng, 0.01, 0.015)
+    if depth is None:
+        depth = pf.random.uniform(rng, 0.06, 0.1)
+    if ring_radius is None:
+        ring_radius = attachment_radius * pf.random.log_uniform(rng, 2.0, 6.0)
+    if ring_minor_scale is None:
+        ring_minor_scale = pf.random.uniform(rng, 0.4, 0.7)
+    return hardware_ring(
+        material=material,
+        square=square,
+        attachment_radius=attachment_radius,
+        attachment_depth=attachment_depth,
+        radius=radius,
+        depth=depth,
         ring_radius=ring_radius,
         ring_minor_scale=ring_minor_scale,
     )
-    return _result(material, geometry)
+
+
+def hardware_bathroom_rand(
+    rng: pf.RNG,
+    material: pf.Material | None = None,
+) -> BathroomHardwareResult:
+    rng_choice, rng_hardware = rng.spawn(2)
+    hardware_func = pf.control.choice(
+        rng_choice,
+        [
+            (hardware_hook_rand, 1.0),
+            (hardware_holder_rand, 1.0),
+            (hardware_bar_rand, 1.0),
+            (hardware_ring_rand, 1.0),
+        ],
+    )
+    return hardware_func(rng_hardware, material=material)

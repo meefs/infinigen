@@ -341,7 +341,7 @@ def _bedroom_dimensions_rand(rng: pf.RNG) -> pf.Vector:
 
 def _bathroom_dimensions_rand(rng: pf.RNG) -> pf.Vector:
     rng_area, rng_aspect, rng_width_scale, rng_height = rng.spawn(4)
-    area = pf.random.clip_gaussian(rng_area, 5.2, 1.3, 3.7, 9.0)
+    area = pf.random.clip_gaussian(rng_area, 5.2, 1.3, 4.1, 9.0)
     maximum_aspect = min(2.1, area / 1.5**2)
     aspect = pf.random.clip_gaussian(rng_aspect, 1.55, 0.25, 1.2, maximum_aspect)
     base_width = math.sqrt(area / aspect)

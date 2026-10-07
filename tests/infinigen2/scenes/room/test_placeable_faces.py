@@ -7,8 +7,9 @@ import numpy as np
 import procfunc as pf
 import pytest
 
-from infinigen2.objects import bathtub, bed, bedside_table, desk, sink, table, toilet
+from infinigen2.objects import bathtub, bed, desk, sink, table, toilet
 from infinigen2.scenes import setup_utils
+from infinigen2.scenes.room import bed_setup
 from infinigen2.scenes.room import decoration_objects as deco
 
 SEEDS = [0, 1]
@@ -20,7 +21,7 @@ HOSTS: dict[str, Callable[[pf.RNG], pf.MeshObject]] = {
     "side_table": lambda rng: setup_utils.side_table_object_rand(rng).mesh,
     "coffee_table": lambda rng: table.table_coffee_rand(rng).mesh,
     "coffee_table_storage": lambda rng: table.table_coffee_storage_rand(rng).mesh,
-    "bedside_table": lambda rng: bedside_table.table_bedside_composite_rand(rng).mesh,
+    "bedside_table": lambda rng: bed_setup.table_bedside_composite_rand(rng).mesh,
     "desk": lambda rng: desk.desk_rand(rng).mesh,
     "toilet": lambda rng: toilet.toilet_rand(rng).mesh,
     "sink": lambda rng: sink.sink_rand(rng).mesh,

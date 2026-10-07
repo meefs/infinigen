@@ -7,7 +7,7 @@ from typing import NamedTuple, cast
 
 import procfunc as pf
 
-from infinigen2.objects import bedside_table, cushion, lamp
+from infinigen2.objects import cushion, desk, lamp, storage, table
 from infinigen2.objects.bed import BedResult, bed_rand
 from infinigen2.scenes.placement import collision
 from infinigen2.scenes.placement.culling import keep_non_colliding
@@ -22,6 +22,7 @@ from infinigen2.scenes.setup_utils import (
     snap_back_front,
 )
 from infinigen2.util.errors import RejectedScene
+from infinigen2.util.mesh import center_footprint
 from infinigen2.util.scene_cleanup import delete_object
 
 __all__ = [
@@ -29,6 +30,7 @@ __all__ = [
     "bed_dimensions_rand",
     "bed_setup_multi_rand",
     "bed_setup_rand",
+    "table_bedside_composite_rand",
 ]
 
 
@@ -44,6 +46,33 @@ class BedSetupResult(NamedTuple):
     storage_containers: list[pf.MeshObject]
     supports: list[pf.MeshObject]
     storages: list[pf.MeshObject]
+
+
+def table_bedside_composite_rand(
+    rng: pf.RNG,
+    dimensions: pf.Vector | None = None,
+) -> table.TableResult:
+    """Bedside-sized storage, regular table, or desk with under-top storage."""
+    rng_depth, rng_width, rng_height, rng_style, rng_body = rng.spawn(5)
+    if dimensions is None:
+        dimensions = pf.Vector(
+            (
+                pf.random.uniform(rng_depth, 0.35, 0.48),
+                pf.random.uniform(rng_width, 0.40, 0.47),
+                pf.random.uniform(rng_height, 0.55, 0.70),
+            )
+        )
+    body = pf.control.choice(
+        rng_style,
+        [
+            (storage.storage_composite_rand, 1.0),
+            (table.table_dining_rand, 1.0),
+            (desk.desk_with_top_storage_rand, 1.0),
+        ],
+    )
+    result = body(rng_body, dimensions=dimensions)
+    center_footprint(result.mesh)
+    return table.TableResult(mesh=result.mesh)
 
 
 def bed_dimensions_rand(
@@ -260,7 +289,7 @@ def bed_setup_rand(
         raise RejectedScene("Bed collides at its selected placement")
     bed_mesh.item().name = "bed"
 
-    side_table = bedside_table.table_bedside_composite_rand(r_table).mesh
+    side_table = table_bedside_composite_rand(r_table).mesh
     table_candidates = []
     for (parent_side, child_side), r_gap in zip(
         [("left", "right"), ("right", "left")],
