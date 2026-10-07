@@ -24,6 +24,7 @@ from procfunc.util.teardown import skip_teardown_on_exit
 
 from infinigen2.cameras import camera_cube_free_space_check, camera_rrt
 from infinigen2.cameras.rrt import RRTPolicyError
+from infinigen2.exporters.realize_mesh import bake_shared_modifier_prefixes
 from infinigen2.exporters.render_cycles import render_cycles
 from infinigen2.exporters.util.format import ExportType, RenderPass
 from infinigen2.scenes.house.furnishings import (
@@ -508,6 +509,7 @@ def main() -> None:
         pf.ops.file.save_blend(output_path=args.save_blend)
         return
 
+    bake_shared_modifier_prefixes(objects)
     render_tris, object_tris = estimated_eval_tricount(objects)
     logger.info("Render-level triangles: %d", render_tris)
     if args.max_render_tris and render_tris > args.max_render_tris:

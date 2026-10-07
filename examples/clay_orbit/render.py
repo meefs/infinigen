@@ -34,7 +34,9 @@ from infinigen2.exporters.util.blender_render import DisplacementMode
 from infinigen2.exporters.util.format import ExportType, RenderPass
 from infinigen2.cameras import camera_cube_free_space_check, monocular
 import infinigen2.scenes.placement.collision as ccol
-from infinigen2.scenes.room import room, room_shape
+from infinigen2.exporters.realize_mesh import bake_shared_modifier_prefixes
+from infinigen2.scenes.indoor_space import indoor_space_rand
+from infinigen2.scenes.room import room
 from infinigen2.util.render_metadata import time_step, write_render_metadata
 from infinigen2.util.scene_cleanup import cleanup_except
 
@@ -48,7 +50,7 @@ def _camera_accept_pred(
     colliders: ccol.CollisionSet,
     floor_colliders: ccol.CollisionSet,
 ) -> bool:
-    if not camera_cube_free_space_check(camera, colliders, forward_clearance=0.75):
+    if not camera_cube_free_space_check(camera, colliders, forward_clearance=0.3):
         return False
     origin = np.array([camera.item().matrix_world.translation])
     _hits, ray_indices, _tri_indices = ccol.raycast(
@@ -60,6 +62,8 @@ def _camera_accept_pred(
 def main():
     parser = argparse.ArgumentParser(description="Render a clay orbit pan with GT")
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--scene_type", type=str, default="livingroom")
+    parser.add_argument("--camera_type", type=str, default="linear")
     parser.add_argument("--output", type=Path, default=Path("outputs/clay_pan_video"))
     parser.add_argument("--frames", type=int, nargs=2, default=(0, 35))
     parser.add_argument(
@@ -119,29 +123,54 @@ def main():
 
     times = {}
 
-    with time_step(times, "livingroom"):
-        dimensions_rng, room_rng, rng = rng.spawn(3)
-        dimensions = room_shape.room_dimensions_rand(dimensions_rng)
-        living = room.room_livingroom_rand(
-            rng=room_rng, dimensions=dimensions, frame_start=0, frame_end=0
-        )
+    if args.scene_type == "livingroom":
+        scene_func = room.room_livingroom_rand
+    elif args.scene_type == "diningroom":
+        scene_func = room.room_diningroom_rand
+    elif args.scene_type == "bedroom":
+        scene_func = room.room_bedroom_rand
+    elif args.scene_type == "bathroom":
+        scene_func = room.room_bathroom_rand
+    elif args.scene_type == "kitchen":
+        scene_func = room.room_kitchen_rand
+    elif args.scene_type == "indoor_space":
+        scene_func = indoor_space_rand
+    else:
+        raise ValueError(f"Unknown scene_type {args.scene_type}")
+
+    with time_step(times, "scene"):
+        _dimensions_rng, room_rng, rng = rng.spawn(3)
+        living = scene_func(rng=room_rng, frame_start=0, frame_end=0)
+    dimensions = living.dimensions
     objects = list(living.all_objects)
     floor_colliders = ccol.collision_set([living.floor])
     accept_pred = functools.partial(
         _camera_accept_pred, floor_colliders=floor_colliders
     )
 
-    with time_step(times, "linear_pan_camera"):
-        gen_rng, rng = rng.spawn(2)
+    gen_rng, rng = rng.spawn(2)
+    room_bbox = (np.zeros(3), np.array(dimensions))
+    if args.camera_type == "linear":
         cameras = monocular.camera_linear_pan_rand(
             rng=gen_rng,
             objects=objects,
             colliders=living.colliders,
-            bbox=(np.zeros(3), np.array(dimensions)),
+            bbox=room_bbox,
             frame_start=frame_start,
             frame_end=frame_end,
+            focal_length_mm=8.0,
             accept_pred=accept_pred,
         )
+    elif args.camera_type == "orbit":
+        cameras = monocular.camera_orbit_90_rand(
+            objects=objects,
+            bbox=room_bbox,
+            frame_start=frame_start,
+            frame_end=frame_end,
+            focal_length_mm=8.0,
+        )
+    else:
+        raise ValueError(f"Unknown camera_type {args.camera_type}")
     camera = cameras[0]
 
     cleanup_except(objects + list(living.lights) + list(cameras))
@@ -149,6 +178,8 @@ def main():
     if args.save_blend is not None:
         pf.ops.file.save_blend(output_path=args.save_blend)
         return
+
+    bake_shared_modifier_prefixes(objects)
 
     # Short AO-pass distance so only tight crevices / fine displacement darken; the
     # AO pass is shown directly as the clay image to surface small geometry.
@@ -264,7 +295,7 @@ def main():
         seed=seed,
         times=times,
         exports=all_exports,
-        build_keys={"livingroom", "linear_pan_camera"},
+        build_keys={"scene"},
         render_keys={"clay_flat", "clay", "rgb", "gt"},
         n_frames=render_end - render_start + 1,
     )

@@ -111,7 +111,7 @@ def render_cycles_clay(
 ) -> dict[ExportType, list[Path]]:
     """White-clay render: override surfaces with neutral diffuse (keeping the scene
     lighting), optionally with a camera-parented fill headlight for pan views the
-    scene's own lights miss. Not a registered exporter - used by render_clay_pan_video."""
+    scene's own lights miss. Not a registered exporter - used by examples/clay_orbit/render.py."""
     unsupported = [
         rp for rp in render_passes if rp.type not in RENDER_CYCLES_CLAY_PASS_TYPES
     ]

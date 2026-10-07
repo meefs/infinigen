@@ -29,10 +29,22 @@ def _estimated_object_tricount(obj: pf.Object) -> int:
     return len(mesh.loops) - 2 * len(mesh.polygons)
 
 
+def _geometry_key(obj: pf.Object) -> int:
+    item = obj.item()
+    if item.type == "MESH" and not item.modifiers:
+        return item.data.as_pointer()
+    return item.as_pointer()
+
+
 def estimated_eval_tricount(
     objects: list[pf.Object],
 ) -> tuple[int, list[tuple[pf.Object, int]]]:
-    """Estimate total and ascending per-object render-level triangle counts."""
+    """Estimate total and ascending per-object render-level triangle counts.
+
+    Modifier-free objects sharing mesh data are instanced by Cycles, so the total counts
+    their geometry once; objects with modifiers evaluate separately and each count.
+    """
     object_tris = [(obj, _estimated_object_tricount(obj)) for obj in objects]
     object_tris.sort(key=lambda entry: entry[1])
-    return sum(count for _, count in object_tris), object_tris
+    unique = {_geometry_key(obj): count for obj, count in object_tris}
+    return sum(unique.values()), object_tris

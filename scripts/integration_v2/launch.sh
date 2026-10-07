@@ -76,7 +76,7 @@ fi
 if [ "${INTEGRATION_SLOT_INDEX:-0}" = 0 ]; then
     # name/script/args, listed explicitly so a renamed or added example fails loudly
     EXAMPLE_SCRIPTS=(
-        "clay_pan_video examples/render_clay_pan_video.py --frames 0 3"
+        "clay_pan_video examples/clay_orbit/render.py --frames 0 3"
         "flying_indoor examples/flying_indoor/render.py --camera_idx 0 --frames 0 3"
         "house_tour examples/house_tour/render.py --frames 0 239 --render_frames 0 3"
     )
