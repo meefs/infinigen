@@ -76,9 +76,9 @@ fi
 if [ "${INTEGRATION_SLOT_INDEX:-0}" = 0 ]; then
     # name/script/args, listed explicitly so a renamed or added example fails loudly
     EXAMPLE_SCRIPTS=(
-        "clay_pan_video examples/render_clay_pan_video.py"
-        "flying_indoor examples/flying_indoor/render.py --camera_idx 0"
-        "house_tour examples/house_tour/render.py"
+        "clay_pan_video examples/render_clay_pan_video.py --frames 0 3"
+        "flying_indoor examples/flying_indoor/render.py --camera_idx 0 --frames 0 3"
+        "house_tour examples/house_tour/render.py --frames 0 239 --render_frames 0 3"
     )
 
     LISTED_EXAMPLES=$(printf '%s\n' "${EXAMPLE_SCRIPTS[@]}" | cut -d' ' -f2 | sort)
@@ -94,7 +94,7 @@ if [ "${INTEGRATION_SLOT_INDEX:-0}" = 0 ]; then
         shift
         "${EXAMPLE_RUNNER_ARGS[@]}" "$@" \
             --output $OUTPUT_PATH/example-$example_name-scene-cycles-0 --seed 0 \
-            --frames 0 3 --resolution 640 360 --samples 32
+            --resolution 640 360 --samples 32
     done
 fi
 

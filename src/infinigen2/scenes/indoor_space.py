@@ -261,7 +261,11 @@ def sink_wall_row_rand(
     yaw: float,
 ) -> WallRowResult:
     rng, rng_setup = rng.spawn(2)
-    setup = bathroom_sink_setup_rand(rng_setup, room_dimensions=room_dimensions)
+    setup = bathroom_sink_setup_rand(
+        rng_setup,
+        bbox_min=pf.Vector((0.0, 0.0, 0.0)),
+        bbox_max=room_dimensions,
+    )
     parts = (
         setup.bathroom_sinks
         + setup.sink_taps

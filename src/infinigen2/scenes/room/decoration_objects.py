@@ -923,11 +923,16 @@ def _place_surface_decoration(
     parent = rng.choice(list(parents))
     bbox_min, bbox_max = pf.ops.attr.bbox_min_max(parent, global_coords=True)
     dimensions = bbox_max - bbox_min
-    x_inset = min(_SURFACE_INSET, dimensions[0] * 0.5)
-    y_inset = min(_SURFACE_INSET, dimensions[1] * 0.5)
+
+    x_inset_fraction = 0.5
+    if dimensions[0] > 2.0 * _SURFACE_INSET:
+        x_inset_fraction = _SURFACE_INSET / dimensions[0]
+    y_inset_fraction = 0.5
+    if dimensions[1] > 2.0 * _SURFACE_INSET:
+        y_inset_fraction = _SURFACE_INSET / dimensions[1]
     xy_frac = (
-        pf.random.uniform(rng, x_inset / dimensions[0], 1.0 - x_inset / dimensions[0]),
-        pf.random.uniform(rng, y_inset / dimensions[1], 1.0 - y_inset / dimensions[1]),
+        pf.random.uniform(rng, x_inset_fraction, 1.0 - x_inset_fraction),
+        pf.random.uniform(rng, y_inset_fraction, 1.0 - y_inset_fraction),
     )
     snap_on_top(rng, child, [parent], xy_frac=xy_frac)
 

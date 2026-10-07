@@ -149,3 +149,28 @@ def test_kept_surface_lamp_preserves_original_result(monkeypatch, rng: pf.RNG) -
     assert seen == [lamp_result]
     assert lamp_result.mesh in result.all_objects
     assert result.lights == [lamp_result.light]
+
+
+def test_surface_decoration_centers_on_zero_extent_axis(
+    monkeypatch: pytest.MonkeyPatch, rng: pf.RNG
+) -> None:
+    lamp_result = LampResult(
+        mesh=pf.ops.primitives.mesh_cube(size=0.2),
+        light=pf.ops.primitives.point_lamp(energy=1000),
+    )
+    support = pf.ops.primitives.mesh_cube(size=1.0)
+    support.item().scale.y = 0.0
+    placements: list[tuple[float, float]] = []
+
+    def capture_placement(
+        _rng: pf.RNG,
+        _child: LampResult,
+        _parents: list[pf.MeshObject],
+        xy_frac: tuple[float, float],
+    ) -> None:
+        placements.append(xy_frac)
+
+    monkeypatch.setattr(decoration_objects, "snap_on_top", capture_placement)
+    decoration_objects._place_surface_decoration(rng, lamp_result, [support])
+
+    assert placements[0][1] == 0.5

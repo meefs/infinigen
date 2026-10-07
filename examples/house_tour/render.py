@@ -187,7 +187,6 @@ def _tour_location_samplers(
         center_xy = np.asarray(_shared_doorway_center(first, second))
         specs.extend(
             (
-                (first.floor, center_xy),
                 (second.floor, center_xy),
                 (second.floor, None),
             )
@@ -266,6 +265,7 @@ def _house_tour_camera_attempt(
             min_node_dist_to_obstacle=camera_clearance,
             max_rrt_iter=300,
             max_path_retries=10,
+            speed_mps_range=(2.0, 3.0),
             camera_clearance=camera_clearance,
             step_predicate=point_accept_pred,
         )

@@ -59,6 +59,51 @@ def test_launch_shell_disables_uv_sync(tmp_path: Path) -> None:
     assert all(call == [b"run", b"--no-sync"] for call in uv_calls)
 
 
+def test_launch_shell_plans_full_house_tour(tmp_path: Path) -> None:
+    repo = Path(__file__).resolve().parents[2]
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    _write_fake_uv(fake_bin / "uv")
+    calls = tmp_path / "uv-calls.txt"
+    categories = {
+        name: ""
+        for name in (
+            "MATERIALS",
+            "OBJECTS",
+            "MASKS",
+            "DISPLACEMENTS",
+            "PRESETS",
+            "ENVIRONMENTS",
+            "CAMERAS",
+            "SCENES",
+        )
+    }
+    env = os.environ | categories
+    env |= {
+        "PATH": f"{fake_bin}{os.pathsep}{env['PATH']}",
+        "UV_CALLS": str(calls),
+        "INTEGRATION_SLOT_INDEX": "0",
+    }
+
+    result = subprocess.run(
+        ["bash", "scripts/integration_v2/launch.sh", str(tmp_path / "out"), "1"],
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    uv_calls = [
+        path.read_bytes().split(b"\0") for path in tmp_path.glob("uv-calls.*.txt")
+    ]
+    call = next(call for call in uv_calls if b"examples/house_tour/render.py" in call)
+    frame_index = call.index(b"--frames")
+    render_index = call.index(b"--render_frames")
+    assert call[frame_index + 1 : frame_index + 3] == [b"0", b"239"]
+    assert call[render_index + 1 : render_index + 3] == [b"0", b"3"]
+
+
 def test_launcher_marks_each_render_slot(monkeypatch, tmp_path):
     launched = []
 
