@@ -14,7 +14,7 @@ from procfunc.nodes import types as t
 from procfunc.nodes.util.bpy_node_info import NodeDataType
 
 from infinigen2.objects import storage
-from infinigen2.objects.table import (
+from infinigen2.objects.furniture_bases import (
     TableResult,
     base_square_rand,
     base_straight_rand,
@@ -34,21 +34,21 @@ __all__ = [
     "chair_back",
     "chair_back_rand",
     "chair_back_solid",
+    "chair_base_stable_rand",
+    "chair_base_wheeled",
+    "chair_base_wheeled_rand",
+    "chair_bench_dimensions_rand",
     "chair_bench_rand",
-    "base_stable_rand",
-    "bench_dimensions_rand",
+    "chair_dining_dimensions_rand",
+    "chair_dining_rand",
+    "chair_office_dimensions_rand",
+    "chair_office_rand",
     "chair_rand",
-    "curvy_seat",
-    "curvy_seat_rand",
-    "dining_chair_dimensions_rand",
-    "dining_chair_rand",
-    "dining_seat",
-    "office_chair_dimensions_rand",
-    "office_chair_rand",
-    "round_seat",
-    "round_seat_rand",
-    "wheeled_base",
-    "wheeled_base_rand",
+    "chair_seat_curvy",
+    "chair_seat_curvy_rand",
+    "chair_seat_dining",
+    "chair_seat_round",
+    "chair_seat_round_rand",
 ]
 
 
@@ -221,7 +221,7 @@ def _curvy_seat_geometry(
     return warp_around_curve_result
 
 
-def curvy_seat(
+def chair_seat_curvy(
     u_resolution: int = 256,
     v_resolution: int = 128,
     width: float = 0.5,
@@ -545,7 +545,7 @@ def _round_seat_geometry(
     )
 
 
-def round_seat(
+def chair_seat_round(
     thickness: float = 0.1,
     radius: float = 0.37,
     cap_radius: float = 2.8,
@@ -1193,7 +1193,7 @@ def _wheeled_base_geometry(
     return join
 
 
-def wheeled_base(
+def chair_base_wheeled(
     joint_height: float = 0.0,
     leg_diameter: float = 0.0,
     top_height: float = 0.0,
@@ -1221,7 +1221,7 @@ def wheeled_base(
     return ChairResult(mesh=pf.nodes.to_mesh_object(geo))
 
 
-def office_chair_dimensions_rand(
+def chair_office_dimensions_rand(
     rng: pf.RNG,
     width: float | None = None,
     seat_elevation: float | None = None,
@@ -1245,7 +1245,7 @@ def _curvy_bend_amount(
     return wrap_angle * -2.0 / (profile_z * width * relative_width)
 
 
-def curvy_seat_rand(
+def chair_seat_curvy_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
@@ -1253,7 +1253,7 @@ def curvy_seat_rand(
     """Curved shell seat with an integrated backrest (v1 curvy_seats)."""
     rng, rng_dims, rng_mat = rng.spawn(3)
     if dimensions is None:
-        dimensions = office_chair_dimensions_rand(rng_dims)
+        dimensions = chair_office_dimensions_rand(rng_dims)
     back_width = pf.random.uniform(rng, 0.75, 1.05)
     top_width = back_width - pf.random.uniform(rng, 0.0, 0.5)
     mid_width = back_width * pf.random.uniform(rng, 0.7, 1.0)
@@ -1295,7 +1295,7 @@ def curvy_seat_rand(
     return ChairResult(mesh=obj)
 
 
-def round_seat_rand(
+def chair_seat_round_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
@@ -1303,7 +1303,7 @@ def round_seat_rand(
     """Backless round pad seat (v1 round_seats)."""
     rng, rng_dims, rng_mat = rng.spawn(3)
     if dimensions is None:
-        dimensions = office_chair_dimensions_rand(rng_dims)
+        dimensions = chair_office_dimensions_rand(rng_dims)
     thickness = pf.random.uniform(rng, 0.05, 0.12)
     geo = _round_seat_geometry(
         thickness=thickness,
@@ -1331,7 +1331,7 @@ def _wheeled_base_post_diameter_rand(rng: pf.RNG) -> float:
     return pf.random.uniform(rng, 0.03, 0.065)
 
 
-def wheeled_base_rand(
+def chair_base_wheeled_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     material: pf.Material | None = None,
@@ -1340,7 +1340,7 @@ def wheeled_base_rand(
     """Five-star caster base with a central gas-lift pole (v1 wheeled leg)."""
     rng, rng_dims, rng_mat, rng_wheel_mat = rng.spawn(4)
     if dimensions is None:
-        dimensions = office_chair_dimensions_rand(rng_dims)
+        dimensions = chair_office_dimensions_rand(rng_dims)
     vec = pf.nodes.shader.coord().uv
     if material is None:
         material = furniture_material_rand(rng_mat, vec)
@@ -1608,7 +1608,7 @@ class DiningSeatResult(NamedTuple):
 
 
 @pf.nodes.node_function
-def dining_seat(
+def chair_seat_dining(
     depth: t.SocketOrVal[float],
     half_width: t.SocketOrVal[float],
     thickness: t.SocketOrVal[float],
@@ -1697,7 +1697,7 @@ def _shear_back(
     )
 
 
-def dining_chair_dimensions_rand(
+def chair_dining_dimensions_rand(
     rng: pf.RNG,
     depth: float | None = None,
     width: float | None = None,
@@ -1806,7 +1806,7 @@ def _dining_seat_with_back(
     into one uv-mapped object. dimensions = (depth, width, elevation). back_height
     is the full built height of the back, of which back_sink is buried in the pan."""
     half_width = dimensions[1] * 0.5
-    seat_res = dining_seat(
+    seat_res = chair_seat_dining(
         depth=dimensions[0],
         half_width=half_width,
         thickness=thickness,
@@ -1883,7 +1883,7 @@ def _grid_base_rand(
     close_edges: bool = False,
 ) -> ChairResult:
     footprint = pf.nodes.math.minimum(dimensions[0], dimensions[1])
-    base = storage.grid_legs_rand(
+    base = storage.storage_legs_grid_rand(
         rng,
         dimensions,
         dimensions[2],
@@ -1897,7 +1897,7 @@ def _grid_base_rand(
     return ChairResult(mesh=base)
 
 
-def base_stable_rand(
+def chair_base_stable_rand(
     rng: pf.RNG,
     dimensions: pf.Vector,
     material: pf.Material,
@@ -1906,12 +1906,16 @@ def base_stable_rand(
     """Chair base without oversized pedestal or wheeled options."""
     base_fn = pf.control.choice(
         rng,
-        [(_grid_base_rand, 0.4), (base_straight_rand, 0.45), (base_square_rand, 0.15)],
+        [
+            (_grid_base_rand, 0.4),
+            (base_straight_rand, 0.45),
+            (base_square_rand, 0.15),
+        ],
     )
     return base_fn(rng, dimensions, material, close_edges=close_edges)
 
 
-def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairResult:
+def chair_dining_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairResult:
     """Wooden dining chair: bezier-outline seat pan + slat or solid back bent to
     follow the seat's rear edge, on straight legs. Real chair dimensions."""
     (
@@ -1934,7 +1938,7 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
         rng_seat,
     ) = rng.spawn(17)
     if dimensions is None:
-        dimensions = dining_chair_dimensions_rand(rng_dims)
+        dimensions = chair_dining_dimensions_rand(rng_dims)
     vec = pf.nodes.shader.coord().uv
     material1 = cache(partial(furniture_material_rand, rng_mat1, vec))
     material2 = cache(partial(furniture_material_rand, rng_mat2, vec))
@@ -2003,7 +2007,7 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
     def wheeled_fn(
         rng: pf.RNG, base_dimensions: pf.Vector, material: pf.Material
     ) -> ChairResult:
-        return wheeled_base_rand(
+        return chair_base_wheeled_rand(
             rng,
             (
                 dimensions[0] * leg_spread,
@@ -2033,7 +2037,7 @@ def dining_chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> Chair
     return ChairResult(mesh=seat)
 
 
-def bench_dimensions_rand(rng: pf.RNG) -> pf.Vector:
+def chair_bench_dimensions_rand(rng: pf.RNG) -> pf.Vector:
     """Bench dimensions: seat-depth deep, several seats wide."""
     return (
         pf.random.uniform(rng, 0.4, 0.48),
@@ -2064,7 +2068,7 @@ def chair_bench_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairR
         rng_seat,
     ) = rng.spawn(16)
     if dimensions is None:
-        dimensions = bench_dimensions_rand(rng_dims)
+        dimensions = chair_bench_dimensions_rand(rng_dims)
     vec = pf.nodes.shader.coord().uv
     material1 = cache(partial(furniture_material_rand, rng_mat1, vec))
     material2 = cache(partial(furniture_material_rand, rng_mat2, vec))
@@ -2125,7 +2129,7 @@ def chair_bench_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairR
     # a long span needs its legs near the ends, so spread further than a chair does
     leg_spread = pf.random.uniform(rng, 0.9, 0.98)
     seat_bottom = dimensions[2] - thickness * 0.5
-    base = base_stable_rand(
+    base = chair_base_stable_rand(
         rng_base,
         (
             dimensions[0] * leg_spread,
@@ -2145,14 +2149,14 @@ def chair_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> ChairResult:
     leg base) or a wooden dining chair (bezier seat + slat back)."""
     rng, rng_sel, rng_gen = rng.spawn(3)
     chair_fn = pf.control.choice(
-        rng_sel, [(office_chair_rand, 1.0), (dining_chair_rand, 1.0)]
+        rng_sel, [(chair_office_rand, 1.0), (chair_dining_rand, 1.0)]
     )
     return chair_fn(rng=rng_gen, dimensions=dimensions)
 
 
 def _office_chair_base_rand(
     rng: pf.RNG,
-    wheeled_fn: Callable[..., ChairResult] = wheeled_base_rand,
+    wheeled_fn: Callable[..., ChairResult] = chair_base_wheeled_rand,
 ) -> Callable[..., ChairResult | TableResult]:
     return pf.control.choice(
         rng,
@@ -2163,7 +2167,7 @@ def _office_chair_base_rand(
     )
 
 
-def office_chair_rand(
+def chair_office_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     seat_material: pf.Material | None = None,
@@ -2180,13 +2184,13 @@ def office_chair_rand(
         rng_base_mat,
     ) = rng.spawn(8)
     if dimensions is None:
-        dimensions = office_chair_dimensions_rand(rng_dims)
+        dimensions = chair_office_dimensions_rand(rng_dims)
 
     top_fn = pf.control.choice(
         rng_top_sel,
         [
-            (curvy_seat_rand, 1.5),
-            (round_seat_rand, 0.33),
+            (chair_seat_curvy_rand, 1.5),
+            (chair_seat_round_rand, 0.33),
         ],
     )
     leg_spread = pf.random.uniform(rng, 0.5, 0.7)
@@ -2201,7 +2205,7 @@ def office_chair_rand(
     def wheeled_fn(
         rng: pf.RNG, base_dimensions: pf.Vector, material: pf.Material
     ) -> ChairResult:
-        return wheeled_base_rand(
+        return chair_base_wheeled_rand(
             rng,
             (
                 dimensions[0] * leg_spread,

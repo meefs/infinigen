@@ -34,12 +34,12 @@ from infinigen2.scenes.setup_utils import (
 __all__ = [
     "SofaSetupResult",
     "TVSetupResult",
-    "centered_sofa_setup_rand",
     "side_tables_rand",
+    "sofa_setup_centered_rand",
+    "sofa_setup_wall_anchored_rand",
+    "sofa_setup_wall_rand",
     "tv_setup_rand",
-    "wall_anchored_sofa_setup_rand",
-    "wall_sofa_setup_rand",
-    "wall_tv_setup_rand",
+    "tv_setup_wall_rand",
 ]
 
 logger = logging.getLogger(__name__)
@@ -112,7 +112,7 @@ def _tv_setup_accepted(
     return grounded and not ccol.intersection_test(colliders, tv)
 
 
-def wall_tv_setup_rand(
+def tv_setup_wall_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
@@ -206,7 +206,7 @@ def _center_coffee_table_rand(
     rng: pf.RNG,
     center: np.ndarray,
 ) -> list[MeshResult]:
-    child = table.coffee_table_rand(rng)
+    child = table.table_coffee_rand(rng)
     child.mesh.item().location = (
         center[0] + pf.random.uniform(rng, -0.2, 0.2),
         center[1] + pf.random.uniform(rng, -0.2, 0.2),
@@ -232,7 +232,7 @@ def _throw_pillows_rand(rng: pf.RNG, sofa: SofaResult) -> list[pf.MeshObject]:
             side * 0.5 * math.cos(lean) + thickness * 0.5 * math.sin(lean) - sink,
         )
     )
-    pillow = cushion.throw_pillow_rand(
+    pillow = cushion.cushion_throw_pillow_rand(
         rng_pillow, size=pf.Vector((side, side, thickness))
     )
     pillows = instances_along_line(
@@ -244,7 +244,7 @@ def _throw_pillows_rand(rng: pf.RNG, sofa: SofaResult) -> list[pf.MeshObject]:
         (0.0, math.pi / 2 - lean, 0.0),
     )
     for p in pillows:
-        p.item().name = cushion.throw_pillow_rand.__name__
+        p.item().name = cushion.cushion_throw_pillow_rand.__name__
     return pillows
 
 
@@ -265,7 +265,7 @@ def _sofas_throw_pillows_rand(
     return pillows
 
 
-def centered_sofa_setup_rand(
+def sofa_setup_centered_rand(
     rng: pf.RNG,
     bbox_min: pf.Vector | None = None,
     bbox_max: pf.Vector | None = None,
@@ -294,7 +294,7 @@ def centered_sofa_setup_rand(
     return _sofas_around_rug_rand(rng_around, rug_objs, sides, [], colliders)
 
 
-def wall_anchored_sofa_setup_rand(
+def sofa_setup_wall_anchored_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject] | None = None,
     bbox_min: pf.Vector | None = None,
@@ -491,7 +491,7 @@ def _facing_coffee_table_rand(
     colliders: ccol.CollisionSet,
 ) -> list[MeshResult]:
     rng_table, rng_place = rng.spawn(2)
-    child = table.coffee_table_rand(rng_table)
+    child = table.table_coffee_rand(rng_table)
     child.mesh.item().location = (0.0, 0.0, floor_z + 0.01)
     placed = retry_place(
         rng_place,
@@ -532,7 +532,7 @@ def _facing_rug_rand(
     return kept
 
 
-def wall_sofa_setup_rand(
+def sofa_setup_wall_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject] | None = None,
     bbox_min: pf.Vector | None = None,

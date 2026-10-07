@@ -20,15 +20,15 @@ from .util import (
 )
 
 __all__ = [
-    "linear_pan_camera_rand",
-    "monocular_360_camera_rand",
-    "monocular_camera_in_bbox_rand",
-    "orbit_90_camera_rand",
+    "camera_linear_pan_rand",
+    "camera_monocular_360_rand",
+    "camera_monocular_in_bbox_rand",
+    "camera_orbit_90_rand",
 ]
 
 
 @pf.tracer.grammar
-def monocular_camera_in_bbox_rand(
+def camera_monocular_in_bbox_rand(
     rng: pf.RNG,
     objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
@@ -108,7 +108,7 @@ def _linear_pan_attempt(
 
 
 @pf.tracer.grammar
-def linear_pan_camera_rand(
+def camera_linear_pan_rand(
     rng: pf.RNG,
     objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
@@ -182,7 +182,7 @@ def linear_pan_camera_rand(
 
 
 @pf.tracer.grammar
-def monocular_360_camera_rand(
+def camera_monocular_360_rand(
     objects: list[pf.MeshObject],
     camera: pf.CameraObject | None = None,
     bbox: tuple[np.ndarray, np.ndarray] | None = None,
@@ -224,7 +224,7 @@ def monocular_360_camera_rand(
 
 
 @pf.tracer.grammar
-def orbit_90_camera_rand(
+def camera_orbit_90_rand(
     objects: list[pf.MeshObject],
     bbox: tuple[np.ndarray, np.ndarray] | None = None,
     frame_start: int = 0,
@@ -246,7 +246,7 @@ def orbit_90_camera_rand(
         center = ((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2)
         radius = 0.4 * min(hi[0] - lo[0], hi[1] - lo[1])
         height = min(1.5, 0.8 * (hi[2] - lo[2]))
-    return monocular_360_camera_rand(
+    return camera_monocular_360_rand(
         objects=objects,
         center=center,
         radius=radius,

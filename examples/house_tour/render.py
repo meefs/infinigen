@@ -22,7 +22,7 @@ logging.basicConfig(
 import procfunc as pf
 from procfunc.util.teardown import skip_teardown_on_exit
 
-from infinigen2.cameras import camera_cube_free_space_check, rrt_camera
+from infinigen2.cameras import camera_cube_free_space_check, camera_rrt
 from infinigen2.cameras.rrt import RRTPolicyError
 from infinigen2.exporters.render_cycles import render_cycles
 from infinigen2.exporters.util.format import ExportType, RenderPass
@@ -247,7 +247,7 @@ def _house_tour_camera_attempt(
     }
     point_accept_pred = partial(_point_at_camera_height, height_range=height_range)
     try:
-        camera = rrt_camera(
+        camera = camera_rrt(
             rrt_rng,
             colliders,
             house_objects,

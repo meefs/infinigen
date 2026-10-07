@@ -6,15 +6,15 @@ from infinigen2.shaders.composites import wood_planks
 from infinigen2.shaders.masks import scratches
 
 __all__ = [
+    "metal_scratched_brushed_preset",
+    "metal_scratched_dense_preset",
+    "metal_scratched_rand",
     "scratch_shader_rand",
-    "scratched_metal_rand",
-    "scratched_wood_rand",
-    "scratches_brushed_preset",
-    "scratches_deep_dirty_preset",
-    "scratches_dense_preset",
-    "scratches_light_varnish_preset",
     "scratches_overlay_rand",
-    "scratches_shallow_preset",
+    "wood_scratched_deep_dirty_preset",
+    "wood_scratched_light_varnish_preset",
+    "wood_scratched_rand",
+    "wood_scratched_shallow_preset",
 ]
 
 
@@ -94,7 +94,7 @@ def scratches_overlay_rand(
     return func(rng_layers_func, vector, material, scratch_shader, scale)
 
 
-def scratched_wood_rand(
+def wood_scratched_rand(
     rng: pf.RNG,
     vector: t.SocketOrVal[pf.Vector],
 ) -> pf.Material:
@@ -110,7 +110,7 @@ def scratched_wood_rand(
     return scratches_overlay_rand(rng_overlay, vector, material)
 
 
-def scratched_metal_rand(
+def metal_scratched_rand(
     rng: pf.RNG,
     vector: t.SocketOrVal[pf.Vector],
 ) -> pf.Material:
@@ -141,7 +141,7 @@ def _apply_scratch_mask(
     return pf.Material(surface=surface, displacement=base.displacement - carve)
 
 
-def scratches_brushed_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
+def metal_scratched_brushed_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     base = metal_brushed.metal_brushed(
         vector=vector,
         brush_type=3.0,
@@ -157,7 +157,7 @@ def scratches_brushed_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     return _apply_scratch_mask(mask, base, scratch_shader, 0.0)
 
 
-def scratches_dense_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
+def metal_scratched_dense_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     base = metal_brushed.metal_brushed(
         vector=vector,
         brush_type=3.0,
@@ -174,7 +174,9 @@ def scratches_dense_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     return _apply_scratch_mask(mask, base, scratch_shader, 0.0)
 
 
-def scratches_deep_dirty_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
+def wood_scratched_deep_dirty_preset(
+    vector: t.SocketOrVal[pf.Vector],
+) -> pf.Material:
     base = wood_grain.wood_grain_brown_preset(vector)
     mask = scratches.scratches_deep_dirty_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.diffuse_bsdf(
@@ -184,7 +186,9 @@ def scratches_deep_dirty_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material
     return _apply_scratch_mask(mask, base, scratch_shader, 0.002)
 
 
-def scratches_light_varnish_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
+def wood_scratched_light_varnish_preset(
+    vector: t.SocketOrVal[pf.Vector],
+) -> pf.Material:
     base = wood_grain.wood_grain_varnished_preset(vector)
     mask = scratches.scratches_light_varnish_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.diffuse_bsdf(
@@ -193,7 +197,7 @@ def scratches_light_varnish_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Mater
     return _apply_scratch_mask(mask, base, scratch_shader, 0.0005)
 
 
-def scratches_shallow_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
+def wood_scratched_shallow_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.Material:
     base = wood_grain.wood_grain_brown_preset(vector)
     mask = scratches.scratches_shallow_mask_preset(vector).mask
     scratch_shader = pf.nodes.shader.principled_bsdf(

@@ -15,11 +15,11 @@ from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instances
 from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.scenes.room.bathroom_setup import bathroom_sink_setup_rand
-from infinigen2.scenes.room.cocktail_table_setup import cocktail_table_setup_rand
+from infinigen2.scenes.room.cocktail_table_setup import table_cocktail_setup_rand
 from infinigen2.scenes.room.desk_setup import desk_setup_rand
-from infinigen2.scenes.room.dining_table_setup import dining_setup_rand
+from infinigen2.scenes.room.dining_table_setup import table_dining_with_chairs_rand
 from infinigen2.scenes.room.room import RoomResult, room_unfurnished_rand
-from infinigen2.scenes.room.sofa_setup import centered_sofa_setup_rand
+from infinigen2.scenes.room.sofa_setup import sofa_setup_centered_rand
 from infinigen2.scenes.setup_utils import (
     back_face_grounded,
     sofa_object_rand,
@@ -31,12 +31,12 @@ __all__ = [
     "SetupGridResult",
     "WallRowResult",
     "bookshelf_aisle_rows_rand",
-    "centered_sofa_grid_rand",
     "chair_banks_rand",
-    "cocktail_table_grid_rand",
     "desk_aisle_rows_rand",
     "desk_grid_rand",
-    "dining_table_grid_rand",
+    "grid_centered_sofa_rand",
+    "grid_cocktail_table_rand",
+    "grid_dining_table_rand",
     "indoor_space_rand",
     "seat_wall_row_rand",
     "setup_grid_in_region",
@@ -630,37 +630,37 @@ def sofa_grid_rand(
 
 
 @pf.tracer.grammar
-def dining_table_grid_rand(
+def grid_dining_table_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
 ) -> SetupGridResult:
     rng, rng_setup, rng_grid = rng.spawn(3)
-    unit = dining_setup_rand(rng_setup).all_objects
+    unit = table_dining_with_chairs_rand(rng_setup).all_objects
     gap = _group_gap_rand(rng)
     return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
 
 
 @pf.tracer.grammar
-def cocktail_table_grid_rand(
+def grid_cocktail_table_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
 ) -> SetupGridResult:
     rng, rng_setup, rng_grid = rng.spawn(3)
-    unit = cocktail_table_setup_rand(rng_setup).all_objects
+    unit = table_cocktail_setup_rand(rng_setup).all_objects
     gap = _group_gap_rand(rng)
     return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
 
 
 @pf.tracer.grammar
-def centered_sofa_grid_rand(
+def grid_centered_sofa_rand(
     rng: pf.RNG,
     room_dimensions: pf.Vector,
     colliders: ccol.CollisionSet,
 ) -> SetupGridResult:
     rng, rng_setup, rng_grid = rng.spawn(3)
-    unit = centered_sofa_setup_rand(rng_setup).all_objects
+    unit = sofa_setup_centered_rand(rng_setup).all_objects
     gap = _group_gap_rand(rng)
     return _plain_grid_rand(rng_grid, unit, gap, room_dimensions, colliders)
 
@@ -680,9 +680,9 @@ def _interior_attempt_rand(
             (chair_banks_rand, 2.0),
             (desk_grid_rand, 1.0),
             (sofa_grid_rand, 1.0),
-            (dining_table_grid_rand, 1.0),
-            (cocktail_table_grid_rand, 1.0),
-            (centered_sofa_grid_rand, 1.0),
+            (grid_dining_table_rand, 1.0),
+            (grid_cocktail_table_rand, 1.0),
+            (grid_centered_sofa_rand, 1.0),
         ],
     )
     grid = grid_func(rng_generate, room_dimensions, colliders)

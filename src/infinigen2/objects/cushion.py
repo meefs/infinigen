@@ -18,12 +18,12 @@ from infinigen2.util.curve import curve_to_mesh_with_uv
 
 __all__ = [
     "CushionResult",
-    "bed_pillow_rand",
-    "box_cushion_geometry",
-    "knife_edge_cushion_geometry",
+    "cushion_bed_pillow_rand",
+    "cushion_box_geometry",
+    "cushion_knife_edge_geometry",
+    "cushion_throw_pillow_rand",
     "optional_piping_radius_rand",
     "support_loop_offset",
-    "throw_pillow_rand",
 ]
 
 
@@ -96,7 +96,7 @@ def _seam_edges(
 
 
 @pf.nodes.node_function
-def box_cushion_geometry(
+def cushion_box_geometry(
     size: t.SocketOrVal[pf.Vector],
     material: t.SocketOrVal[pf.Material],
     piping_material: t.SocketOrVal[pf.Material],
@@ -165,7 +165,7 @@ def _bunch_to_edges(s: t.SocketOrVal[float]) -> pf.ProcNode[float]:
 
 
 @pf.nodes.node_function
-def knife_edge_cushion_geometry(
+def cushion_knife_edge_geometry(
     size: t.SocketOrVal[pf.Vector],
     material: t.SocketOrVal[pf.Material],
     piping_material: t.SocketOrVal[pf.Material],
@@ -261,7 +261,7 @@ def _knife_edge_pillow(
     if material is None:
         material = fabric_sturdy_rand(rng_fabric, pf.nodes.shader.coord().uv)
     corner_pinch = pf.random.uniform(rng, 0.02, 0.07)
-    geometry = knife_edge_cushion_geometry(
+    geometry = cushion_knife_edge_geometry(
         size=size,
         material=material,
         piping_material=material,
@@ -273,7 +273,7 @@ def _knife_edge_pillow(
     return _cushion_object(geometry)
 
 
-def throw_pillow_rand(
+def cushion_throw_pillow_rand(
     rng: pf.RNG,
     size: pf.Vector | None = None,
     piping_radius: float | None = None,
@@ -290,7 +290,7 @@ def throw_pillow_rand(
     return _knife_edge_pillow(rng_pillow, size, piping_radius, material, fullness)
 
 
-def bed_pillow_rand(
+def cushion_bed_pillow_rand(
     rng: pf.RNG,
     size: pf.Vector | None = None,
     fullness: float | None = None,

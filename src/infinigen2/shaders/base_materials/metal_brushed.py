@@ -13,11 +13,7 @@ from procfunc.nodes import types as nt
 __all__ = [
     "metal_any_color_rand",
     "metal_brushed",
-    "metal_brushed_linear",
     "metal_brushed_linear_rand",
-    "metal_brushed_linear_streaks",
-    "metal_brushed_radial",
-    "metal_brushed_radial_grooves",
     "metal_brushed_radial_rand",
 ]
 

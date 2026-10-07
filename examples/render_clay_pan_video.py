@@ -133,7 +133,7 @@ def main():
 
     with time_step(times, "linear_pan_camera"):
         gen_rng, rng = rng.spawn(2)
-        cameras = monocular.linear_pan_camera_rand(
+        cameras = monocular.camera_linear_pan_rand(
             rng=gen_rng,
             objects=objects,
             colliders=living.colliders,

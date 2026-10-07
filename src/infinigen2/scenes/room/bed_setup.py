@@ -27,8 +27,8 @@ from infinigen2.util.scene_cleanup import delete_object
 __all__ = [
     "BedSetupResult",
     "bed_dimensions_rand",
+    "bed_setup_multi_rand",
     "bed_setup_rand",
-    "multi_bed_setup_rand",
 ]
 
 
@@ -167,7 +167,7 @@ def _bed_pillows_rand(
     long_side = min(pf.random.uniform(rng, 0.66, 0.92), dimensions.y / count - gap)
     short_side = pf.random.uniform(rng, 0.48, 0.53)
     loft = pf.random.uniform(rng, 0.15, 0.22)
-    pillow = cushion.bed_pillow_rand(
+    pillow = cushion.cushion_bed_pillow_rand(
         rng_pillow, size=pf.Vector((short_side, long_side, loft))
     )
     x = -dimensions.x * 0.5 + short_side * 0.5 + 0.04
@@ -177,7 +177,7 @@ def _bed_pillows_rand(
         pillow.mesh, mattress, (x, -half_span, z), (x, half_span, z), count
     )
     for p in pillows:
-        p.item().name = cushion.bed_pillow_rand.__name__
+        p.item().name = cushion.cushion_bed_pillow_rand.__name__
     return pillows
 
 
@@ -260,7 +260,7 @@ def bed_setup_rand(
         raise RejectedScene("Bed collides at its selected placement")
     bed_mesh.item().name = "bed"
 
-    side_table = bedside_table.bedside_table_composite_rand(r_table).mesh
+    side_table = bedside_table.table_bedside_composite_rand(r_table).mesh
     table_candidates = []
     for (parent_side, child_side), r_gap in zip(
         [("left", "right"), ("right", "left")],
@@ -293,7 +293,7 @@ def bed_setup_rand(
 
     tmin, tmax = pf.ops.attr.bbox_min_max(side_table, global_coords=False)
     table_size = pf.Vector(tmax) - pf.Vector(tmin)
-    lamp_template = lamp.desk_lamp_rand(
+    lamp_template = lamp.lamp_desk_rand(
         r_lamp,
         base_radius=0.125 * min(table_size[0], table_size[1]),
     )
@@ -365,7 +365,7 @@ def bed_setup_rand(
     )
 
 
-def multi_bed_setup_rand(
+def bed_setup_multi_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
     bbox_min: pf.Vector,

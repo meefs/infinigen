@@ -13,14 +13,10 @@ from procfunc.nodes import types as t
 from infinigen2.shaders.util.coord import coord_warp
 
 __all__ = [
-    "SandstoneColorLayerResult",
-    "SandstoneDisplacementLayerResult",
-    "sandstone_color_layer",
-    "sandstone_displacement_layer",
-    "stone_grey_preset",
-    "stone_red_sandstone_preset",
+    "stone_smooth_grey_preset",
     "stone_smooth_rand",
-    "stone_volcanic_tuff_preset",
+    "stone_smooth_red_sandstone_preset",
+    "stone_smooth_volcanic_tuff_preset",
 ]
 
 
@@ -2266,7 +2262,7 @@ def stone_smooth_styles_rand(  # noqa: C901
 """
 
 
-def stone_grey_preset(vector: t.SocketOrVal[pf.Vector]):
+def stone_smooth_grey_preset(vector: t.SocketOrVal[pf.Vector]):
     sandstone_color_layer_result = sandstone_color_layer(
         vector=vector,
         base_color=pf.Color((0.029, 0.028, 0.025)),
@@ -2342,7 +2338,7 @@ def stone_grey_preset(vector: t.SocketOrVal[pf.Vector]):
     return pf.Material(surface=surface, displacement=displacement)
 
 
-def stone_volcanic_tuff_preset(vector: t.SocketOrVal[pf.Vector]):
+def stone_smooth_volcanic_tuff_preset(vector: t.SocketOrVal[pf.Vector]):
     sandstone_color_layer_result = sandstone_color_layer(
         vector=vector,
         base_color=pf.Color((0.029, 0.028, 0.025)),
@@ -2430,7 +2426,7 @@ def stone_volcanic_tuff_preset(vector: t.SocketOrVal[pf.Vector]):
     return pf.Material(surface=surface, displacement=displacement)
 
 
-def stone_red_sandstone_preset(vector: t.SocketOrVal[pf.Vector]):
+def stone_smooth_red_sandstone_preset(vector: t.SocketOrVal[pf.Vector]):
     sandstone_color_layer_result = sandstone_color_layer(
         vector=vector,
         base_color=pf.Color((0.236, 0.016, 0.0)),

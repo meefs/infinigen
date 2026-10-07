@@ -10,7 +10,7 @@ import numpy as np
 import procfunc as pf
 
 from infinigen2.objects import lamp, window
-from infinigen2.objects.ceiling_light import ceiling_light_rand
+from infinigen2.objects.ceiling_light import light_ceiling_rand
 from infinigen2.scenes.placement.distribute import (
     duplicates,
     propagate_modifiers_to_instances,
@@ -94,8 +94,8 @@ def ceiling_lamp_grid_rand(
     template_fn = pf.control.choice(
         rng,
         [
-            (ceiling_light_rand, 2.5),
-            (lamp.ceiling_shade_lamp_rand, 1.0),
+            (light_ceiling_rand, 2.5),
+            (lamp.lamp_ceiling_shade_rand, 1.0),
         ],
     )
     lamp_template = template_fn(rng, energy=energy)

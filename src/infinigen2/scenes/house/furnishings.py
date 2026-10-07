@@ -37,16 +37,16 @@ from infinigen2.scenes.room.decoration_objects import (
 from infinigen2.scenes.room.desk_setup import DeskSetupResult, desk_setup_rand
 from infinigen2.scenes.room.dining_table_setup import (
     DiningTableSetupResult,
-    dining_table_setup_rand,
+    table_dining_setup_rand,
 )
 from infinigen2.scenes.room.kitchen_setup import kitchen_setup_rand
 from infinigen2.scenes.room.room import decorate_room_small_objects_rand
 from infinigen2.scenes.room.sofa_setup import (
     SofaSetupResult,
-    centered_sofa_setup_rand,
     side_tables_rand,
-    wall_anchored_sofa_setup_rand,
-    wall_sofa_setup_rand,
+    sofa_setup_centered_rand,
+    sofa_setup_wall_anchored_rand,
+    sofa_setup_wall_rand,
 )
 from infinigen2.scenes.room.wall_storage_setup import (
     WallStorageSetupResult,
@@ -184,7 +184,7 @@ def _wall_sofa_setup(
     height: float,
     colliders: ccol.CollisionSet,
 ) -> SetupResult:
-    result = wall_sofa_setup_rand(rng, wall_planes=wall_planes, colliders=colliders)
+    result = sofa_setup_wall_rand(rng, wall_planes=wall_planes, colliders=colliders)
     return _furniture_setup(result, colliders, [])
 
 
@@ -195,7 +195,7 @@ def _wall_anchored_sofa_setup(
     height: float,
     colliders: ccol.CollisionSet,
 ) -> SetupResult:
-    result = wall_anchored_sofa_setup_rand(
+    result = sofa_setup_wall_anchored_rand(
         rng, wall_planes=wall_planes, colliders=colliders
     )
     return _furniture_setup(result, colliders, [])
@@ -209,7 +209,7 @@ def _centered_sofa_setup(
     colliders: ccol.CollisionSet,
 ) -> SetupResult:
     rng_setup, rng_side = rng.spawn(2)
-    result = centered_sofa_setup_rand(
+    result = sofa_setup_centered_rand(
         rng_setup,
         bbox_min=_bbox_min(region),
         bbox_max=_bbox_max(region, height),
@@ -242,7 +242,7 @@ def _dining_setup(
     rng_length, rng_setup = rng.spawn(2)
     area = region.area * pf.random.uniform(rng_length, 0.85, 1.15)
     table_length = min(max(area / 12.0, 1.2), 2.7)
-    result = dining_table_setup_rand(
+    result = table_dining_setup_rand(
         rng_setup,
         wall_planes=wall_planes,
         bbox_min=_bbox_min(region),

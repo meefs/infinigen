@@ -81,7 +81,6 @@ __all__ = [
     "paint_flaked_rand",
     "paint_patterned_rand",
     "paint_wall_rand",
-    "painted_wood_rand",
     "rug_material_rand",
     "skirt_material_rand",
     "table_top_material_rand",
@@ -89,6 +88,7 @@ __all__ = [
     "uv_maybe_rotate",
     "uv_maybe_rotate_90",
     "wall_material_rand",
+    "wood_painted_rand",
 ]
 
 
@@ -98,7 +98,7 @@ def terrain_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mat
     material_func = pf.control.choice(
         rng_choice,
         [
-            (cracked_ground.cracked_ground_rand, 1.0),
+            (cracked_ground.ground_cracked_rand, 1.0),
             (dirt.dirt_rand, 1.0),
             (granite.granite_rand, 1.0),
             (gravel_concrete.gravel_concrete_rand, 1.0),
@@ -120,7 +120,7 @@ def boulder_material_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Mat
     material_func = pf.control.choice(
         rng_choice,
         [
-            (cracked_ground.cracked_ground_rand, 0.75),
+            (cracked_ground.ground_cracked_rand, 0.75),
             (granite.granite_rand, 4.0),
             (gravel_concrete.gravel_concrete_rand, 1.5),
             (sandstone.sandstone_rand, 2.5),
@@ -182,7 +182,7 @@ def table_top_material_rand(rng: pf.RNG, vec) -> pf.Material:
             (lambda r, v, m: m, 3.0),
             (scratches_overlay_rand, 1.0),
             (splats_overlay_rand, 1.0),
-            # (paint_overlay.cracked_paint_overlay_rand, 0.5), # not realistic
+            # (paint_overlay.paint_cracked_overlay_rand, 0.5), # not realistic
         ],
     )
     return wear(rng_wear, vec, material)
@@ -292,7 +292,7 @@ def _furniture_material_func_rand(rng: pf.RNG) -> Callable[..., pf.Material]:
     )
 
 
-def painted_wood_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
+def wood_painted_rand(rng: pf.RNG, vector: pf.ProcNode[pf.Vector]) -> pf.Material:
     rng_color, rng_grain, rng_params = rng.spawn(3)
     color = paint.paint_color_rand(rng_color, saturation_power=3.0)
     grain_vector = pf.nodes.math.combine_xyz(x=vector.y, y=vector.x)
@@ -326,7 +326,7 @@ def cabinet_material_rand(rng: pf.RNG, vec: pf.ProcNode[pf.Vector]) -> pf.Materi
     material_func = pf.control.choice(
         rng_choice,
         [
-            (painted_wood_rand, 4.0),
+            (wood_painted_rand, 4.0),
             (wood_grain.wood_grain_rand, 2.5),
             (wood_planks.wood_planks_rand, 1.0),
             (plastic.plastic_grayscale_rand, 1.5),
@@ -356,7 +356,7 @@ def furniture_material_rand(rng: pf.RNG, vec) -> pf.Material:
             (lambda r, v, m: m, 3.0),
             (scratches_overlay_rand, 1.0),
             (splats_overlay_rand, 1.0),
-            (paint_overlay.cracked_paint_overlay_rand, 0.25),
+            (paint_overlay.paint_cracked_overlay_rand, 0.25),
         ],
     )
     return wear(rng_wear, vec, material)

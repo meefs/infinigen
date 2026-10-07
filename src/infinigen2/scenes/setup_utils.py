@@ -126,9 +126,9 @@ def side_table_object_rand(rng: pf.RNG) -> MeshResult:
     func = pf.control.choice(
         rng_choice,
         [
-            (table.side_table_rand, 1.0),
-            (table.circular_side_table_rand, 1.0),
-            (storage.storage_side_table_rand, 1.0),
+            (table.table_side_rand, 1.0),
+            (table.table_side_circular_rand, 1.0),
+            (storage.storage_table_side_rand, 1.0),
         ],
     )
     result = func(rng_asset)

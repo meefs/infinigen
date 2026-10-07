@@ -10,21 +10,21 @@ from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.room.dining_table_setup import (
     DiningSetupResult,
     DiningTableSetupResult,
-    dining_setup_rand,
+    table_dining_with_chairs_rand,
     table_wall_setup_rand,
 )
 
-__all__ = ["cocktail_table_setup_rand", "cocktail_table_wall_setup_rand"]
+__all__ = ["table_cocktail_setup_rand", "table_cocktail_setup_wall_rand"]
 
 
-def cocktail_table_setup_rand(rng: pf.RNG) -> DiningSetupResult:
+def table_cocktail_setup_rand(rng: pf.RNG) -> DiningSetupResult:
     """A cocktail table with height-matched tall chairs arranged around it."""
     rng_table, rng_setup = rng.spawn(2)
-    cocktail_table = table.cocktail_table_rand(rng_table).mesh
-    return dining_setup_rand(rng_setup, dining_table=cocktail_table)
+    cocktail_table = table.table_cocktail_rand(rng_table).mesh
+    return table_dining_with_chairs_rand(rng_setup, dining_table=cocktail_table)
 
 
-def cocktail_table_wall_setup_rand(
+def table_cocktail_setup_wall_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
     room_dimensions: pf.Vector,
@@ -33,5 +33,5 @@ def cocktail_table_wall_setup_rand(
     """A cocktail table with any side against a wall and tall chairs around it."""
     del room_dimensions
     rng_table, rng_setup = rng.spawn(2)
-    cocktail_table = table.cocktail_table_rand(rng_table)
+    cocktail_table = table.table_cocktail_rand(rng_table)
     return table_wall_setup_rand(rng_setup, cocktail_table, wall_planes, colliders)

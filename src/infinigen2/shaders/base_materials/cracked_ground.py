@@ -11,7 +11,7 @@ from procfunc.nodes import types as t
 
 __all__ = [
     "cracked_ground",
-    "cracked_ground_rand",
+    "ground_cracked_rand",
 ]
 
 
@@ -140,7 +140,7 @@ def cracked_ground(
     )
 
 
-def cracked_ground_rand(
+def ground_cracked_rand(
     rng: pf.RNG,
     vector: pf.ProcNode[pf.Vector],
     color: t.SocketOrVal[pf.Color] | None = None,

@@ -6,10 +6,10 @@ import procfunc as pf
 from infinigen2.objects import desk, storage, table
 from infinigen2.util.mesh import center_footprint
 
-__all__ = ["bedside_table_composite_rand"]
+__all__ = ["table_bedside_composite_rand"]
 
 
-def bedside_table_composite_rand(
+def table_bedside_composite_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
 ) -> table.TableResult:
@@ -27,7 +27,7 @@ def bedside_table_composite_rand(
         rng_style,
         [
             (storage.storage_composite_rand, 1.0),
-            (table.dining_table_rand, 1.0),
+            (table.table_dining_rand, 1.0),
             (desk.desk_with_top_storage_rand, 1.0),
         ],
     )

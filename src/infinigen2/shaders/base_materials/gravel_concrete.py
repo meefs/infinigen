@@ -11,16 +11,10 @@ from procfunc.nodes import types as t
 from infinigen2.shaders.util.coord import coord_warp
 
 __all__ = [
-    "GravelResult",
     "gravel_concrete_bumps_preset",
     "gravel_concrete_rand",
     "gravel_concrete_red_preset",
     "gravel_concrete_sharp_polished_preset",
-    "large_gravel",
-    "large_gravel_rand",
-    "random_gravel_concrete_rand",
-    "small_gravel",
-    "small_gravel_rand",
 ]
 
 
@@ -893,7 +887,7 @@ def large_gravel_rand(
     return large_gravel_result
 
 
-def random_gravel_concrete_rand(
+def gravel_concrete_rand(
     rng: pf.RNG,
     vector: t.SocketOrVal[pf.Vector],
 ) -> pf.Material:
@@ -917,22 +911,3 @@ def random_gravel_concrete_rand(
         surface=principled,
         displacement=displacement,
     )
-
-
-def gravel_concrete_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-) -> pf.Material:
-    # # TODO: replace with continously randomized version - consult / call the two _rand functions above
-
-    # func = pf.control.choice(
-    #     rng,
-    #     [
-    #         (gravel_concrete_bumps_preset, 1.0),
-    #         (gravel_concrete_red_preset, 1.0),
-    #         (gravel_concrete_sharp_polished_preset, 1.0),
-    #     ],
-    # )
-    # return func(vector=vector)
-
-    return random_gravel_concrete_rand(rng, vector)

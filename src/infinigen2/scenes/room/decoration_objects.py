@@ -701,7 +701,7 @@ def _sample_surface_collection(
         func = pf.control.choice(
             rng_choice,
             [
-                (lamp.desk_lamp_rand, 1.0),
+                (lamp.lamp_desk_rand, 1.0),
                 (plant_pot.plant_pot_small_rand, 1.0),
                 (vase.vase_rand, 1.0),
             ],
@@ -722,7 +722,7 @@ def _sample_floor_collection(
         func = pf.control.choice(
             rng_choice,
             [
-                (lamp.floor_lamp_rand, 1.0),
+                (lamp.lamp_floor_rand, 1.0),
                 (plant_pot.plant_pot_large_rand, 1.0),
             ],
         )

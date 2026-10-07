@@ -13,16 +13,9 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 __all__ = [
-    "random_base_color",
-    "random_brown_color",
-    "random_grayscale_color",
     "terrazzo_black_monocolor_rand",
     "terrazzo_black_multicolor_rand",
-    "terrazzo_monocolor",
-    "terrazzo_monocolor_node",
     "terrazzo_monocolor_rand",
-    "terrazzo_multicolor",
-    "terrazzo_multicolor_node",
     "terrazzo_multicolor_rand",
     "terrazzo_rand",
 ]

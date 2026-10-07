@@ -13,29 +13,13 @@ from procfunc.nodes.util.bpy_node_info import NodeDataType
 from infinigen2.shaders.util.coord import coord_warp, space_warp
 
 __all__ = [
-    "ColorOffsetResult",
-    "GrungeResult",
-    "GrungeVoronoiResult",
-    "LeatherCellResult",
-    "LeatherLinesResult",
-    "LeatherShaderResult",
-    "color_offset",
-    "grunge",
-    "grunge_voronoi",
     "leather_allcolor_color_rand",
     "leather_allcolor_rand",
     "leather_animal_preset",
-    "leather_animal_rand",
-    "leather_cell",
     "leather_furniture_patina_preset",
-    "leather_furniture_patina_rand",
     "leather_furniture_rough_preset",
-    "leather_furniture_rough_rand",
     "leather_handheld_preset",
-    "leather_handheld_rand",
-    "leather_lines",
     "leather_rand",
-    "leather_shader",
 ]
 
 # --- Node functions (verbatim from transpiler) ---
@@ -978,56 +962,6 @@ def _leather_color_rand(
     if value is None:
         value = pf.random.uniform(rng_val, 0.05, 0.26)
     return pf.color.hsv_color(hue=hue, saturation=saturation, value=value)
-
-
-def leather_animal_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.3, 0.67)
-    return leather_animal_preset(vector, color=base_color, roughness=roughness)
-
-
-def leather_furniture_patina_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.3, 0.6)
-    return leather_furniture_patina_preset(
-        vector, color=base_color, roughness=roughness
-    )
-
-
-def leather_furniture_rough_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.25, 0.5)
-    return leather_furniture_rough_preset(vector, color=base_color, roughness=roughness)
-
-
-def leather_handheld_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.25, 0.45)
-    return leather_handheld_preset(vector, color=base_color, roughness=roughness)
 
 
 def _leather_grain_rand(

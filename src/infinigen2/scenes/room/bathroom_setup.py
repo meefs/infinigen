@@ -262,7 +262,7 @@ def _no_bathtub_setup_rand(
 
 
 def _bathtub_wall_hardware_rand(rng: pf.RNG) -> list[MeshResult]:
-    return [bathroom_hardware.bathroom_hardware_rand(rng)]
+    return [bathroom_hardware.hardware_bathroom_rand(rng)]
 
 
 def _place_bathtub_composite(
@@ -557,7 +557,7 @@ def _bathroom_hardware_objects_rand(
     wall_colliders = ccol.collision_set(wall_planes)
     for i, rng_item in enumerate(rng_hardware.spawn(n)):
         rng_generate, rng_place = rng_item.spawn(2)
-        hardware = bathroom_hardware.bathroom_hardware_rand(rng_generate)
+        hardware = bathroom_hardware.hardware_bathroom_rand(rng_generate)
         placed = snap_wall_hardware_rand(
             rng_place, hardware, parents, wall_colliders, colliders
         )
@@ -1130,7 +1130,9 @@ def _bathroom_storage_rand(
     rng_choice, rng_storage = rng.spawn(2)
     storage_kind = pf.control.choice(rng_choice, [("composite", 1.0), ("cabinet", 1.0)])
     if storage_kind == "cabinet":
-        return storage.cabinet_with_door_rand(rng_storage, dimensions=dimensions)
+        return storage.storage_cabinet_with_door_rand(
+            rng_storage, dimensions=dimensions
+        )
     return storage.storage_composite_rand(rng_storage, dimensions=dimensions)
 
 

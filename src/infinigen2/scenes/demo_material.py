@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def _demo_sky() -> pf.World:
-    return sky_lighting.nishita_sky(
+    return sky_lighting.sky_nishita(
         sun_rotation_deg=260, sun_elevation_deg=30
     ).environment
 
@@ -314,7 +314,7 @@ def material_plane_orthographic(
 
     cam = _orthographic_camera_top_down(size=size)
     if environment is None:
-        environment = sky_lighting.nishita_sky().environment
+        environment = sky_lighting.sky_nishita().environment
 
     return DevSceneResult(environment=environment, all_objects=[obj], cameras=[cam])
 

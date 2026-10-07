@@ -13,9 +13,9 @@ from infinigen2.lighting import sky_lighting
 from infinigen2.objects import window
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.scenes.room.bathroom_setup import bathroom_setup_rand
-from infinigen2.scenes.room.bed_setup import bed_setup_rand, multi_bed_setup_rand
+from infinigen2.scenes.room.bed_setup import bed_setup_multi_rand, bed_setup_rand
 from infinigen2.scenes.room.ceiling_features import ceiling_feature_rand
-from infinigen2.scenes.room.cocktail_table_setup import cocktail_table_wall_setup_rand
+from infinigen2.scenes.room.cocktail_table_setup import table_cocktail_setup_wall_rand
 from infinigen2.scenes.room.decoration_objects import (
     DecorationObjectsResult,
     decorate_floor_objects_rand,
@@ -28,8 +28,8 @@ from infinigen2.scenes.room.decoration_objects import (
 from infinigen2.scenes.room.desk_setup import desk_setup_rand
 from infinigen2.scenes.room.dining_table_setup import (
     DiningTableSetupResult,
-    dining_table_setup_rand,
-    dining_table_wall_setup_rand,
+    table_dining_setup_rand,
+    table_dining_setup_wall_rand,
 )
 from infinigen2.scenes.room.kitchen_setup import kitchen_setup_rand
 from infinigen2.scenes.room.room_shape import (
@@ -38,9 +38,9 @@ from infinigen2.scenes.room.room_shape import (
 )
 from infinigen2.scenes.room.skirting import skirting_rand
 from infinigen2.scenes.room.sofa_setup import (
-    centered_sofa_setup_rand,
-    wall_sofa_setup_rand,
-    wall_tv_setup_rand,
+    sofa_setup_centered_rand,
+    sofa_setup_wall_rand,
+    tv_setup_wall_rand,
 )
 from infinigen2.scenes.room.wall_base import (
     ROOM_SUBSURF_LEVELS,
@@ -69,15 +69,14 @@ from infinigen2.util.scene_cleanup import delete_object
 __all__ = [
     "RoomResult",
     "decorate_room_small_objects_rand",
-    "livingroom_rand",
     "room_bathroom_rand",
     "room_bedroom_rand",
     "room_diningroom_rand",
     "room_kitchen_rand",
     "room_livingroom_rand",
+    "room_rand",
     "room_unfurnished_rand",
     "room_walls_rand",
-    "room_rand",
     "wall_arrangement_rand",
 ]
 
@@ -415,7 +414,7 @@ def room_unfurnished_rand(
     skirting = skirting_rand(rng_skirting, walls=walls.wall_planes + [shape.walls])
     for wall_plane in walls.wall_planes:
         overlap_wall_plane_edges(wall_plane, ROOM_WALL_THICKNESS)
-    sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
+    sky = sky_lighting.sky_hosek_wilkie_with_sun_lamp_rand(rng_sky)
 
     structure = (
         walls.all_objects + [shape.floor, ceiling.ceiling] + ceiling.light_meshes
@@ -595,7 +594,7 @@ def room_livingroom_rand(
         rng_sofa_choice,
         [
             (
-                lambda sofa_rng: wall_sofa_setup_rand(
+                lambda sofa_rng: sofa_setup_wall_rand(
                     sofa_rng,
                     wall_planes=room.wall_planes,
                     bbox_min=pf.Vector((0.0, 0.0, 0.0)),
@@ -604,7 +603,7 @@ def room_livingroom_rand(
                 3.0,
             ),
             (
-                lambda sofa_rng: centered_sofa_setup_rand(
+                lambda sofa_rng: sofa_setup_centered_rand(
                     sofa_rng,
                     bbox_min=pf.Vector((0.0, 0.0, 0.0)),
                     bbox_max=dimensions,
@@ -617,7 +616,7 @@ def room_livingroom_rand(
     sofa_setup = sofa_func(rng_sofa_setup)
     name_objects([result.mesh for result in sofa_setup.sofas], "sofa")
     colliders = _with_objects(room.colliders, sofa_setup.all_objects)
-    tv_setups = wall_tv_setup_rand(
+    tv_setups = tv_setup_wall_rand(
         rng_tv, wall_planes=room.wall_planes, colliders=colliders
     )
     tv_objects = [obj for setup in tv_setups for obj in setup.all_objects]
@@ -737,7 +736,7 @@ def room_diningroom_rand(
         frame_end=frame_end,
     )
 
-    dining_setup = dining_table_setup_rand(
+    dining_setup = table_dining_setup_rand(
         rng_dining,
         wall_planes=room.wall_planes,
         bbox_min=pf.Vector((0.0, 0.0, 0.0)),
@@ -839,7 +838,7 @@ def room_bedroom_rand(
         ]
 
     def multi_bed():
-        return multi_bed_setup_rand(
+        return bed_setup_multi_rand(
             rng_bed_setup,
             wall_planes=room.wall_planes,
             bbox_min=pf.Vector((0.0, 0.0, 0.0)),
@@ -861,7 +860,7 @@ def room_bedroom_rand(
         return None
 
     def wall_sofa():
-        return wall_sofa_setup_rand(
+        return sofa_setup_wall_rand(
             rng_sofa_setup,
             wall_planes=room.wall_planes,
             bbox_min=pf.Vector((0.0, 0.0, 0.0)),
@@ -890,7 +889,7 @@ def room_bedroom_rand(
         return []
 
     def wall_tv():
-        return wall_tv_setup_rand(
+        return tv_setup_wall_rand(
             rng_tv_setup, wall_planes=room.wall_planes, colliders=colliders
         )
 
@@ -1157,8 +1156,8 @@ def room_kitchen_rand(
     table_fn, label = pf.control.choice(
         rng_table_choice,
         [
-            ((dining_table_wall_setup_rand, "dining"), 0.6),
-            ((cocktail_table_wall_setup_rand, "cocktail"), 0.2),
+            ((table_dining_setup_wall_rand, "dining"), 0.6),
+            ((table_cocktail_setup_wall_rand, "cocktail"), 0.2),
             (
                 (lambda *_: DiningTableSetupResult([], [], [], [], [], []), "dining"),
                 0.2,
@@ -1235,9 +1234,6 @@ def room_kitchen_rand(
         wall_planes=room.wall_planes,
         plain_wall_planes=room.plain_wall_planes,
     )
-
-
-livingroom_rand = room_livingroom_rand
 
 
 @pf.tracer.grammar

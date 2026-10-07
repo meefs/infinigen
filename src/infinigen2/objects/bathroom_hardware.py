@@ -17,8 +17,8 @@ from infinigen2.util import curve, mesh
 
 __all__ = [
     "BathroomHardwareResult",
-    "bathroom_hardware_rand",
     "hardware_bar",
+    "hardware_bathroom_rand",
     "hardware_holder",
     "hardware_hook",
     "hardware_ring",
@@ -275,7 +275,7 @@ def hardware_ring(
     return _result(material, geometry)
 
 
-def bathroom_hardware_rand(  # noqa: C901
+def hardware_bathroom_rand(  # noqa: C901
     rng: pf.RNG,
     material: pf.Material | None = None,
     attachment_radius: float | None = None,

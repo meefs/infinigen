@@ -8,7 +8,7 @@ from typing import NamedTuple
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import chair, storage, table
+from infinigen2.objects import chair, furniture_bases, storage, table
 from infinigen2.shaders.composites import fabric_wrinkled
 from infinigen2.shaders.functionality_lists import (
     fabric_general_rand,
@@ -17,7 +17,7 @@ from infinigen2.shaders.functionality_lists import (
 )
 from infinigen2.util import mesh
 
-__all__ = ["BedResult", "bed", "bed_rand", "mattress_rand"]
+__all__ = ["BedResult", "bed", "bed_mattress_rand", "bed_rand"]
 
 
 class BedResult(NamedTuple):
@@ -142,14 +142,14 @@ def _bed_base_rand(
             [
                 (
                     partial(
-                        table.base_straight_rand,
+                        furniture_bases.base_straight_rand,
                         dimensions=straight_dimensions,
                     ),
                     1.0,
                 ),
                 (
                     partial(
-                        table.base_square_rand,
+                        furniture_bases.base_square_rand,
                         dimensions=square_dimensions,
                     ),
                     1.0,
@@ -200,7 +200,7 @@ def _bedding_rand(rng: pf.RNG, vec: t.SocketOrVal[pf.Vector]) -> pf.Material:
     return wrinkles_func(rng_wrinkles, vec, material)
 
 
-def mattress_rand(
+def bed_mattress_rand(
     rng: pf.RNG,
     dimensions: pf.Vector,
     center_z: float,
@@ -345,7 +345,7 @@ def bed_rand(rng: pf.RNG, dimensions: pf.Vector | None = None) -> BedResult:
         r_foot_board,
         pf.Vector((0.05, dimensions.y + 0.08, 0.10 + dimensions.z * 0.75)),
     )
-    mattress = mattress_rand(r_mattress, dimensions, 0.05 + dimensions.z * 0.5)
+    mattress = bed_mattress_rand(r_mattress, dimensions, 0.05 + dimensions.z * 0.5)
     return bed(
         base,
         head,

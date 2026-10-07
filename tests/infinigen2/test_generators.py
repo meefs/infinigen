@@ -151,13 +151,13 @@ _OBJECT_FUNCS = pf.util.manifest.filter_manifest(
 
 _PRIMITIVES_TRACE_EXCLUDES = {
     "infinigen2.objects.bed.bed_rand",
-    "infinigen2.objects.bedside_table.bedside_table_composite_rand",
+    "infinigen2.objects.bedside_table.table_bedside_composite_rand",
     "infinigen2.objects.chair.chair_back_rand",
     "infinigen2.objects.desk.desk_rand",
-    "infinigen2.objects.table.cocktail_table_rand",
-    "infinigen2.objects.table.coffee_table_rand",
-    "infinigen2.objects.table.dining_table_rand",
-    "infinigen2.objects.table.side_table_rand",
+    "infinigen2.objects.table.table_cocktail_rand",
+    "infinigen2.objects.table.table_coffee_rand",
+    "infinigen2.objects.table.table_dining_rand",
+    "infinigen2.objects.table.table_side_rand",
 }
 _PRIMITIVES_TRACE_FUNCS = _OBJECT_FUNCS[
     ~_OBJECT_FUNCS["name"].isin(_PRIMITIVES_TRACE_EXCLUDES)

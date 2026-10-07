@@ -574,6 +574,11 @@
             min-width: 0;
         }
 
+        .source-asset-name {
+            font-weight: bold;
+            padding-bottom: 4px;
+        }
+
         body[data-mode="toggle"] .header-row {
             display: block;
             padding: 8px;
@@ -705,7 +710,7 @@
                     </label>
                 </div>
                 <div class="asset-filter-grid" id="asset-filter-grid">
-                    {% for row in rows %}
+                    {% for row in rows|sort(attribute="asset", case_sensitive=false) %}
                     <label class="asset-checkbox-wrapper"
                            data-asset="{{ row.asset }}"
                            data-asset-type="{{ row.asset_type }}"
@@ -736,6 +741,7 @@
             <div class="version-layers">
             {% for obj in row.objects %}
             <div class="version-layer {% if loop.index0 == 0 %}active{% endif %}" data-version="{{ obj.version }}">
+                <div class="source-asset-name">{{ obj.source_asset or "Not rendered" }}</div>
                 <div class="object-metrics">Render metrics{{ metrics_inline(obj.metrics) }}</div>
                 {{ sections(obj) }}
             </div>

@@ -155,7 +155,7 @@ def build_scene(
     objects += floating.all_objects
 
     with time_step(times, "floating_lights"):
-        light_result = floating_objects.floating_lights_rand(
+        light_result = floating_objects.lights_floating_rand(
             rng=rngs[5],
             colliders=floating.colliders,
             bbox=room_bbox,

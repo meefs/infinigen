@@ -383,7 +383,7 @@ _CATEGORY_ARCHIVE = {
     "Object": ("object", "demo-cycles", "Camera/0000.png"),
     "Scene": ("scene", "demo-cycles", "Camera/0000.png"),
     "Environment": ("environment", "monkey-cycles", "Camera/0000.png"),
-    "Cameras": ("camera", "livingroom_rand-workbench", "image_Camera.mp4"),
+    "Cameras": ("camera", "room_livingroom_rand-workbench", "image_Camera.mp4"),
 }
 
 
@@ -516,6 +516,27 @@ def _clean_namedtuple(app, what, name, obj, options, lines):  # noqa: ARG001
     auto = f"{obj.__name__}({', '.join(obj._fields)})"
     if lines and lines[0].strip() == auto:
         del lines[:]
+    annotations = getattr(obj, "__annotations__", {})
+    fields = [
+        f"``{f}``: {_short_type(annotations[f])}" if f in annotations else f"``{f}``"
+        for f in obj._fields
+    ]
+    lines += ["", "Fields: " + "; ".join(fields)]
+
+
+def _short_type(ann: object) -> str:
+    try:
+        text = stringify_annotation(ann, "smart")
+    except Exception:
+        text = getattr(ann, "__name__", None) or str(ann)
+    leaf = re.sub(r"[\w.]*\.(\w+)", r"\1", text.lstrip("~"))
+    return f"``{leaf}``"
+
+
+def _skip_namedtuple_fields(app, what, name, obj, skip, options):  # noqa: ARG001
+    if type(obj).__name__ == "_tuplegetter":
+        return True
+    return None
 
 
 _LONG_FLOAT = re.compile(r"-?\d+\.\d{5,}")
@@ -1138,20 +1159,22 @@ def _run_apidoc(_app):
 _orig_sort_members = ModuleDocumenter.sort_members
 
 
-def _member_rank(entry) -> int:
+def _member_rank(entry) -> tuple[int, str]:
     documenter = entry[0]
-    if getattr(documenter, "objtype", "") == "class":
-        return 4
     fn = getattr(documenter, "fullname", "") or getattr(documenter, "name", "")
     fn = fn.replace("::", ".")
     short = fn.rsplit(".", 1)[-1]
-    if short.endswith("_rand"):
-        return 0
-    if short.endswith("_presets"):
-        return 2
-    if short.endswith("_preset"):
-        return 3
-    return 1
+    if getattr(documenter, "objtype", "") == "class":
+        rank = 4
+    elif short.endswith("_rand"):
+        rank = 0
+    elif short.endswith("_presets"):
+        rank = 2
+    elif short.endswith("_preset"):
+        rank = 3
+    else:
+        rank = 1
+    return rank, short.casefold()
 
 
 def _sort_members(self, documenters, order):
@@ -1294,6 +1317,7 @@ def setup(app):
     app.connect("autodoc-process-docstring", _inject_images)
     app.connect("autodoc-process-docstring", _inject_preset_image)
     app.connect("autodoc-process-docstring", _clean_namedtuple)
+    app.connect("autodoc-skip-member", _skip_namedtuple_fields)
     app.connect("autodoc-process-docstring", _param_defaults)
     app.connect("autodoc-process-signature", _shorten_signature)
     app.connect("autodoc-skip-member", _skip_imported)

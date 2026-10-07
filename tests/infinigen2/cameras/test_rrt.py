@@ -12,7 +12,7 @@ def test_rrt_camera_accepts_explicit_start_location() -> None:
     bounds = pf.ops.primitives.mesh_cube(size=4.0)
     start = np.asarray((0.5, -0.25, 0.75))
 
-    camera = rrt.rrt_camera(
+    camera = rrt.camera_rrt(
         np.random.default_rng(0),
         ccol.collision_set([]),
         [bounds],
@@ -31,7 +31,7 @@ def test_rrt_camera_retries_goal_location_sampler() -> None:
     def sample_goal(_rng: pf.RNG) -> np.ndarray:
         return next(candidates)
 
-    camera = rrt.rrt_camera(
+    camera = rrt.camera_rrt(
         np.random.default_rng(0),
         ccol.collision_set([]),
         [bounds],
@@ -49,7 +49,7 @@ def test_rrt_camera_stretches_required_goals_to_frame_end() -> None:
     bounds = pf.ops.primitives.mesh_cube(size=4.0)
     goal = np.asarray((1.0, 0.0, 0.0))
 
-    camera = rrt.rrt_camera(
+    camera = rrt.camera_rrt(
         np.random.default_rng(0),
         ccol.collision_set([]),
         [bounds],

@@ -162,7 +162,7 @@ def _handle_rand(rng: pf.RNG) -> pf.MeshObject:
     rng_choice, rng_handle = rng.spawn(2)
     handle_fn = pf.control.choice(
         rng_choice,
-        [(handles.bar_pull_handle_rand, 3.0), (handles.knob_handle_rand, 1.0)],
+        [(handles.handle_bar_pull_rand, 3.0), (handles.handle_knob_rand, 1.0)],
     )
     return handle_fn(rng_handle).mesh
 
@@ -837,7 +837,7 @@ def _arrange_stools(
     -`overhang`, along its `length`."""
     rng_dims, rng_chair, rng_params = rng.spawn(3)
     seat = height - pf.random.uniform(rng_dims, 0.25, 0.32)
-    dimensions = chair.dining_chair_dimensions_rand(rng_dims, seat_elevation=seat)
+    dimensions = chair.chair_dining_dimensions_rand(rng_dims, seat_elevation=seat)
     stool = chair.chair_rand(rng_chair, dimensions=dimensions).mesh
     collection = pf.types.Collection([stool], name="kitchen_stool")
     stool_geo = pf.nodes.geo.collection_info(collection, separate_children=True)
@@ -994,7 +994,7 @@ def _hardware_rand(
     placed = []
     for r in rng_items.spawn(pf.random.randint(rng_count, 0, 5)):
         rng_hardware, rng_place = r.spawn(2)
-        hardware = bathroom_hardware.bathroom_hardware_rand(
+        hardware = bathroom_hardware.hardware_bathroom_rand(
             rng_hardware, material=material
         )
         grounded = lambda mesh: back_face_grounded(mesh, targets, margin=0.003)  # noqa: E731
@@ -1102,7 +1102,7 @@ def kitchen_setup_rand(
     upper_modules = _modules_rand(
         rng_upper,
         n_upper,
-        [(storage.cabinet_with_door_rand, 3.0), (_upper_shelf_rand, 2.0)],
+        [(storage.storage_cabinet_with_door_rand, 3.0), (_upper_shelf_rand, 2.0)],
         upper_dims,
         cabinet_material,
         handle,

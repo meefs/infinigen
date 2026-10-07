@@ -37,7 +37,7 @@ def stereo_accept_pred(
 ) -> AcceptPred:
     """Wrap a left-camera accept predicate so the baseline-offset right camera
     is collision-validated too. Pass to any monocular camera placement (e.g.
-    ``random_walk_camera``) so both eyes are checked at every pose, then realize
+    ``camera_random_walk``) so both eyes are checked at every pose, then realize
     the right camera with :func:`attach_stereo_right`."""
     left_pred = accept_pred or camera_cube_free_space_check
 

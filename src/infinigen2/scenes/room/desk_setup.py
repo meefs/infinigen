@@ -136,7 +136,7 @@ def desk_setup_rand(
     rng_chair_choice, rng_chair_gen = rng_chair.spawn(2)
     chair_func = pf.control.choice(
         rng_chair_choice,
-        [(chair.office_chair_rand, 2.0), (chair.chair_rand, 1.0)],
+        [(chair.chair_office_rand, 2.0), (chair.chair_rand, 1.0)],
     )
     chair_result = chair_func(rng_chair_gen)
     chair_result.mesh.item().name = "desk_chair"

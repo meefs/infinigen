@@ -54,7 +54,7 @@ def object_demo(
         )
 
     if environment is None:
-        environment = sky_lighting.nishita_sky(
+        environment = sky_lighting.sky_nishita(
             sun_rotation_deg=200,
             sun_elevation_deg=30,
         ).environment

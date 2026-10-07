@@ -7,11 +7,11 @@ import numpy as np
 import procfunc as pf
 import pytest
 
-from infinigen2.objects import table
+from infinigen2.objects import furniture_bases, table
 
 
 @pytest.mark.parametrize(
-    "generator", [table.base_straight_rand, table.base_square_rand]
+    "generator", [furniture_bases.base_straight_rand, furniture_bases.base_square_rand]
 )
 def test_base_choice_uses_unsampled_rng(
     monkeypatch: pytest.MonkeyPatch,

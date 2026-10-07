@@ -14,7 +14,7 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 from infinigen2.objects import cushion
-from infinigen2.objects.table import base_square_rand, base_straight_rand
+from infinigen2.objects.furniture_bases import base_square_rand, base_straight_rand
 from infinigen2.shaders.functionality_lists import (
     decorative_material_rand,
     fabric_sturdy_rand,
@@ -244,7 +244,7 @@ def _sofa_geometry(
         y=cushion_width,
         z=backrest_width,
     )
-    back_cushion = cushion.box_cushion_geometry(
+    back_cushion = cushion.cushion_box_geometry(
         size=back_cushion_dimensions,
         material=fabric_material,
         piping_material=fabric_material,
@@ -274,7 +274,7 @@ def _sofa_geometry(
     )
     back_cushions = pf.nodes.geo.realize_instances(back_cushions)
 
-    seat_cushion = cushion.box_cushion_geometry(
+    seat_cushion = cushion.cushion_box_geometry(
         size=seat_cushion_dimensions * (1.0, 1.03, 1.0),
         material=fabric_material,
         piping_material=fabric_material,
@@ -618,7 +618,8 @@ def sofa_with_base_rand(
     if base_material is None:
         base_material = decorative_material_rand(rng_mat, pf.nodes.shader.coord().uv)
     base_fn = pf.control.choice(
-        rng_base_sel, [(base_straight_rand, 2.0), (base_square_rand, 1.0)]
+        rng_base_sel,
+        [(base_straight_rand, 2.0), (base_square_rand, 1.0)],
     )
     base = base_fn(
         rng_base,

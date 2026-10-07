@@ -15,16 +15,11 @@ from procfunc.nodes import types as t
 from infinigen2.shaders.util.coord import coord_warp
 
 __all__ = [
-    "WoodGrainGeneratorResult",
-    "WoodShaderResult",
-    "wood_color_rand",
     "wood_grain_blonde_preset",
     "wood_grain_brown_preset",
     "wood_grain_deck_preset",
     "wood_grain_flaky_preset",
     "wood_grain_flaky_rand",
-    "wood_grain_generator",
-    "wood_grain_generator_rand",
     "wood_grain_rand",
     "wood_grain_rings_dark_preset",
     "wood_grain_rings_soft_preset",
@@ -32,8 +27,6 @@ __all__ = [
     "wood_grain_solid_preset",
     "wood_grain_stained_preset",
     "wood_grain_varnished_preset",
-    "wood_shader",
-    "wood_shader_rand",
 ]
 
 

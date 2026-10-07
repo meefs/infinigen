@@ -6,9 +6,7 @@
 import procfunc as pf
 from procfunc.nodes import types as t
 
-__all__ = [
-    "lamp_bulb_nonemissive",
-]
+__all__ = []
 
 
 @pf.nodes.node_function

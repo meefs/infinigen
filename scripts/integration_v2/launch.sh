@@ -251,7 +251,7 @@ if grep -Fxq fabric_patterned_rand <<< "$MATERIALS"; then
 fi
 
 # CAMERA TRAJECTORIES VISUAL CHECK (48-frame workbench mp4 per camera generator, 3 seeds)
-CAM_SCENE=${CAM_SCENE:-livingroom_rand}
+CAM_SCENE=${CAM_SCENE:-room_livingroom_rand}
 for i in {0..2}; do
     echo "$CAMERAS" | xargs $XARGS "${CAM_RUNNER_ARGS[@]}" \
         --output $OUTPUT_PATH/camera-{}-$CAM_SCENE-workbench-traj$i \

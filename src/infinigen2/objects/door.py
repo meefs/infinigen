@@ -15,11 +15,11 @@ from infinigen2.util.mesh import metric_box_uv
 
 __all__ = [
     "DoorResult",
+    "door_body",
+    "door_body_rand",
     "door_composite_rand",
     "door_double_rand",
     "door_glass_from_profile_rand",
-    "door_body",
-    "door_body_rand",
     "door_with_handle",
     "door_with_handle_rand",
 ]
@@ -191,7 +191,7 @@ def door_with_handle(
     door = door_body(
         dimensions=dimensions, frame_material=material, panel_material=material
     ).mesh
-    handle = handles.lever_handle().mesh
+    handle = handles.handle_lever().mesh
     pf.ops.object.set_transform(
         handle,
         location=(dimensions.x, dimensions.y - 0.06, dimensions.z * 0.46),

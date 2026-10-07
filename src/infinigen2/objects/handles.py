@@ -27,15 +27,15 @@ _KNOB_RIM_CREASE = 0.5
 
 __all__ = [
     "HandleResult",
-    "bar_pull_handle",
-    "bar_pull_handle_rand",
-    "curved_pull_handle",
-    "curved_pull_handle_rand",
+    "handle_bar_pull",
+    "handle_bar_pull_rand",
+    "handle_curved_pull",
+    "handle_curved_pull_rand",
+    "handle_knob",
+    "handle_knob_rand",
+    "handle_lever",
+    "handle_lever_rand",
     "handle_rand",
-    "knob_handle",
-    "knob_handle_rand",
-    "lever_handle",
-    "lever_handle_rand",
 ]
 
 
@@ -118,7 +118,7 @@ def _uv_sphere_with_uv(
 
 
 @pf.nodes.node_function
-def handle_rose(
+def handle_part_rose(
     rose_height: t.SocketOrVal[float] = 0.06,
     rose_radius: t.SocketOrVal[float] = 0.01,
     rose_depth: t.SocketOrVal[float] = 0.01,
@@ -130,7 +130,7 @@ def handle_rose(
 
 
 @pf.nodes.node_function
-def handle_lever(
+def handle_part_lever(
     stub_height: t.SocketOrVal[float] = 0.012,
     stub_radius: t.SocketOrVal[float] = 0.03,
     stub_depth: t.SocketOrVal[float] = 0.006,
@@ -167,7 +167,7 @@ def handle_lever(
 
 
 @pf.nodes.node_function
-def handle_lock(
+def handle_part_lock(
     value: t.SocketOrVal[float] = 0.012,
     turn_lock: t.SocketOrVal[bool] = False,
     button_depth: t.SocketOrVal[float] = 0.007,
@@ -197,7 +197,7 @@ def handle_lock(
 
 
 @pf.nodes.node_function
-def _lever_handle_geometry(
+def _handle_lever_geometry(
     rose_height: t.SocketOrVal[float] = 0.06,
     rose_radius: t.SocketOrVal[float] = 0.01,
     rose_depth: t.SocketOrVal[float] = 0.01,
@@ -211,10 +211,10 @@ def _lever_handle_geometry(
     turn_lock: t.SocketOrVal[bool] = True,
     has_lock: t.SocketOrVal[bool] = True,
 ) -> pf.ProcNode[pf.MeshObject]:
-    rose = handle_rose(
+    rose = handle_part_rose(
         rose_height=rose_height, rose_radius=rose_radius, rose_depth=rose_depth
     )
-    lever = handle_lever(
+    lever = handle_part_lever(
         stub_height=stub_height,
         stub_radius=stub_depth,
         stub_depth=stub_radius,
@@ -226,7 +226,7 @@ def _lever_handle_geometry(
     )
     lever_and_rose = pf.nodes.geo.join_geometry([rose, lever])
 
-    lock = handle_lock(
+    lock = handle_part_lock(
         value=stub_height,
         turn_lock=turn_lock,
         button_depth=button_depth,
@@ -252,7 +252,7 @@ def _lever_handle_geometry(
 
 
 @pf.nodes.node_function
-def _knob_handle_geometry(
+def _handle_knob_geometry(
     base_radius: t.SocketOrVal[float] = 0.016,
     base_depth: t.SocketOrVal[float] = 0.004,
     stem_radius: t.SocketOrVal[float] = 0.005,
@@ -295,7 +295,7 @@ def _standoff_post(
 
 
 @pf.nodes.node_function
-def _bar_pull_handle_geometry(
+def _handle_bar_pull_geometry(
     grip_length: t.SocketOrVal[float] = 0.16,
     grip_radius: t.SocketOrVal[float] = 0.008,
     standoff_length: t.SocketOrVal[float] = 0.035,
@@ -313,7 +313,7 @@ def _bar_pull_handle_geometry(
 
 
 @pf.nodes.node_function
-def _curved_pull_handle_geometry(
+def _handle_curved_pull_geometry(
     arc_radius: t.SocketOrVal[float] = 0.05,
     profile_radius: t.SocketOrVal[float] = 0.01,
     span_scale: t.SocketOrVal[float] = 2.0,
@@ -354,20 +354,20 @@ def _finish(
     return HandleResult(mesh=obj)
 
 
-def lever_handle(material: pf.Material | None = None) -> HandleResult:
+def handle_lever(material: pf.Material | None = None) -> HandleResult:
     if material is None:
         material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-    geo = _lever_handle_geometry()
+    geo = _handle_lever_geometry()
     return _finish(geo, material)
 
 
-def lever_handle_rand(rng: pf.RNG, material: pf.Material | None = None) -> HandleResult:
+def handle_lever_rand(rng: pf.RNG, material: pf.Material | None = None) -> HandleResult:
     rng, rng_mat = rng.spawn(2)
     rose_height = pf.random.uniform(rng, 0.05, 0.1)
     rose_depth = pf.random.uniform(rng, 0.008, 0.02)
     stub_height = pf.random.uniform(rng, 0.008, 0.016)
     stub_radius = pf.random.uniform(rng, 0.0, 0.01)
-    geo = _lever_handle_geometry(
+    geo = _handle_lever_geometry(
         rose_height=rose_height,
         rose_radius=pf.random.uniform(rng, 0.0, rose_height / 2),
         rose_depth=rose_depth,
@@ -386,18 +386,18 @@ def lever_handle_rand(rng: pf.RNG, material: pf.Material | None = None) -> Handl
     return _finish(geo, material)
 
 
-def knob_handle(material: pf.Material | None = None) -> HandleResult:
+def handle_knob(material: pf.Material | None = None) -> HandleResult:
     if material is None:
         material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-    geo = _knob_handle_geometry()
+    geo = _handle_knob_geometry()
     return _finish(geo, material, crease_value=_KNOB_RIM_CREASE)
 
 
-def knob_handle_rand(rng: pf.RNG, material: pf.Material | None = None) -> HandleResult:
+def handle_knob_rand(rng: pf.RNG, material: pf.Material | None = None) -> HandleResult:
     rng, rng_mat = rng.spawn(2)
     stem_radius = pf.random.uniform(rng, 0.004, 0.007)
     head_radius = pf.random.uniform(rng, stem_radius * 1.8, 0.018)
-    geo = _knob_handle_geometry(
+    geo = _handle_knob_geometry(
         base_radius=pf.random.uniform(rng, 0.012, 0.02),
         base_depth=pf.random.uniform(rng, 0.003, 0.006),
         stem_radius=stem_radius,
@@ -409,18 +409,18 @@ def knob_handle_rand(rng: pf.RNG, material: pf.Material | None = None) -> Handle
     return _finish(geo, material, crease_value=_KNOB_RIM_CREASE)
 
 
-def curved_pull_handle(material: pf.Material | None = None) -> HandleResult:
+def handle_curved_pull(material: pf.Material | None = None) -> HandleResult:
     if material is None:
         material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-    geo = _curved_pull_handle_geometry()
+    geo = _handle_curved_pull_geometry()
     return _finish(geo, material)
 
 
-def curved_pull_handle_rand(
+def handle_curved_pull_rand(
     rng: pf.RNG, material: pf.Material | None = None
 ) -> HandleResult:
     rng, rng_mat = rng.spawn(2)
-    geo = _curved_pull_handle_geometry(
+    geo = _handle_curved_pull_geometry(
         arc_radius=pf.random.uniform(rng, 0.035, 0.06),
         profile_radius=pf.random.uniform(rng, 0.006, 0.012),
         span_scale=pf.random.uniform(rng, 1.4, 2.4),
@@ -431,14 +431,14 @@ def curved_pull_handle_rand(
     return _finish(geo, material)
 
 
-def bar_pull_handle(material: pf.Material | None = None) -> HandleResult:
+def handle_bar_pull(material: pf.Material | None = None) -> HandleResult:
     if material is None:
         material = pf.Material(surface=pf.nodes.shader.principled_bsdf())
-    geo = _bar_pull_handle_geometry()
+    geo = _handle_bar_pull_geometry()
     return _finish(geo, material)
 
 
-def bar_pull_handle_rand(
+def handle_bar_pull_rand(
     rng: pf.RNG,
     material: pf.Material | None = None,
     grip_length: float | None = None,
@@ -446,7 +446,7 @@ def bar_pull_handle_rand(
     rng, rng_mat = rng.spawn(2)
     if grip_length is None:
         grip_length = pf.random.uniform(rng, 0.1, 0.25)
-    geo = _bar_pull_handle_geometry(
+    geo = _handle_bar_pull_geometry(
         grip_length=grip_length,
         grip_radius=pf.random.uniform(rng, 0.006, 0.012),
         standoff_length=pf.random.uniform(rng, 0.025, 0.045),
@@ -462,10 +462,10 @@ def handle_rand(rng: pf.RNG, material: pf.Material | None = None) -> HandleResul
     handle_func = pf.control.choice(
         rng_choice,
         [
-            (lever_handle_rand, 2.0),
-            (bar_pull_handle_rand, 1.5),
-            (curved_pull_handle_rand, 1.5),
-            (knob_handle_rand, 1.0),
+            (handle_lever_rand, 2.0),
+            (handle_bar_pull_rand, 1.5),
+            (handle_curved_pull_rand, 1.5),
+            (handle_knob_rand, 1.0),
         ],
     )
     return handle_func(rng_func, material)

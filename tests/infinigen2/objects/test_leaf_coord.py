@@ -23,7 +23,7 @@ LeafResult = (
     [
         leaf.leaf_simple_rand,
         leaf_broadleaf.leaf_broadleaf_rand,
-        leaf_ginko.leaf_ginko_rand,
+        leaf_ginko.leaf_ginkgo_rand,
         leaf_maple.leaf_maple_rand,
     ],
 )

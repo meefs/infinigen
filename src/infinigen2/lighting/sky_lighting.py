@@ -12,11 +12,11 @@ import procfunc as pf
 
 __all__ = [
     "EnvironmentResult",
-    "hosek_wilkie_sky",
-    "hosek_wilkie_sky_rand",
-    "hosek_wilkie_sky_with_sun_lamp_rand",
-    "nishita_sky",
-    "nishita_sky_rand",
+    "sky_hosek_wilkie",
+    "sky_hosek_wilkie_rand",
+    "sky_hosek_wilkie_with_sun_lamp_rand",
+    "sky_nishita",
+    "sky_nishita_rand",
     "sky_with_sun_lamp_rand",
 ]
 
@@ -80,7 +80,7 @@ def _nishita_sky(
     return pf.nodes.to_environment(surface=shader)
 
 
-def nishita_sky(
+def sky_nishita(
     sun_size_deg: float = 0.5,
     sun_intensity: float = 0.6,
     sun_elevation_deg: float = 10.0,
@@ -108,7 +108,7 @@ def nishita_sky(
 
 
 @pf.tracer.grammar
-def nishita_sky_rand(
+def sky_nishita_rand(
     rng: np.random.Generator,
     sun_elevation_deg: float | None = None,
     sun_rotation_deg: float | None = None,
@@ -162,7 +162,7 @@ def _hosek_wilkie_sky(
     return pf.nodes.to_environment(surface=shader)
 
 
-def hosek_wilkie_sky(
+def sky_hosek_wilkie(
     sun_elevation_deg: float = 45.0,
     sun_rotation_deg: float = 0.0,
     turbidity: float = 2.0,
@@ -180,7 +180,7 @@ def hosek_wilkie_sky(
 
 
 @pf.tracer.grammar
-def hosek_wilkie_sky_rand(
+def sky_hosek_wilkie_rand(
     rng: np.random.Generator,
     sun_elevation_deg: float | None = None,
     sun_rotation_deg: float | None = None,
@@ -200,7 +200,7 @@ def hosek_wilkie_sky_rand(
 
 
 @pf.tracer.grammar
-def hosek_wilkie_sky_with_sun_lamp_rand(
+def sky_hosek_wilkie_with_sun_lamp_rand(
     rng: np.random.Generator,
     sun_elevation_deg: float | None = None,
     sun_rotation_deg: float | None = None,
@@ -256,7 +256,7 @@ def sky_with_sun_lamp_rand(
     if sun_intensity is None:
         sun_intensity = pf.random.uniform(rng, 0.8, 1.0)
 
-    sky = nishita_sky_rand(
+    sky = sky_nishita_rand(
         rng,
         sun_elevation_deg=sun_elevation_deg,
         sun_rotation_deg=sun_rotation_deg,

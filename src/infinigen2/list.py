@@ -111,12 +111,13 @@ def _main():
     args = parser.parse_args()
 
     items = _preset_manifest() if args.presets else GENERATORS_MANIFEST.copy()
+    items["_shortname"] = items["name"].str.split(".").str[-1]
 
     if args.categories is not None:
         items = items[items["category"].isin(args.categories)]
 
     if "shortname" in args.columns:
-        items["shortname"] = items["name"].str.split(".").str[-1]
+        items["shortname"] = items["_shortname"]
 
     for column in args.columns:
         if column not in items.columns:
@@ -137,6 +138,8 @@ def _main():
 
     if args.k is not None:
         items = items[items["name"].str.contains(args.k)]
+
+    items = items.sort_values(["category", "_shortname"], kind="stable")
 
     if args.head is not None:
         items = items.head(args.head)

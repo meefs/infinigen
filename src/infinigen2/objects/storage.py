@@ -10,7 +10,7 @@ from typing import NamedTuple
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import drawer, handles, table
+from infinigen2.objects import drawer, furniture_bases, handles
 from infinigen2.objects.door import (
     door_composite_rand,
     door_double_rand,
@@ -26,26 +26,26 @@ from infinigen2.util import mesh as mesh_util
 __all__ = [
     "StorageParams",
     "StorageResult",
-    "cabinet_with_base",
-    "cabinet_with_base_rand",
-    "cabinet_with_door",
-    "cabinet_with_door_rand",
-    "storage_drawer_door_rand",
-    "storage_sink_base_rand",
-    "storage_cell_shelf",
+    "storage_bench_rand",
+    "storage_cabinet_with_base",
+    "storage_cabinet_with_base_rand",
+    "storage_cabinet_with_door",
+    "storage_cabinet_with_door_rand",
     "storage_cell_bounds",
+    "storage_cell_counts",
+    "storage_cell_shelf",
     "storage_cell_shelf_rand",
     "storage_composite_rand",
     "storage_dimensions_rand",
+    "storage_drawer_door_rand",
+    "storage_legs_grid_rand",
+    "storage_legs_stable_rand",
     "storage_params_rand",
-    "storage_cell_counts",
     "storage_rand",
+    "storage_sink_base_rand",
+    "storage_table_coffee_rand",
+    "storage_table_side_rand",
     "storage_with_legs_rand",
-    "storage_bench_rand",
-    "storage_side_table_rand",
-    "storage_coffee_table_rand",
-    "grid_legs_rand",
-    "stable_legs_rand",
 ]
 
 
@@ -625,13 +625,13 @@ def _storage_doors_rand(
     rng_door_choice, rng_door, rng_style, rng_handle = rng.spawn(4)
 
     def bar_pull(r: pf.RNG) -> handles.HandleResult:
-        return handles.bar_pull_handle_rand(
+        return handles.handle_bar_pull_rand(
             r, grip_length=min(0.06, dimensions.z * 0.5)
         )
 
     if handle is None:
         handle_fn = pf.control.choice(
-            rng_style, [(bar_pull, 1.0), (handles.knob_handle_rand, 1.0)]
+            rng_style, [(bar_pull, 1.0), (handles.handle_knob_rand, 1.0)]
         )
         handle = handle_fn(rng_handle).mesh
     door_fn = pf.control.choice(
@@ -730,7 +730,7 @@ def storage_composite_rand(
     return StorageResult(mesh=carcass)
 
 
-def cabinet_with_base(
+def storage_cabinet_with_base(
     dimensions: pf.Vector | None = None,
     base_height: float = 0.0762,
     leg_diameter: float = 0.0762,
@@ -747,7 +747,7 @@ def cabinet_with_base(
         frame_material=frame_material,
     ).mesh
     pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
-    base = table.base_square(
+    base = furniture_bases.base_square(
         dimensions=pf.Vector((dimensions.y, dimensions.x, base_height)),
         leg_diameter=leg_diameter,
     ).mesh
@@ -764,7 +764,7 @@ def cabinet_with_base(
     return StorageResult(mesh=carcass)
 
 
-def cabinet_with_base_rand(
+def storage_cabinet_with_base_rand(
     rng: pf.RNG, dimensions: pf.Vector | None = None
 ) -> StorageResult:
     rng, rng_shelves, rng_mat, rng_base_sel, rng_base = rng.spawn(5)
@@ -784,7 +784,11 @@ def cabinet_with_base_rand(
     ).mesh
     pf.ops.object.set_transform(carcass, location=(0.0, 0.0, base_height))
     base_fn = pf.control.choice(
-        rng_base_sel, [(table.base_square_rand, 1.0), (table.base_straight_rand, 1.0)]
+        rng_base_sel,
+        [
+            (furniture_bases.base_square_rand, 1.0),
+            (furniture_bases.base_straight_rand, 1.0),
+        ],
     )
     base = base_fn(
         rng_base,
@@ -860,7 +864,7 @@ def _grid_legs(
     )
 
 
-def grid_legs_rand(
+def storage_legs_grid_rand(
     rng: pf.RNG,
     dimensions: pf.Vector,
     leg_height: t.SocketOrVal[float],
@@ -893,15 +897,15 @@ def _table_base_rand(
     leg_height: t.SocketOrVal[float],
     close_edges: bool = False,
 ) -> pf.MeshObject:
-    # keep-local: table imports storage for coffee-table composition.
-    from infinigen2.objects import table
-
     rng_choice, rng_base = rng.spawn(2)
     depth = dimensions[0]
     width = dimensions[1]
     base_fn = pf.control.choice(
         rng_choice,
-        [(table.base_straight_rand, 1.0), (table.base_square_rand, 1.0)],
+        [
+            (furniture_bases.base_straight_rand, 1.0),
+            (furniture_bases.base_square_rand, 1.0),
+        ],
     )
     base_result = base_fn(
         rng_base,
@@ -916,7 +920,7 @@ def _table_base_rand(
     return base_result.mesh
 
 
-def stable_legs_rand(
+def storage_legs_stable_rand(
     rng: pf.RNG,
     dimensions: pf.Vector,
     leg_height: t.SocketOrVal[float],
@@ -925,7 +929,7 @@ def stable_legs_rand(
     rng_choice, rng_base = rng.spawn(2)
     fn = pf.control.choice(
         rng_choice,
-        [(grid_legs_rand, 0.4), (_table_base_rand, 0.6)],
+        [(storage_legs_grid_rand, 0.4), (_table_base_rand, 0.6)],
     )
     return fn(rng_base, dimensions, leg_height, close_edges=close_edges)
 
@@ -960,7 +964,9 @@ def storage_with_legs_rand(
         desired_slot_aspect=desired_slot_aspect,
     )
     pf.ops.mesh.transform(body_result.mesh, location=(0.0, 0.0, leg_height))
-    legs = stable_legs_rand(rng_legs, dimensions, leg_height, close_edges=close_edges)
+    legs = storage_legs_stable_rand(
+        rng_legs, dimensions, leg_height, close_edges=close_edges
+    )
     pf.ops.object.join(body_result.mesh, legs)
     return StorageResult(mesh=body_result.mesh)
 
@@ -1015,16 +1021,15 @@ def storage_bench_rand(
     )
 
 
-def storage_coffee_table_rand(
+def storage_table_coffee_rand(
     rng: pf.RNG, dimensions: pf.Vector | None = None
 ) -> StorageResult:
     """Coffee table whose body is a cell shelf."""
-    # keep-local: table imports storage for coffee-table composition.
-    from infinigen2.objects import table
-
     rng_dimensions, rng_leg_height, rng_storage = rng.spawn(3)
     if dimensions is None:
-        dimensions = pf.Vector(table.coffee_table_dimensions_rand(rng_dimensions))
+        dimensions = pf.Vector(
+            furniture_bases.table_coffee_dimensions_rand(rng_dimensions)
+        )
     return storage_with_legs_rand(
         rng_storage,
         dimensions=dimensions,
@@ -1033,15 +1038,12 @@ def storage_coffee_table_rand(
     )
 
 
-def storage_side_table_rand(
+def storage_table_side_rand(
     rng: pf.RNG, dimensions: pf.Vector | None = None
 ) -> StorageResult:
     """Side table whose body is a cell shelf."""
-    # keep-local: table imports storage for coffee-table composition.
-    from infinigen2.objects import table
-
     if dimensions is None:
-        dimensions = pf.Vector(table.side_table_dimensions_rand(rng))
+        dimensions = pf.Vector(furniture_bases.table_side_dimensions_rand(rng))
     result = storage_with_legs_rand(
         rng,
         dimensions=dimensions,
@@ -1052,7 +1054,7 @@ def storage_side_table_rand(
     return result
 
 
-def cabinet_with_door(
+def storage_cabinet_with_door(
     dimensions: pf.Vector | None = None,
     frame_material: pf.Material | None = None,
 ) -> StorageResult:
@@ -1076,7 +1078,7 @@ def cabinet_with_door(
     return StorageResult(mesh=carcass_result.mesh)
 
 
-def cabinet_with_door_rand(
+def storage_cabinet_with_door_rand(
     rng: pf.RNG,
     dimensions: pf.Vector | None = None,
     frame_material: pf.Material | None = None,
@@ -1124,10 +1126,10 @@ def cabinet_with_door_rand(
     )
     rng_handle, rng_handle_choice = rng_handle.spawn(2)
     handle_options = [
-        (handles.bar_pull_handle_rand, 6.0),
-        (handles.curved_pull_handle_rand, 4.0),
-        (handles.knob_handle_rand, 2.0),
-        (handles.lever_handle_rand, 1.0),
+        (handles.handle_bar_pull_rand, 6.0),
+        (handles.handle_curved_pull_rand, 4.0),
+        (handles.handle_knob_rand, 2.0),
+        (handles.handle_lever_rand, 1.0),
     ]
     if handle is None:
         handle_func = pf.control.choice(rng_handle_choice, handle_options)
@@ -1196,7 +1198,7 @@ def storage_sink_base_rand(
     if frame_material is None:
         frame_material = cabinet_material_rand(rng_material, pf.nodes.shader.coord().uv)
     if handle is None:
-        handle = handles.bar_pull_handle_rand(rng_handle).mesh
+        handle = handles.handle_bar_pull_rand(rng_handle).mesh
     depth = dimensions.x - 0.018
     geo = _open_top_carcass_geometry(
         pf.Vector((depth, dimensions.y, dimensions.z)),
@@ -1248,11 +1250,11 @@ def storage_drawer_door_rand(
     if frame_material is None:
         frame_material = cabinet_material_rand(rng_material, pf.nodes.shader.coord().uv)
     if handle is None:
-        handle = handles.bar_pull_handle_rand(rng_handle).mesh
+        handle = handles.handle_bar_pull_rand(rng_handle).mesh
     if drawer_fraction is None:
         drawer_fraction = pf.random.uniform(rng_draws, 0.18, 0.35)
     door_height = dimensions.z * (1.0 - drawer_fraction)
-    cabinet = cabinet_with_door_rand(
+    cabinet = storage_cabinet_with_door_rand(
         rng_door,
         pf.Vector((dimensions.x, dimensions.y, door_height)),
         frame_material,

@@ -73,7 +73,7 @@ def test_linear_pan_keeps_every_pose_over_the_floor():
     frames = 12
 
     for seed in range(3):
-        cameras = monocular.linear_pan_camera_rand(
+        cameras = monocular.camera_linear_pan_rand(
             rng=np.random.default_rng(seed),
             objects=[floor],
             colliders=colliders,
@@ -95,7 +95,7 @@ def test_linear_pan_consults_the_caller_predicate():
         return False
 
     with pytest.raises(RejectedScene):
-        monocular.linear_pan_camera_rand(
+        monocular.camera_linear_pan_rand(
             rng=np.random.default_rng(0),
             objects=[floor],
             colliders=colliders,

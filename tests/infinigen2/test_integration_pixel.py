@@ -26,13 +26,44 @@ def _write_run(root: Path, name: str, color: tuple[int, int, int]) -> Path:
     (root / name / video).write_bytes(b"not an image")
 
     event = {
-        "generator": "monocular_camera_in_bbox_rand",
+        "generator": "camera_monocular_in_bbox_rand",
         "variant_key": "workbench-traj0",
         "status": "success",
         "images": [still, video],
     }
     (events / "traj0.json").write_text(json.dumps(event))
     return root / name
+
+
+def _write_renamed_run(
+    root: Path,
+    name: str,
+    generator: str,
+    color: tuple[int, int, int],
+    include_asset_dir: bool = True,
+) -> Path:
+    run = root / name
+    events = run / "render_index" / "events"
+    events.mkdir(parents=True)
+    asset_dir = f"object-{generator}-obj-cycles-0"
+    image = f"{asset_dir}/Image.png"
+    (run / asset_dir).mkdir()
+    Image.new("RGB", (4, 4), color).save(run / image)
+    event = {"generator": generator, "variant_key": "obj-cycles-0", "images": [image]}
+    if include_asset_dir:
+        event["asset_dir"] = asset_dir
+    (events / "render.json").write_text(json.dumps(event))
+    return run
+
+
+def _write_alias_manifest(run: Path) -> None:
+    manifest = [
+        {
+            "name": "pkg.table_circle_rand",
+            "old_names": ["circle_table_rand"],
+        }
+    ]
+    (run / "manifest.json").write_text(json.dumps(manifest))
 
 
 def test_pixel_diff_skips_videos(tmp_path):
@@ -51,10 +82,57 @@ def test_pixel_diff_flags_changed_still(tmp_path):
     assert report["fail_count"] == 1
 
 
+def test_pixel_diff_pairs_identical_renamed_generator(tmp_path: Path) -> None:
+    base = _write_renamed_run(tmp_path, "base", "circle_table_rand", (24, 48, 72))
+    pr = _write_renamed_run(tmp_path, "pr", "table_circle_rand", (24, 48, 72))
+    _write_alias_manifest(pr)
+
+    report = baseline_diff.compare_pixel(pr, base)
+
+    assert report["fail_count"] == 0
+    assert report["missing_count"] == 0
+    assert report["results"][0]["asset"] == "table_circle_rand"
+    assert "object-table_circle_rand" in report["results"][0]["image"]
+    assert "object-circle_table_rand" in report["results"][0]["baseline_image"]
+
+
+def test_pixel_diff_flags_changed_renamed_generator(tmp_path: Path) -> None:
+    base = _write_renamed_run(tmp_path, "base", "circle_table_rand", (0, 0, 0))
+    pr = _write_renamed_run(tmp_path, "pr", "table_circle_rand", (255, 255, 255))
+    _write_alias_manifest(pr)
+
+    report = baseline_diff.compare_pixel(pr, base)
+
+    assert report["fail_count"] == 1
+    assert report["missing_count"] == 0
+    assert report["results"][0]["asset"] == "table_circle_rand"
+
+
+def test_pixel_diff_without_alias_keeps_literal_paths(tmp_path: Path) -> None:
+    base = _write_renamed_run(tmp_path, "base", "circle_table_rand", (24, 48, 72))
+    pr = _write_renamed_run(tmp_path, "pr", "table_circle_rand", (24, 48, 72))
+
+    report = baseline_diff.compare_pixel(pr, base)
+
+    assert report["missing_count"] == 1
+
+
+def test_pixel_diff_pairs_single_image_legacy_events(tmp_path: Path) -> None:
+    base = _write_renamed_run(
+        tmp_path, "base", "circle_table_rand", (24, 48, 72), False
+    )
+    pr = _write_renamed_run(tmp_path, "pr", "table_circle_rand", (24, 48, 72), False)
+    _write_alias_manifest(pr)
+
+    report = baseline_diff.compare_pixel(pr, base)
+
+    assert report["missing_count"] == 0
+
+
 def test_camera_render_uses_cli_script_under_coverage(tmp_path, monkeypatch):
     args = render_trajectory_video.argparse.Namespace(
         output=tmp_path,
-        scene="livingroom_rand",
+        scene="room_livingroom_rand",
         camera="orbit_rand",
         seed=0,
         frames=[0, 47],

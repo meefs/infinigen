@@ -837,7 +837,7 @@ def house_unfurnished_rand(
         height,
         door_open_angle_deg=door_open_angle_deg,
     )
-    sky = sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand(rng_sky)
+    sky = sky_lighting.sky_hosek_wilkie_with_sun_lamp_rand(rng_sky)
     storage_objects = _unique_objects([*walls.storage_containers, *walls.supports])
 
     all_objects = (

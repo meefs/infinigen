@@ -14,15 +14,15 @@ from procfunc.nodes.util.bpy_node_info import NodeDataType
 
 from infinigen2.objects.leaf_broadleaf import leaf_broadleaf_rand
 from infinigen2.objects.leaf_coord import leaf_coord, normalize_leaf_coord
-from infinigen2.objects.leaf_ginko import leaf_ginko_rand
+from infinigen2.objects.leaf_ginko import leaf_ginkgo_rand
 from infinigen2.objects.leaf_maple import leaf_maple_rand
 from infinigen2.shaders.base_materials.leaf import leaf_rand as leaf_material_rand
 
 __all__ = [
     "LeafResult",
+    "leaf_rand",
     "leaf_simple",
     "leaf_simple_rand",
-    "leaf_rand",
 ]
 
 # Coarse boundary-solved topology. The old pipeline subdivided a dense plane and
@@ -523,7 +523,7 @@ def leaf_rand(
         [
             (leaf_simple_rand, 1.0),
             (leaf_broadleaf_rand, 1.0),
-            (leaf_ginko_rand, 1.0),
+            (leaf_ginkgo_rand, 1.0),
             (leaf_maple_rand, 1.0),
         ],
     )

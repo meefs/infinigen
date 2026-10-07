@@ -10,7 +10,7 @@ from typing import NamedTuple
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects.lamp import point_light_indoor, point_light_indoor_rand
+from infinigen2.objects.lamp import light_point_indoor, light_point_indoor_rand
 from infinigen2.shaders.base_materials.emissive_nonblocking import (
     lamp_bulb_nonemissive,
 )
@@ -23,8 +23,8 @@ from infinigen2.util.mesh import extrude_mesh_seamless_uvs
 __all__ = [
     "CeilingLightResult",
     "black_for_reflections",
-    "ceiling_light",
-    "ceiling_light_rand",
+    "light_ceiling",
+    "light_ceiling_rand",
 ]
 
 
@@ -155,7 +155,7 @@ def black_for_reflections(
     return pf.Material(surface=surface)
 
 
-def ceiling_light(
+def light_ceiling(
     radius: float = 0.12,
     thickness: float = 0.0275,
     inner_radius: float = 0.078,
@@ -190,7 +190,7 @@ def ceiling_light(
 
     light = None
     if turned_on:
-        light = point_light_indoor(
+        light = light_point_indoor(
             energy=energy,
             temperature=temperature,
             shadow_soft_size=shadow_soft_size,
@@ -200,7 +200,7 @@ def ceiling_light(
     return CeilingLightResult(mesh=obj, light=light)
 
 
-def ceiling_light_rand(
+def light_ceiling_rand(
     rng: pf.RNG,
     energy: float | None = None,
     shadow_soft_size: float | None = None,
@@ -242,7 +242,7 @@ def ceiling_light_rand(
         if shadow_soft_size is None:
             shadow_soft_size = pf.random.uniform(rng, 0.02, 0.03)
 
-        light = point_light_indoor_rand(
+        light = light_point_indoor_rand(
             rng,
             energy=energy,
             temperature=temperature,

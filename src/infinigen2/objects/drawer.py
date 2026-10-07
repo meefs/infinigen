@@ -122,12 +122,12 @@ def drawer_handle_rand(rng: pf.RNG, dimensions: pf.Vector) -> pf.MeshObject:
     rng_style, rng_handle = rng.spawn(2)
 
     def bar_pull(r: pf.RNG) -> handles.HandleResult:
-        return handles.bar_pull_handle_rand(
+        return handles.handle_bar_pull_rand(
             r, grip_length=min(0.16, dimensions.y * 0.6)
         )
 
     handle_fn = pf.control.choice(
-        rng_style, [(bar_pull, 1.0), (handles.knob_handle_rand, 1.0)]
+        rng_style, [(bar_pull, 1.0), (handles.handle_knob_rand, 1.0)]
     )
     return handle_fn(rng_handle).mesh
 

@@ -32,9 +32,9 @@ __all__ = [
     "DiningTableSetupResult",
     "arrange_dining_chairs",
     "chairs_on_edge",
-    "dining_setup_rand",
-    "dining_table_setup_rand",
-    "dining_table_wall_setup_rand",
+    "table_dining_setup_rand",
+    "table_dining_setup_wall_rand",
+    "table_dining_with_chairs_rand",
     "table_wall_setup_rand",
 ]
 
@@ -251,7 +251,7 @@ def arrange_dining_chairs(
     return chairs
 
 
-def dining_setup_rand(
+def table_dining_with_chairs_rand(
     rng: pf.RNG,
     chair_spacing: float | None = None,
     tuck: float | None = None,
@@ -272,8 +272,8 @@ def dining_setup_rand(
         table_fn = pf.control.choice(
             rng_table_choice,
             [
-                (table.dining_table_rand, 1.0),
-                (table.circular_dining_table_rand, 1.0),
+                (table.table_dining_rand, 1.0),
+                (table.table_dining_circular_rand, 1.0),
             ],
         )
         dining_table = table_fn(rng_table).mesh
@@ -299,7 +299,7 @@ def dining_setup_rand(
             ends = pf.control.choice(rng_params, [(True, 1.0), (False, 1.0)])
 
         seat_clearance = pf.random.uniform(rng_chair_dims, 0.27, 0.30)
-        chair_dims = chair.dining_chair_dimensions_rand(
+        chair_dims = chair.chair_dining_dimensions_rand(
             rng_chair_dims,
             seat_elevation=table_dimensions[2] - seat_clearance,
         )
@@ -344,7 +344,7 @@ def dining_setup_rand(
     )
 
 
-def _rectangular_dining_table_rand(
+def _table_dining_rectangular_rand(
     rng: pf.RNG, length: float | None, max_x: float, max_y: float
 ) -> table.TableResult:
     rng_dims, rng_table = rng.spawn(2)
@@ -354,10 +354,10 @@ def _rectangular_dining_table_rand(
     dimensions = (short_side, long_side, height)
     if max_x > max_y:
         dimensions = (long_side, short_side, height)
-    return table.dining_table_rand(rng_table, dimensions=dimensions)
+    return table.table_dining_rand(rng_table, dimensions=dimensions)
 
 
-def _circular_dining_table_rand(
+def _table_dining_circular_rand(
     rng: pf.RNG, length: float | None, max_x: float, max_y: float
 ) -> table.TableResult:
     rng_diameter, rng_table = rng.spawn(2)
@@ -365,10 +365,10 @@ def _circular_dining_table_rand(
     if length is not None:
         diameter = min(max(0.6 * length, 0.95), 1.5)
     diameter = min(diameter, max_x, max_y)
-    return table.circular_dining_table_rand(rng_table, diameter=diameter)
+    return table.table_dining_circular_rand(rng_table, diameter=diameter)
 
 
-def dining_table_setup_rand(
+def table_dining_setup_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject] | None = None,
     bbox_min: pf.Vector | None = None,
@@ -392,7 +392,7 @@ def dining_table_setup_rand(
     max_y = max(bbox_max.y - bbox_min.y - 2 * clearance - door_slack, 0.7)
     table_fn = pf.control.choice(
         rng_table_choice,
-        [(_rectangular_dining_table_rand, 1.0), (_circular_dining_table_rand, 1.0)],
+        [(_table_dining_rectangular_rand, 1.0), (_table_dining_circular_rand, 1.0)],
     )
     dining_table = table_fn(rng_table, table_length, max_x, max_y)
     placed = _place_in_free_floorspace(
@@ -408,7 +408,7 @@ def dining_table_setup_rand(
 
 
 def _arrange_chairs(rng: pf.RNG, parent: pf.MeshObject) -> list[pf.MeshObject]:
-    return dining_setup_rand(
+    return table_dining_with_chairs_rand(
         rng, dining_table=parent, colliders=ccol.collision_set([])
     ).chairs
 
@@ -498,7 +498,7 @@ def table_wall_setup_rand(
     return _seated_table_rand(rng_seat, placed, colliders)
 
 
-def dining_table_wall_setup_rand(
+def table_dining_setup_wall_rand(
     rng: pf.RNG,
     wall_planes: list[pf.MeshObject],
     room_dimensions: pf.Vector,
@@ -509,7 +509,7 @@ def dining_table_wall_setup_rand(
     rng_table_choice, rng_table, rng_setup = rng.spawn(3)
     table_fn = pf.control.choice(
         rng_table_choice,
-        [(table.dining_table_rand, 1.0), (table.circular_dining_table_rand, 1.0)],
+        [(table.table_dining_rand, 1.0), (table.table_dining_circular_rand, 1.0)],
     )
     dining_table = table_fn(rng_table)
     return table_wall_setup_rand(rng_setup, dining_table, wall_planes, colliders)

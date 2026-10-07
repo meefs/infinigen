@@ -12,7 +12,7 @@ from typing import NamedTuple
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects import table, vase
+from infinigen2.objects import furniture_bases, vase
 from infinigen2.shaders.functionality_lists import (
     fabric_general_rand,
     furniture_material_rand,
@@ -23,15 +23,15 @@ from infinigen2.util.curve import curve_to_mesh_with_uv
 __all__ = [
     "LampResult",
     "LampshadeShape",
-    "ceiling_shade_lamp_rand",
-    "desk_lamp_rand",
-    "floor_lamp_rand",
-    "hanging_lampshade_shape_rand",
-    "point_light_indoor",
-    "point_light_indoor_rand",
     "lamp",
+    "lamp_ceiling_shade_rand",
+    "lamp_desk_rand",
+    "lamp_floor_rand",
     "lamp_rand",
+    "lampshade_shape_hanging_rand",
     "lampshade_shape_rand",
+    "light_point_indoor",
+    "light_point_indoor_rand",
 ]
 
 # head-local z of the bulb-rack inner ring (where the bulb socket sits)
@@ -41,7 +41,7 @@ _SHADE_CORNER_ATTRIBUTE = "lamp_shade_corner"
 _RACK_CORNER_ATTRIBUTE = "lamp_rack_corner"
 
 
-def point_light_indoor(
+def light_point_indoor(
     energy: float = 10.0,
     temperature: float = 4500.0,
     shadow_soft_size: float = 0.02,
@@ -58,7 +58,7 @@ def point_light_indoor(
     return light
 
 
-def point_light_indoor_rand(
+def light_point_indoor_rand(
     rng: pf.RNG,
     energy: float | None = None,
     temperature: float | None = None,
@@ -70,7 +70,7 @@ def point_light_indoor_rand(
     if energy is None:
         energy = pf.random.uniform(rng_energy, 450, 1600) / 177
 
-    return point_light_indoor(
+    return light_point_indoor(
         energy=energy, temperature=temperature, shadow_soft_size=shadow_soft_size
     )
 
@@ -401,7 +401,7 @@ def _lamp_table_straight_base_rand(
 ) -> pf.ProcNode[pf.MeshObject]:
     rng_width, rng_bottom_scale, rng_stretcher, rng_stretcher_position = rng.spawn(4)
     leg_diameter = _lamp_table_member_width_rand(rng_width)
-    return table.base_four_leg(
+    return furniture_bases.base_four_leg(
         dimensions=dimensions,
         leg_diameter=leg_diameter,
         leg_inset=0.1 * (dimensions[0] - leg_diameter),
@@ -430,7 +430,7 @@ def _lamp_table_pedestal_base_rand(
         max(1.75 * stand_radius, 0.32 * width),
         max(2.25 * stand_radius, 0.48 * width),
     )
-    return table.pedestal_column_rand(
+    return furniture_bases.base_pedestal_column_rand(
         rng_profile, dimensions[2], top_radius, bottom_radius
     )
 
@@ -441,7 +441,7 @@ def _lamp_table_square_base_rand(
     dimensions: pf.Vector,
 ) -> pf.ProcNode[pf.MeshObject]:
     rng_width, rng_connector = rng.spawn(2)
-    return table.base_box_leg(
+    return furniture_bases.base_box_leg(
         dimensions=dimensions,
         leg_diameter=_lamp_table_member_width_rand(rng_width),
         leg_placement_top_scale=0.8,
@@ -666,7 +666,7 @@ def lampshade_shape_rand(
     )
 
 
-def hanging_lampshade_shape_rand(rng: pf.RNG) -> LampshadeShape:
+def lampshade_shape_hanging_rand(rng: pf.RNG) -> LampshadeShape:
     shape = lampshade_shape_rand(rng)
     return LampshadeShape(
         top_radius=shape.bot_radius,
@@ -835,7 +835,7 @@ def _assemble_lamp(
     pf.ops.modifier.subdivide_surface(mesh, levels=2, _skip_apply=True)
 
     bulb_radius = 0.02
-    point_light = point_light_indoor(
+    point_light = light_point_indoor(
         energy=parameters.energy,
         temperature=parameters.temperature,
         shadow_soft_size=bulb_radius,
@@ -962,7 +962,7 @@ def lamp_rand(
     )
 
 
-def desk_lamp_rand(
+def lamp_desk_rand(
     rng: pf.RNG,
     base_radius: float | None = None,
     support_shade_overlap: float = _DEFAULT_SUPPORT_SHADE_OVERLAP,
@@ -977,7 +977,7 @@ def desk_lamp_rand(
     )
 
 
-def floor_lamp_rand(
+def lamp_floor_rand(
     rng: pf.RNG,
     support_shade_overlap: float = _DEFAULT_SUPPORT_SHADE_OVERLAP,
 ) -> LampResult:
@@ -1011,7 +1011,7 @@ def floor_lamp_rand(
     )
 
 
-def ceiling_shade_lamp_rand(
+def lamp_ceiling_shade_rand(
     rng: pf.RNG,
     energy: float | None = None,
     support_shade_overlap: float = _DEFAULT_SUPPORT_SHADE_OVERLAP,

@@ -22,7 +22,7 @@ from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.util.errors import RejectedScene
 
 __all__ = [
-    "random_walk_camera",
+    "camera_random_walk",
 ]
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def _camera_pose_rand(
     return pose_rand
 
 
-def random_walk_camera(
+def camera_random_walk(
     rng: pf.RNG,
     colliders: ccol.CollisionSet,
     objects: list[pf.MeshObject],

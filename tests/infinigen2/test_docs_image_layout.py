@@ -11,7 +11,7 @@ _OUTPUT_RE = re.compile(r"--output \$OUTPUT_PATH/(\S+)")
 _SHELL_SUBS = (
     ("{}", r"[A-Za-z0-9_]+"),
     ("$sn", r"[A-Za-z0-9_]+"),
-    ("$CAM_SCENE", "livingroom_rand"),
+    ("$CAM_SCENE", "room_livingroom_rand"),
     ("$demo_slug", r"[A-Za-z0-9_]+"),
     ("$renderer_slug", r"[A-Za-z0-9_]+"),
     ("$disp", r"[A-Za-z0-9_]+"),
@@ -107,8 +107,8 @@ def test_docs_commands_use_category_default_without_override() -> None:
 
 def test_docs_preset_commands_inherit_owner_integration_geometry() -> None:
     conf = _load_conf()
-    name = "infinigen2.shaders.composites.bricks.brick_masonry_brown_preset"
+    name = "infinigen2.shaders.composites.bricks.bricks_masonry_brown_preset"
     command = conf._replicate_command("Material", name, 0)
     assert command.startswith(
-        "infinigen2 brick_masonry_brown_preset material_plane_uv render_cycles "
+        "infinigen2 bricks_masonry_brown_preset material_plane_uv render_cycles "
     )

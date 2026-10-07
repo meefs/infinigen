@@ -75,9 +75,9 @@
     "name": "infinigen2.shaders.composites.bricks.bricks_masonry_rand",
     "integration_test_string": "bricks_masonry_rand material_plane_uv render_cycles",
     "presets": [
-      "brick_masonry_brown_preset",
-      "brick_masonry_granite_preset",
-      "brick_masonry_sharp_preset"
+      "bricks_masonry_brown_preset",
+      "bricks_masonry_granite_preset",
+      "bricks_masonry_sharp_preset"
     ]
   },
   {
@@ -202,19 +202,21 @@
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.composites.scratches_overlay.scratched_wood_rand",
+    "name": "infinigen2.shaders.composites.scratches_overlay.wood_scratched_rand",
+    "old_names": ["scratched_wood_rand"],
     "presets": [
-      "scratches_deep_dirty_preset",
-      "scratches_light_varnish_preset",
-      "scratches_shallow_preset"
+      "wood_scratched_deep_dirty_preset",
+      "wood_scratched_light_varnish_preset",
+      "wood_scratched_shallow_preset"
     ]
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.composites.scratches_overlay.scratched_metal_rand",
+    "name": "infinigen2.shaders.composites.scratches_overlay.metal_scratched_rand",
+    "old_names": ["scratched_metal_rand"],
     "presets": [
-      "scratches_brushed_preset",
-      "scratches_dense_preset"
+      "metal_scratched_brushed_preset",
+      "metal_scratched_dense_preset"
     ]
   },
   {
@@ -265,9 +267,9 @@
     "category": "Material",
     "name": "infinigen2.shaders.base_materials.stone_smooth.stone_smooth_rand",
     "presets": [
-      "stone_grey_preset",
-      "stone_red_sandstone_preset",
-      "stone_volcanic_tuff_preset"
+      "stone_smooth_grey_preset",
+      "stone_smooth_red_sandstone_preset",
+      "stone_smooth_volcanic_tuff_preset"
     ]
   },
   {
@@ -282,8 +284,9 @@
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.base_materials.cracked_ground.cracked_ground_rand",
-    "integration_test_string": "cracked_ground_rand material_sphere render_cycles"
+    "name": "infinigen2.shaders.base_materials.cracked_ground.ground_cracked_rand",
+    "old_names": ["cracked_ground_rand"],
+    "integration_test_string": "ground_cracked_rand material_sphere render_cycles"
   },
   {
     "category": "Material",
@@ -342,7 +345,8 @@
   },
   {
     "category": "MaterialOverlay",
-    "name": "infinigen2.shaders.composites.paint_overlay.cracked_paint_overlay_rand"
+    "name": "infinigen2.shaders.composites.paint_overlay.paint_cracked_overlay_rand",
+    "old_names": ["cracked_paint_overlay_rand"]
   },
   {
     "category": "Material",
@@ -517,8 +521,9 @@
   },
   {
     "category": "Material",
-    "name": "infinigen2.shaders.functionality_lists.painted_wood_rand",
-    "integration_test_string": "painted_wood_rand material_plane_uv render_cycles"
+    "name": "infinigen2.shaders.functionality_lists.wood_painted_rand",
+    "old_names": ["painted_wood_rand"],
+    "integration_test_string": "wood_painted_rand material_plane_uv render_cycles"
   },
   {
     "category": "Material",
@@ -560,15 +565,18 @@
   },
   {
     "category": "Environment",
-    "name": "infinigen2.lighting.sky_lighting.nishita_sky_rand"
+    "name": "infinigen2.lighting.sky_lighting.sky_nishita_rand",
+    "old_names": ["nishita_sky_rand"]
   },
   {
     "category": "Environment",
-    "name": "infinigen2.lighting.sky_lighting.hosek_wilkie_sky_rand"
+    "name": "infinigen2.lighting.sky_lighting.sky_hosek_wilkie_rand",
+    "old_names": ["hosek_wilkie_sky_rand"]
   },
   {
     "category": "Environment",
-    "name": "infinigen2.lighting.sky_lighting.hosek_wilkie_sky_with_sun_lamp_rand"
+    "name": "infinigen2.lighting.sky_lighting.sky_hosek_wilkie_with_sun_lamp_rand",
+    "old_names": ["hosek_wilkie_sky_with_sun_lamp_rand"]
   },
   {
     "category": "Environment",
@@ -576,7 +584,8 @@
   },
   {
     "category": "Environment",
-    "name": "infinigen2.lighting.point_lighting.floating_colored_lights_rand"
+    "name": "infinigen2.lighting.point_lighting.lights_floating_colored_rand",
+    "old_names": ["floating_colored_lights_rand"]
   },
   {
     "category": "Scene",
@@ -638,33 +647,39 @@
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.dining_table_setup.dining_setup_rand",
-    "integration_test_string": "dining_setup_rand object_demo render_cycles"
+    "name": "infinigen2.scenes.room.dining_table_setup.table_dining_with_chairs_rand",
+    "old_names": ["dining_setup_rand"],
+    "integration_test_string": "table_dining_with_chairs_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.cocktail_table_setup.cocktail_table_setup_rand",
-    "integration_test_string": "cocktail_table_setup_rand object_demo render_cycles"
+    "name": "infinigen2.scenes.room.cocktail_table_setup.table_cocktail_setup_rand",
+    "old_names": ["cocktail_table_setup_rand"],
+    "integration_test_string": "table_cocktail_setup_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.dining_table_setup.dining_table_setup_rand",
-    "integration_test_string": "dining_table_setup_rand object_demo render_cycles"
+    "name": "infinigen2.scenes.room.dining_table_setup.table_dining_setup_rand",
+    "old_names": ["dining_table_setup_rand"],
+    "integration_test_string": "table_dining_setup_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.sofa_setup.centered_sofa_setup_rand",
-    "integration_test_string": "centered_sofa_setup_rand object_demo render_cycles"
+    "name": "infinigen2.scenes.room.sofa_setup.sofa_setup_centered_rand",
+    "old_names": ["centered_sofa_setup_rand"],
+    "integration_test_string": "sofa_setup_centered_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.sofa_setup.wall_anchored_sofa_setup_rand",
-    "integration_test_string": "wall_anchored_sofa_setup_rand object_demo render_cycles"
+    "name": "infinigen2.scenes.room.sofa_setup.sofa_setup_wall_anchored_rand",
+    "old_names": ["wall_anchored_sofa_setup_rand"],
+    "integration_test_string": "sofa_setup_wall_anchored_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.sofa_setup.wall_sofa_setup_rand",
-    "integration_test_string": "wall_sofa_setup_rand object_demo render_cycles"
+    "name": "infinigen2.scenes.room.sofa_setup.sofa_setup_wall_rand",
+    "old_names": ["wall_sofa_setup_rand"],
+    "integration_test_string": "sofa_setup_wall_rand object_demo render_cycles"
   },
   {
     "category": "Scene",
@@ -703,16 +718,12 @@
   },
   {
     "category": "Scene",
-    "name": "infinigen2.scenes.room.room.room_livingroom_rand"
+    "name": "infinigen2.scenes.room.room.room_livingroom_rand",
+    "old_names": ["livingroom_rand"]
   },
   {
     "category": "Scene",
     "name": "infinigen2.scenes.indoor_space.indoor_space_rand"
-  },
-  {
-    "category": "Scene",
-    "name": "infinigen2.scenes.room.room.livingroom_rand",
-    "num_seeds": 0
   },
   {
     "category": "Scene",
@@ -810,7 +821,8 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.random_primitives.primitive_with_effect_rand"
+    "name": "infinigen2.objects.random_primitives.primitive_with_effect_rand",
+    "old_names": ["primitives_rand"]
   },
   {
     "category": "Object",
@@ -846,7 +858,8 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.bathroom_hardware.bathroom_hardware_rand"
+    "name": "infinigen2.objects.bathroom_hardware.hardware_bathroom_rand",
+    "old_names": ["bathroom_hardware_rand"]
   },
   {
     "category": "Object",
@@ -898,11 +911,13 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.cushion.bed_pillow_rand"
+    "name": "infinigen2.objects.cushion.cushion_bed_pillow_rand",
+    "old_names": ["bed_pillow_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.cushion.throw_pillow_rand"
+    "name": "infinigen2.objects.cushion.cushion_throw_pillow_rand",
+    "old_names": ["throw_pillow_rand"]
   },
   {
     "category": "Object",
@@ -926,15 +941,18 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.ceiling_light.ceiling_light_rand"
+    "name": "infinigen2.objects.ceiling_light.light_ceiling_rand",
+    "old_names": ["ceiling_light_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.dining_table_rand"
+    "name": "infinigen2.objects.table.table_dining_rand",
+    "old_names": ["dining_table_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.circular_dining_table_rand"
+    "name": "infinigen2.objects.table.table_dining_circular_rand",
+    "old_names": ["circular_dining_table_rand"]
   },
   {
     "category": "Object",
@@ -942,47 +960,56 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.coffee_table_rand"
+    "name": "infinigen2.objects.table.table_coffee_rand",
+    "old_names": ["coffee_table_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.coffee_table_storage_rand"
+    "name": "infinigen2.objects.table.table_coffee_storage_rand",
+    "old_names": ["coffee_table_storage_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.side_table_rand"
+    "name": "infinigen2.objects.table.table_side_rand",
+    "old_names": ["side_table_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.circular_coffee_table_rand"
+    "name": "infinigen2.objects.table.table_coffee_circular_rand",
+    "old_names": ["circular_coffee_table_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.circular_side_table_rand"
+    "name": "infinigen2.objects.table.table_side_circular_rand",
+    "old_names": ["circular_side_table_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.cocktail_table_rand"
+    "name": "infinigen2.objects.table.table_cocktail_rand",
+    "old_names": ["cocktail_table_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.circular_cocktail_table_rand"
+    "name": "infinigen2.objects.table.table_cocktail_circular_rand",
+    "old_names": ["circular_cocktail_table_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.base_straight_rand"
+    "name": "infinigen2.objects.furniture_bases.base_straight_rand"
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.pedestal_base_rand"
+    "name": "infinigen2.objects.furniture_bases.base_pedestal_rand",
+    "old_names": ["pedestal_base_rand", "base_single_stand_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.table.base_square_rand"
+    "name": "infinigen2.objects.furniture_bases.base_square_rand"
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.chair.office_chair_rand"
+    "name": "infinigen2.objects.chair.chair_office_rand",
+    "old_names": ["office_chair_rand"]
   },
   {
     "category": "Object",
@@ -990,7 +1017,8 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.chair.dining_chair_rand"
+    "name": "infinigen2.objects.chair.chair_dining_rand",
+    "old_names": ["dining_chair_rand"]
   },
   {
     "category": "Object",
@@ -998,15 +1026,18 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.chair.curvy_seat_rand"
+    "name": "infinigen2.objects.chair.chair_seat_curvy_rand",
+    "old_names": ["curvy_seat_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.chair.round_seat_rand"
+    "name": "infinigen2.objects.chair.chair_seat_round_rand",
+    "old_names": ["round_seat_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.chair.wheeled_base_rand"
+    "name": "infinigen2.objects.chair.chair_base_wheeled_rand",
+    "old_names": ["wheeled_base_rand"]
   },
   {
     "category": "Object",
@@ -1018,11 +1049,13 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.lamp.ceiling_shade_lamp_rand"
+    "name": "infinigen2.objects.lamp.lamp_ceiling_shade_rand",
+    "old_names": ["ceiling_shade_lamp_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.lamp.desk_lamp_rand"
+    "name": "infinigen2.objects.lamp.lamp_desk_rand",
+    "old_names": ["desk_lamp_rand"]
   },
   {
     "category": "Object",
@@ -1034,7 +1067,8 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.lamp.floor_lamp_rand"
+    "name": "infinigen2.objects.lamp.lamp_floor_rand",
+    "old_names": ["floor_lamp_rand"]
   },
   {
     "category": "Object",
@@ -1074,11 +1108,13 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.handles.lever_handle_rand"
+    "name": "infinigen2.objects.handles.handle_lever_rand",
+    "old_names": ["lever_handle_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.handles.bar_pull_handle_rand"
+    "name": "infinigen2.objects.handles.handle_bar_pull_rand",
+    "old_names": ["bar_pull_handle_rand"]
   },
   {
     "category": "Object",
@@ -1086,11 +1122,13 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.handles.curved_pull_handle_rand"
+    "name": "infinigen2.objects.handles.handle_curved_pull_rand",
+    "old_names": ["curved_pull_handle_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.handles.knob_handle_rand"
+    "name": "infinigen2.objects.handles.handle_knob_rand",
+    "old_names": ["knob_handle_rand"]
   },
   {
     "category": "Object",
@@ -1098,11 +1136,13 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.storage.storage_cell_shelf_rand"
+    "name": "infinigen2.objects.storage.storage_cell_shelf_rand",
+    "old_names": ["shelves_rand", "slot_cabinet_rand"]
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.storage.cabinet_with_door_rand"
+    "name": "infinigen2.objects.storage.storage_cabinet_with_door_rand",
+    "old_names": ["cabinet_with_door_rand", "cabinet_rand"]
   },
   {
     "category": "Object",
@@ -1110,7 +1150,8 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.storage.cabinet_with_base_rand"
+    "name": "infinigen2.objects.storage.storage_cabinet_with_base_rand",
+    "old_names": ["cabinet_with_base_rand"]
   },
   {
     "category": "Object",
@@ -1130,37 +1171,44 @@
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.monocular_camera_in_bbox_rand",
+    "name": "infinigen2.cameras.camera_monocular_in_bbox_rand",
+    "old_names": ["monocular_camera_in_bbox_rand"],
     "num_seeds": 3
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.monocular_360_camera_rand",
+    "name": "infinigen2.cameras.camera_monocular_360_rand",
+    "old_names": ["monocular_360_camera_rand"],
     "num_seeds": 3
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.linear_pan_camera_rand",
+    "name": "infinigen2.cameras.camera_linear_pan_rand",
+    "old_names": ["linear_pan_camera_rand"],
     "num_seeds": 3
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.orbit_90_camera_rand",
+    "name": "infinigen2.cameras.camera_orbit_90_rand",
+    "old_names": ["orbit_90_camera_rand"],
     "num_seeds": 3
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.rrt_camera",
+    "name": "infinigen2.cameras.camera_rrt",
+    "old_names": ["rrt_camera"],
     "num_seeds": 3
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.random_walk_camera",
+    "name": "infinigen2.cameras.camera_random_walk",
+    "old_names": ["random_walk_camera"],
     "num_seeds": 3
   },
   {
     "category": "Material",
     "name": "infinigen2.shaders.base_materials.plastic.plastic_rand",
+    "old_names": ["plastic_opaque_rand"],
     "presets": [
       "plastic_black_rubberized_preset",
       "plastic_black_translucent_preset",
@@ -1187,10 +1235,6 @@
     ]
   },
   {
-    "category": "Material",
-    "name": "infinigen2.shaders.base_materials.gravel_concrete.random_gravel_concrete_rand"
-  },
-  {
     "category": "Object",
     "name": "infinigen2.objects.bed.bed_rand"
   },
@@ -1200,7 +1244,8 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.bedside_table.bedside_table_composite_rand"
+    "name": "infinigen2.objects.bedside_table.table_bedside_composite_rand",
+    "old_names": ["bedside_table_composite_rand"]
   },
   {
     "category": "Object",
@@ -1220,7 +1265,8 @@
   },
   {
     "category": "Object",
-    "name": "infinigen2.objects.leaf_ginko.leaf_ginko_rand"
+    "name": "infinigen2.objects.leaf_ginko.leaf_ginkgo_rand",
+    "old_names": ["leaf_ginko_rand"]
   },
   {
     "category": "Object",

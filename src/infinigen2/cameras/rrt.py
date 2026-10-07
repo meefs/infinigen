@@ -18,7 +18,7 @@ from infinigen2.util.errors import RejectedScene
 
 __all__ = [
     "RRTPolicyError",
-    "rrt_camera",
+    "camera_rrt",
 ]
 
 
@@ -600,7 +600,7 @@ def _stretch_required_goal_path(
     ]
 
 
-def rrt_camera(
+def camera_rrt(
     rng: pf.RNG,
     colliders: ccol.CollisionSet,
     objects: list[pf.MeshObject],

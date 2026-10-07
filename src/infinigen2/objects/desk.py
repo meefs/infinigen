@@ -7,7 +7,7 @@ from typing import NamedTuple
 
 import procfunc as pf
 
-from infinigen2.objects import storage, table
+from infinigen2.objects import furniture_bases, storage, table
 from infinigen2.shaders.functionality_lists import table_top_material_rand
 
 __all__ = [
@@ -127,12 +127,12 @@ def _tabletop_surface_rand(
     rng_top, rng_top_shape, rng_base, rng_table = rng.spawn(4)
     top_thickness = pf.random.uniform(rng_top, 0.025, 0.055)
     top_height = dimensions.z - top_thickness
-    base = table.base_straight_rand(
+    base = furniture_bases.base_straight_rand(
         rng_base,
         dimensions=pf.Vector((dimensions.x, dimensions.y, top_height)),
         close_edges=True,
     ).mesh
-    result = table.dining_table_rand(
+    result = table.table_dining_rand(
         rng_table,
         dimensions=dimensions,
         base=base,
@@ -150,7 +150,7 @@ def _side_storage_tabletop_surface_rand(
     top_thickness = pf.random.uniform(rng_top, 0.025, 0.055)
     top_height = dimensions.z - top_thickness
     base = _side_cell_shelf_base_rand(rng_base, dimensions, top_height)
-    result = table.dining_table_rand(
+    result = table.table_dining_rand(
         rng_table,
         dimensions=dimensions,
         base=base,
@@ -167,7 +167,7 @@ def _integrated_storage_surface_rand(
     rng_height, rng_base, rng_cabinet, rng_material = rng.spawn(4)
     cabinet_height = pf.random.uniform(rng_height, 0.10, 0.18)
     base_height = dimensions.z - cabinet_height
-    base = table.base_straight_rand(
+    base = furniture_bases.base_straight_rand(
         rng_base,
         dimensions=pf.Vector((dimensions.x, dimensions.y, base_height)),
         close_edges=True,
@@ -200,7 +200,7 @@ def _tabletop_storage_surface_rand(
     top_height = dimensions.z - top_thickness
     cabinet_height = pf.random.uniform(rng_height, 0.08, 0.14)
     base_height = top_height - cabinet_height
-    base = table.base_straight_rand(
+    base = furniture_bases.base_straight_rand(
         rng_base,
         dimensions=pf.Vector((dimensions.x, dimensions.y, base_height)),
         close_edges=True,
@@ -212,7 +212,7 @@ def _tabletop_storage_surface_rand(
         bottom_height=base_height,
     )
     pf.ops.object.join(base, cabinet)
-    result = table.dining_table_rand(
+    result = table.table_dining_rand(
         rng_table,
         dimensions=dimensions,
         base=base,

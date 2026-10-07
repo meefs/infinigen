@@ -13,7 +13,7 @@ from infinigen2.shaders.masks.cracks import (
 )
 
 __all__ = [
-    "cracked_paint_overlay_rand",
+    "paint_cracked_overlay_rand",
     "paint_overlay_rand",
 ]
 
@@ -68,7 +68,7 @@ def _paint_weartear_flakes(
     )
 
 
-def cracked_paint_overlay_rand(
+def paint_cracked_overlay_rand(
     rng: pf.RNG,
     vector: pf.ProcNode[pf.Vector],
     material: pf.Material,

@@ -19,7 +19,7 @@ from infinigen2.shaders.base_materials.leaf import leaf_rand as leaf_material_ra
 __all__ = [
     "LeafGinkoResult",
     "leaf_ginko",
-    "leaf_ginko_rand",
+    "leaf_ginkgo_rand",
 ]
 
 # Coarse boundary-solved topology. The old pipeline subdivided a dense plane and
@@ -505,7 +505,7 @@ def leaf_ginko(
     return LeafGinkoResult(mesh=obj)
 
 
-def leaf_ginko_rand(
+def leaf_ginkgo_rand(
     rng: pf.RNG,
     material: pf.Material | None = None,
 ) -> LeafGinkoResult:

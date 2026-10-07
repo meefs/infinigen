@@ -5,7 +5,6 @@
 
 from infinigen2.scenes.room.room import (  # noqa: F401
     RoomResult,
-    livingroom_rand,
     room_bathroom_rand,
     room_bedroom_rand,
     room_diningroom_rand,
