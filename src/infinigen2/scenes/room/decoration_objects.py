@@ -577,15 +577,38 @@ def _place_on_targets(
         tuple[list[pf.MeshObject], ccol.CollisionSet],
     ],
 ) -> tuple[list[pf.MeshObject], ccol.CollisionSet]:
-    pool_list = list(pool)
     instances: list[pf.MeshObject] = []
+    try:
+        colliders = _place_hidden_on_targets(
+            rng, targets, list(pool), colliders, fraction, on_target, instances
+        )
+    finally:
+        for instance in instances:
+            instance.item().hide_viewport = False
+    return instances, colliders
+
+
+def _place_hidden_on_targets(
+    rng: pf.RNG,
+    targets: list[pf.MeshObject],
+    pool_list: list[pf.MeshObject],
+    colliders: ccol.CollisionSet,
+    fraction: float,
+    on_target: Callable[
+        [pf.RNG, pf.MeshObject, list[pf.MeshObject], ccol.CollisionSet],
+        tuple[list[pf.MeshObject], ccol.CollisionSet],
+    ],
+    instances: list[pf.MeshObject],
+) -> ccol.CollisionSet:
     for rng_target, parent in zip(rng.spawn(len(targets)), targets, strict=True):
         rng_active, rng_place = rng_target.spawn(2)
         if pf.random.uniform(rng_active, 0.0, 1.0) >= fraction:
             continue
         placed, colliders = on_target(rng_place, parent, pool_list, colliders)
+        for obj in placed:
+            obj.item().hide_viewport = True
         instances.extend(placed)
-    return instances, colliders
+    return colliders
 
 
 def objects_scattered_on_surface(
