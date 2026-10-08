@@ -1,9 +1,7 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors:
-# - Lance Phan: original nodegroups
-# - Alexander Raistrick: transpile and refactor to procfunc/v2
+# Authors: Alexander Raistrick
 
 from functools import partial
 from typing import NamedTuple

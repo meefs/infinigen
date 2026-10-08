@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Hongyu Wen - original version
-# - Alexander Raistrick - add point light, refactor to procfunc
+# - Hongyu Wen: original Infinigen ceiling light (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/lamp/ceiling_lights.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 from typing import NamedTuple
 

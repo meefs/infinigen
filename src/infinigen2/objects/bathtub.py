@@ -1,7 +1,9 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Alexander Raistrick
+# Authors:
+# - Lingjie Mei: original Infinigen v1 bathtub, bathroom-sink, and standing-sink implementations (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/bathroom/bathtub.py; https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/bathroom/bathroom_sink.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import math
 from typing import NamedTuple

@@ -2,8 +2,9 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Yiming Zuo: original Infinigen v1 leaf_broadleaf nodegroups (https://github.com/princeton-vl/infinigen/blob/master/infinigen/assets/objects/leaves/leaf_broadleaf.py)
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Yiming Zuo: original Infinigen leaf broadleaf (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/leaves/leaf_broadleaf.py)
+# - Alexander Raistrick: refactor for Infinigen2
+# Acknowledgment: This file draws inspiration from https://www.youtube.com/watch?v=pfOKB1GKJHM by Dr. Blender
 
 from typing import NamedTuple
 

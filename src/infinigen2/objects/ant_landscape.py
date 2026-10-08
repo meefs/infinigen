@@ -1,7 +1,9 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Mingzhe Wang, Alexander Raistrick
+# Authors:
+# - Zeyu Ma: original Infinigen v1 API binding for A.N.T. Landscape (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/terrain/assets/landtiles/ant_landscape.py)
+# - Mingzhe Wang, Alexander Raistrick: refactor for Infinigen2
 
 import logging
 import math

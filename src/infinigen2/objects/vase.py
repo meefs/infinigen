@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Yiming Zuo: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/table_decorations/vase.py)
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Yiming Zuo: original Infinigen vase (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/table_decorations/vase.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import math
 from typing import NamedTuple

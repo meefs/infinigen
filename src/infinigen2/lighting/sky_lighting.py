@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Alexander Raistrick, Zeyu Ma, Kaiyu Yang, Lingjie Mei: original Infinigen v1 sky lighting (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/lighting/sky_lighting.py)
-# - Alexander Raistrick: port to v2
+# - Alexander Raistrick, Zeyu Ma, Kaiyu Yang, and Lingjie Mei: original Infinigen sky lighting (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/lighting/sky_lighting.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 from typing import NamedTuple
 

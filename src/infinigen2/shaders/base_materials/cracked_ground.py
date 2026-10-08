@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Ankit Goyal, Zeyu Ma: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/main/infinigen/assets/materials/terrain/cracked_ground.py)
-# - Alexander Raistrick: port to procfunc/v2
+# - Yiming Zuo, Ankit Goyal, and Zeyu Ma: original Infinigen cracked ground material (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/terrain/cracked_ground.py)
+# - Alexander Raistrick: refactor for Infinigen2
 # Acknowledgement: This file draws inspiration from https://www.youtube.com/watch?v=PIZ_wi3yFUM&list=PLsGl9GczcgBs6TtApKKK-L_0Nm6fovNPk&index=98 by Ryan King Art
 
 import procfunc as pf

@@ -2,8 +2,9 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Yiming Zuo: original Infinigen v1 nodegroups (office_chair, curvy_seats, round_seats, wheeled leg)
-# - Alexander Raistrick: transpile to procfunc/v2, split into top/bottom part distributions
+# - Yiming Zuo: original Infinigen chair (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/seating/chairs/office_chair.py; https://github.com/princeton-vl/infinigen/tree/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/seating/chairs/seats; https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/tables/legs/wheeled.py)
+# - Lingjie Mei: original Infinigen chair (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/seating/chairs/chair.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 from collections.abc import Callable
 from functools import cache, partial

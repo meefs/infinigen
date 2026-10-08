@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Ankit Goyal, Mingzhe Wang, Zeyu Ma: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/main/infinigen/assets/materials/terrain/sandstone.py)
-# - Alexander Raistrick: port to procfunc/v2
+# - Ankit Goyal, Mingzhe Wang, Zeyu Ma: original Infinigen sandstone material (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/terrain/sandstone.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import procfunc as pf
 from procfunc.nodes import types as t

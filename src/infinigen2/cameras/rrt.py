@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Karhan Kayan: original RRT camera
-# - Alexander Raistrick: collider-scoped traversal
+# - Dylan Li: original Infinigen RRT planner (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/util/rrt.py)
+# - Karhan Kayan, Alexander Raistrick: refactor for Infinigen2
 
 from collections.abc import Sequence
 from typing import Callable

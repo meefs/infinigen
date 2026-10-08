@@ -2,9 +2,10 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Alexander Raistrick - initial version, refactor to procfunc
-# - Stamatis Alexandropolous, Yiming Zuo - add footrest and alternate arm/leg styles
-
+# - Alexander Raistrick: original Infinigen v1 sofa nodegroup (https://github.com/princeton-vl/infinigen/commit/5c016c408c76c0f1bd97b449f1a149a7a8050b3e)
+# - Stamatis Alexandropoulos: added the Infinigen v1 footrest and alternate arm and leg styles (https://github.com/princeton-vl/infinigen/commit/6637750d6ff7d440384b04381bfb64f70d116cc1)
+# - Yiming Zuo: added Infinigen v1 curved-arm shaping, beveled back cushions, and backrest variation (https://github.com/princeton-vl/infinigen/commit/e8f0f7bb642b9eec582aa71912b324eb2b574539)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import math
 from typing import NamedTuple

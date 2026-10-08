@@ -2,14 +2,11 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Anna Calveri (primary), Max Gonzalez Saez-Diez, Abhishek Joshi: original
-#   Infinigen v1 lever handle (rose / lever / lock), from
-#   infinigen/assets/sim_objects/door_handle.py
-# - Abhishek Joshi: original Infinigen v1 curved pull handle, from
-#   infinigen/assets/sim_objects/drawer.py nodegroup_handle
-#   (https://github.com/princeton-vl/infinigen_internal/blob/c6345652e65b2ee05f76e2403756531976046d90/src/infinigen/assets/sim_objects/drawer.py#L28-L176)
-# - Alexander Raistrick: port lever handle to infinigen2 (sim articulation
-#   stripped), transpile curved pull, author ball knob and bar (D) pull
+# - Anna Calveri: primary author of the original Infinigen v1 lever, rose, and lock system (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/sim_objects/door_handle.py)
+# - Max Gonzalez Saez-Diez, Abhishek Joshi: Infinigen v1 simulation updates to the lever, rose, and lock system (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/sim_objects/door_handle.py)
+# - Abhishek Joshi: primary author of the original Infinigen v1 drawer and appliance pull-handle nodegroup (https://github.com/princeton-vl/infinigen_internal/blob/c6345652e65b2ee05f76e2403756531976046d90/src/infinigen/assets/sim_objects/drawer.py)
+# - Max Gonzalez Saez-Diez: Infinigen v1 simulation updates to the drawer and appliance pull-handle nodegroup (https://github.com/princeton-vl/infinigen_internal/blob/c6345652e65b2ee05f76e2403756531976046d90/src/infinigen/assets/sim_objects/drawer.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import math
 from typing import NamedTuple

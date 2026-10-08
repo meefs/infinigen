@@ -2,8 +2,9 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Zeyu Ma: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/main/infinigen/assets/materials/terrain/sand.py)
-# - Alexander Raistrick: port to procfunc/v2
+# - Zeyu Ma: original Infinigen sand material (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/terrain/sand.py)
+# - Alexander Raistrick: refactor for Infinigen2
+# Acknowledgement: This file draws inspiration from https://www.youtube.com/watch?v=y02x-p_0wP0 by Sam Bowman
 
 import procfunc as pf
 from procfunc.nodes import types as t

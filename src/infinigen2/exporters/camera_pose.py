@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Lahav Lipson, Lingjie Mei: original Infinigen v1 camera/export code (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/placement/camera.py)
-# - Alexander Raistrick: port to v2
+# - Lahav Lipson: original Infinigen v1 camera-parameter export (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/placement/camera.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 from pathlib import Path
 

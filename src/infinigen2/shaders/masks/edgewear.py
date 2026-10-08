@@ -2,8 +2,15 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Meenal Parakh: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/wear_tear/edge_wear.py)
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Meenal Parakh: original Infinigen edgewear mask (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/wear_tear/edge_wear.py)
+# - Alexander Raistrick: refactor for Infinigen2
+# Acknowledgement: This file draws inspiration from following sources:
+# https://www.youtube.com/watch?v=Aa8gf1pwb4E by Riley Brown
+# https://www.youtube.com/watch?v=EQ149bMtKRA by Christopher Fraser
+# https://www.youtube.com/watch?v=lDbsHpqKgoI by The DiNusty Empire
+# https://www.youtube.com/watch?v=bLRwf2rZiAs by DECODED
+# https://www.youtube.com/watch?v=NnlaIizA_AQ by Aryan
+# https://www.youtube.com/watch?v=_wEXl3LncAc by diivja
 
 from typing import NamedTuple
 
