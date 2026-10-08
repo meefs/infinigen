@@ -203,15 +203,15 @@ def room_shape_rand(
     floor = grid_from_corners(
         point_1=(0, 0, -eps),
         point_2=(dimensions.x, dimensions.y, -eps),
-        vertices_x=pf.nodes.math.ceil(dimensions.x),
-        vertices_y=pf.nodes.math.ceil(dimensions.y),
+        vertices_x=pf.nodes.math.ceil(dimensions.x / 0.8) + 1.0,
+        vertices_y=pf.nodes.math.ceil(dimensions.y / 0.8) + 1.0,
     )
 
     ceiling = grid_from_corners(
         point_1=(0, 0, dimensions.z + eps),
         point_2=(dimensions.x, dimensions.y, dimensions.z + eps),
-        vertices_x=pf.nodes.math.ceil(dimensions.x),
-        vertices_y=pf.nodes.math.ceil(dimensions.y),
+        vertices_x=pf.nodes.math.ceil(dimensions.x / 0.8) + 1.0,
+        vertices_y=pf.nodes.math.ceil(dimensions.y / 0.8) + 1.0,
     )
     ceiling = pf.nodes.geo.flip_faces(ceiling)
 

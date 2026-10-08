@@ -30,11 +30,16 @@ __all__ = [
     "fill_between_curves",
     "grid_from_corners",
     "lofting",
+    "mesh_from_corners",
+    "mesh_from_quads",
     "metric_box_uv",
     "metric_cylinder_uv",
     "quad_cap",
     "quad_cylinder",
     "quad_disc",
+    "refine_lattice_cage",
+    "reversed_faces",
+    "split_gaps",
     "uv_winding_sign",
     "wall_cutout_split",
 ]
@@ -965,6 +970,116 @@ def grid_from_corners(
 
     set_position = pf.nodes.geo.set_position(geometry=grid.mesh, position=position)
     return set_position
+
+
+def split_gaps(lines: np.ndarray, max_cell: float) -> np.ndarray:
+    """Sorted `lines` plus evenly spaced extras so no gap exceeds `max_cell`."""
+    gaps = np.diff(lines)
+    counts = np.maximum(1, np.ceil(gaps / max_cell - 1e-6)).astype(int)
+    gap_of_line = np.repeat(np.arange(len(gaps)), counts)
+    step = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+    inner = lines[gap_of_line] + step * (gaps / counts)[gap_of_line]
+    return np.concatenate([inner, lines[-1:]])
+
+
+def mesh_from_corners(
+    corners: np.ndarray, sizes: np.ndarray, uvs: np.ndarray
+) -> pf.MeshObject:
+    """Shared-vertex mesh from flat (N, 3) face corners, per-face corner counts and (N, 2) UVs."""
+    _, first, inverse = np.unique(
+        np.round(corners, 6), axis=0, return_index=True, return_inverse=True
+    )
+    data = bpy.data.meshes.new("mesh_from_corners")
+    data.vertices.add(len(first))
+    data.vertices.foreach_set("co", corners[first].astype(np.float32).ravel())
+    data.loops.add(len(corners))
+    data.loops.foreach_set("vertex_index", inverse.reshape(-1).astype(np.int32))
+    data.polygons.add(len(sizes))
+    starts = np.cumsum(sizes) - sizes
+    data.polygons.foreach_set("loop_start", starts.astype(np.int32))
+    data.update(calc_edges=True)
+    obj = bpy.data.objects.new("mesh_from_corners", data)
+    bpy.context.scene.collection.objects.link(obj)
+    mesh = pf.MeshObject(obj)
+    pf.ops.attr.write_attribute(mesh, uvs, "UVMap", domain="CORNER")
+    return mesh
+
+
+def mesh_from_quads(corners: np.ndarray, uvs: np.ndarray) -> pf.MeshObject:
+    sizes = np.full(len(corners), 4)
+    return mesh_from_corners(corners.reshape(-1, 3), sizes, uvs.reshape(-1, 2))
+
+
+def reversed_faces(sizes: np.ndarray) -> np.ndarray:
+    """Corner permutation that reverses the winding of every face in a flat layout."""
+    starts = np.repeat(np.cumsum(sizes) - sizes, sizes)
+    offset = np.arange(sizes.sum()) - starts
+    return starts + np.repeat(sizes, sizes) - 1 - offset
+
+
+def _quad_uv_area(quad_uv: np.ndarray) -> np.ndarray:
+    u = quad_uv[..., 0]
+    v = quad_uv[..., 1]
+    return 0.5 * np.sum(
+        u * np.roll(v, -1, axis=-1) - np.roll(u, -1, axis=-1) * v, axis=-1
+    )
+
+
+def _cells_per_quad(
+    lines: np.ndarray, low: np.ndarray, high: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    first = np.searchsorted(lines, low - 1e-5)
+    last = np.searchsorted(lines, high + 1e-5) - 1
+    return first, last - first
+
+
+def refine_lattice_cage(obj: pf.MeshObject, max_cell: float) -> pf.MeshObject:
+    """Split oversized cells of a quad cage whose faces are axis-aligned UV rectangles.
+
+    New lines go only inside UV gaps wider than `max_cell` metres, so small faces
+    (chamfers, reveals) stay untouched and no T-junctions appear. Returns `obj`
+    unchanged if any face is not a UV rectangle or nothing needs splitting.
+    """
+    if np.any(pf.ops.attr.loop_totals(obj) != 4):
+        return obj
+    loops = pf.ops.attr.loop_starts(obj)[:, None] + np.arange(4)
+    quad_uv = pf.ops.attr.uv_coords(obj)[loops]
+    quad_xyz = pf.ops.attr.vertex_positions(obj)[
+        pf.ops.attr.loop_vertex_indices(obj)[loops]
+    ]
+    low = quad_uv.min(axis=1)
+    high = quad_uv.max(axis=1)
+    area = _quad_uv_area(quad_uv)
+    if not np.allclose(np.prod(high - low, axis=1), np.abs(area), atol=1e-6):
+        return obj
+
+    u_lines = np.unique(np.round(quad_uv[..., 0], 5))
+    v_lines = np.unique(np.round(quad_uv[..., 1], 5))
+    us = split_gaps(u_lines, max_cell)
+    vs = split_gaps(v_lines, max_cell)
+    if len(us) == len(u_lines) and len(vs) == len(v_lines):
+        return obj
+
+    # affine uv -> xyz per quad, exact for flat axis-aligned UV rectangles
+    design = np.concatenate([quad_uv, np.ones((len(quad_uv), 4, 1))], axis=2)
+    uv_to_xyz = np.linalg.pinv(design) @ quad_xyz
+
+    u_first, u_count = _cells_per_quad(us, low[:, 0], high[:, 0])
+    v_first, v_count = _cells_per_quad(vs, low[:, 1], high[:, 1])
+    counts = u_count * v_count
+    quad = np.repeat(np.arange(len(counts)), counts)
+    step = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+    iu = u_first[quad] + step // v_count[quad]
+    iv = v_first[quad] + step % v_count[quad]
+    corner_u = np.stack([us[iu], us[iu + 1], us[iu + 1], us[iu]], axis=1)
+    corner_v = np.stack([vs[iv], vs[iv], vs[iv + 1], vs[iv + 1]], axis=1)
+    cell_uv = np.stack([corner_u, corner_v], axis=2)
+    flipped = area[quad] < 0
+    cell_uv[flipped] = cell_uv[flipped, ::-1]
+
+    cell_design = np.concatenate([cell_uv, np.ones((len(cell_uv), 4, 1))], axis=2)
+    cell_xyz = cell_design @ uv_to_xyz[quad]
+    return mesh_from_quads(cell_xyz, cell_uv)
 
 
 def crease_all_edges(obj: pf.MeshObject) -> None:

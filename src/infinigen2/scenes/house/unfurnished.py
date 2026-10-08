@@ -29,6 +29,7 @@ from infinigen2.scenes.house.floor_mesh import (
     WallPlane,
     house_ceiling_cutout,
     house_floor_profile_to_planes,
+    vertical_strip,
 )
 from infinigen2.scenes.house.floor_plan import (
     PolygonRings,
@@ -56,6 +57,7 @@ from infinigen2.scenes.room.wall_base import (
     WallResult,
     extrude_for_thickness,
     name_objects,
+    shift_wall_ends,
     wall_plain_rand,
 )
 from infinigen2.scenes.room.wall_cutouts import (
@@ -63,6 +65,7 @@ from infinigen2.scenes.room.wall_cutouts import (
     arrange_window_portals,
     cutout_spaced_instances,
     wall_painting_grid_rand,
+    wall_windows_rand,
 )
 from infinigen2.scenes.room.wall_mounts import (
     wall_board_shelf_rand,
@@ -73,6 +76,7 @@ from infinigen2.shaders.functionality_lists import (
     floor_material_rand,
     wall_material_rand,
 )
+from infinigen2.util import mesh as mesh_util
 from infinigen2.util.scene_cleanup import delete_object, delete_objects
 from infinigen2.uv_surface import grid_placement
 
@@ -117,7 +121,7 @@ class HouseWallResult(NamedTuple):
 class HouseDoorWallsResult(NamedTuple):
     sides: list[HouseWallSideResult]
     doors: dict[int, pf.MeshObject]
-    door_widths: dict[int, float]
+    door_dimensions: dict[int, pf.Vector]
     doorway_centers: dict[int, tuple[float, float]]
     colliders: ccol.CollisionSet
 
@@ -154,6 +158,46 @@ def _plane_direction(plane: WallPlane) -> np.ndarray:
 def _plane_inward(plane: WallPlane) -> np.ndarray:
     direction = _plane_direction(plane)
     return np.asarray((-direction[1], direction[0]))
+
+
+@pf.tracer.grammar
+def _exterior_wall_rand(
+    rng: pf.RNG,
+    plane: WallPlane,
+    material: pf.Material,
+    shared_window: window.WindowResult,
+) -> WallResult:
+    """Outer walls favour windows over the mixed arrangement."""
+
+    def windows(rng, wall, wall_material):
+        return wall_windows_rand(
+            rng,
+            wall,
+            wall_material,
+            window_obj=shared_window.mesh,
+            window_portal=shared_window.light,
+            top_profile_height=shared_window.profile.top_profile_height,
+            bottom_profile_height=shared_window.profile.bottom_profile_height,
+            wall_thickness=plane.thickness,
+            reveal_depth=plane.thickness,
+        )
+
+    def mixed(rng, wall, wall_material):
+        return wall_arrangement_rand(
+            rng,
+            wall=wall,
+            wall_material=wall_material,
+            window_obj=shared_window.mesh,
+            window_portal=shared_window.light,
+            top_profile_height=shared_window.profile.top_profile_height,
+            bottom_profile_height=shared_window.profile.bottom_profile_height,
+            wall_thickness=plane.thickness,
+            window_reveal_depth=plane.thickness,
+        )
+
+    rng_choice, rng_feature = rng.spawn(2)
+    option = pf.control.choice(rng_choice, [(windows, 3.0), (mixed, 1.0)])
+    return option(rng_feature, plane.obj, material)
 
 
 def _unique_objects(objects: list[ObjectT]) -> list[ObjectT]:
@@ -288,7 +332,7 @@ def _door_walls(
     ]
     results = []
     doors = {}
-    door_widths = {}
+    door_dimensions = {}
     doorway_centers = {}
     door_clearances = []
     for wall_index, rng_wall in zip(
@@ -320,7 +364,7 @@ def _door_walls(
         ]
         if leaves:
             doors[wall_index] = leaves[0]
-            door_widths[wall_index] = door_width
+            door_dimensions[wall_index] = dimensions
         doorway_center = (
             np.asarray(sides[0].start)
             + _plane_direction(sides[0]) * centers[0]
@@ -338,7 +382,7 @@ def _door_walls(
     return HouseDoorWallsResult(
         sides=results,
         doors=doors,
-        door_widths=door_widths,
+        door_dimensions=door_dimensions,
         doorway_centers=doorway_centers,
         colliders=ccol.collision_set([*doors.values(), *door_clearances]),
     )
@@ -347,13 +391,13 @@ def _door_walls(
 def _open_door_rand(
     rng: pf.RNG,
     door: pf.MeshObject,
-    door_width: float,
+    dimensions: pf.Vector,
+    wall_thickness: float,
     obstacles: ccol.CollisionSet,
     target_angle_deg: float | None,
     attempts: int = 8,
 ) -> float | None:
     closed = door.item().matrix_world.copy()
-    hinge = Matrix.Translation((0.0, -door_width / 2, 0.0))
     attempt_index = 0
 
     def attempt(attempt_rng: pf.RNG) -> float | None:
@@ -365,6 +409,10 @@ def _open_door_rand(
         direction = 1 if attempt_index % 2 == 0 else -1
         angle_deg = magnitude * direction
         attempt_index += 1
+        # hinge on the wall face the leaf swings towards so it clears the jamb
+        half_wall = wall_thickness / 2
+        hinge_x = -half_wall if direction > 0 else max(half_wall, dimensions.x)
+        hinge = Matrix.Translation((hinge_x, -dimensions.y / 2, 0.0))
         rotation = Matrix.Rotation(np.deg2rad(angle_deg), 4, "Z")
         door.item().matrix_world = closed @ hinge @ rotation @ hinge.inverted()
         if ccol.intersection_test(obstacles, door):
@@ -394,7 +442,7 @@ def _open_doors_rand(
     rng: pf.RNG,
     sides: list[HouseWallSideResult],
     doors: dict[int, pf.MeshObject],
-    door_widths: dict[int, float],
+    door_dimensions: dict[int, pf.Vector],
     corners: list[pf.MeshObject],
     target_angle_deg: float | None,
 ) -> None:
@@ -403,11 +451,26 @@ def _open_doors_rand(
     for wall_index, door_rng in zip(wall_indices, door_rngs, strict=True):
         results = [s.result for s in sides if s.plane.wall_index != wall_index]
         objects = [obj for r in results for obj in _door_obstacles(r)]
+        own_wall = [
+            obj
+            for s in sides
+            if s.plane.wall_index == wall_index
+            for obj in (*s.result.sills, *s.result.wall_planes)
+        ]
+        objects += own_wall
         other_doors = [doors[index] for index in doors if index != wall_index]
         obstacles = ccol.collision_set(_unique_objects(objects + corners + other_doors))
         door = doors[wall_index]
+        thickness = next(
+            s.plane.thickness for s in sides if s.plane.wall_index == wall_index
+        )
         angle_deg = _open_door_rand(
-            door_rng, door, door_widths[wall_index], obstacles, target_angle_deg
+            door_rng,
+            door,
+            door_dimensions[wall_index],
+            thickness,
+            obstacles,
+            target_angle_deg,
         )
         if angle_deg is not None:
             continue
@@ -421,19 +484,49 @@ def _open_doors_rand(
                 decorations[:] = [obj for obj in decorations if obj != door]
         delete_objects([door.item()])
         del doors[wall_index]
-        del door_widths[wall_index]
+        del door_dimensions[wall_index]
 
 
-def _prism(section: np.ndarray, z_bounds: tuple[float, float]) -> pf.MeshObject:
+def _prism(
+    section: np.ndarray, z_bounds: tuple[float, float], ring_spacing: float
+) -> pf.MeshObject:
     count = len(section)
-    vertices = np.asarray([(x, y, z) for z in z_bounds for x, y in section])
-    sides = [
-        (i, (i + 1) % count, (i + 1) % count + count, i + count) for i in range(count)
-    ]
-    faces = [tuple(reversed(range(count))), tuple(range(count, 2 * count)), *sides]
-    return pf.ops.primitives.mesh_from_numpy(
-        vertices=vertices, faces=np.asarray(faces, dtype=object)
+    levels = mesh_util.split_gaps(np.asarray(z_bounds, dtype=float), ring_spacing)
+    nxt = np.roll(section, -1, axis=0)
+    side_xy = np.broadcast_to(
+        np.stack([section, nxt, nxt, section], axis=1), (len(levels) - 1, count, 4, 2)
     )
+    side_z = np.stack([levels[:-1], levels[:-1], levels[1:], levels[1:]], axis=1)
+    side_z = np.broadcast_to(side_z[:, None, :, None], (*side_xy.shape[:3], 1))
+    sides = np.concatenate([side_xy, side_z], axis=-1).reshape(-1, 3)
+    bottom = np.column_stack([section[::-1], np.full(count, levels[0])])
+    top = np.column_stack([section, np.full(count, levels[-1])])
+    corners = np.concatenate([bottom, top, sides])
+    sizes = np.concatenate([[count, count], np.full(len(sides) // 4, 4)])
+    return mesh_util.mesh_from_corners(corners, sizes, np.zeros((len(corners), 2)))
+
+
+def _filler_section(
+    vertex: tuple[float, float], group: list[tuple[WallPlane, np.ndarray]]
+) -> np.ndarray | None:
+    """Slot footprint where outer walls of different rooms meet, else None.
+
+    Bends within one room need no filler: the wall ends overlap or are chamfered.
+    """
+    thickness = group[0][0].thickness
+    if len({plane.room_index for plane, _point in group}) == 1:
+        return None
+    normals = [-_plane_inward(plane) for plane, _point in group]
+    points = [point for _plane, point in group]
+    points += [point + n * thickness for point, n in zip(points, normals, strict=True)]
+    points += [
+        np.asarray(vertex) + (a + b) * thickness / 2 / (1 + a @ b)
+        for a, b in combinations(normals, 2)
+    ]
+    hull = shapely.MultiPoint(points).convex_hull
+    if hull.geom_type != "Polygon":
+        return None
+    return np.asarray(orient(hull, 1.0).exterior.coords[:-1])
 
 
 def _shell_fillers(
@@ -453,27 +546,109 @@ def _shell_fillers(
             ends[key].append((plane, np.asarray(point)))
     fillers: dict[int, list[pf.MeshObject]] = defaultdict(list)
     for vertex, group in ends.items():
-        thickness = group[0][0].thickness
-        normals = [-_plane_inward(plane) for plane, _point in group]
-        points = [point for _plane, point in group]
-        points += [
-            point + n * thickness for point, n in zip(points, normals, strict=True)
-        ]
-        points += [
-            np.asarray(vertex) + (a + b) * thickness / 2 / (1 + a @ b)
-            for a, b in combinations(normals, 2)
-        ]
-        hull = shapely.MultiPoint(points).convex_hull
-        if hull.geom_type != "Polygon":
+        section = _filler_section(vertex, group)
+        if section is None:
             continue
-        section = np.asarray(orient(hull, 1.0).exterior.coords[:-1])
-        obj = _prism(section, (-0.01, height + 0.01))
-        pf.ops.object.set_material(obj, material=materials[group[0][0].room_index])
+        obj = _prism(section, (-0.03, height + 0.03), 0.8)
+        pf.ops.modifier.bevel(obj, width=0.006, segments=1)
+        material = materials[group[0][0].room_index]
+        pf.ops.object.set_material(
+            obj, surface=material.surface, displacement=material.displacement
+        )
         pf.ops.uv.cube_project(obj, uv_name="UVMap")
-        pf.ops.object.shade_flat(obj)
+        mesh_util.crease_all_edges(obj)
+        pf.ops.modifier.subdivide_surface(
+            obj, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True
+        )
         for room_index in sorted({plane.room_index for plane, _point in group}):
             fillers[room_index].append(obj)
     return dict(fillers)
+
+
+def _point_key(point: tuple[float, float]) -> tuple[float, float]:
+    return round(point[0], 5), round(point[1], 5)
+
+
+def _plane_key(plane: WallPlane) -> tuple[int, tuple[float, float]]:
+    return plane.room_index, _point_key(plane.start)
+
+
+def _turn(incoming: WallPlane, outgoing: WallPlane) -> float:
+    a = _plane_direction(incoming)
+    b = _plane_direction(outgoing)
+    return float(a[0] * b[1] - a[1] * b[0])
+
+
+def _successors(planes: list[WallPlane]) -> list[tuple[WallPlane, WallPlane]]:
+    """Consecutive (plane, next plane) pairs around each room, which runs CCW."""
+    by_start = {_plane_key(plane): plane for plane in planes}
+    pairs = [
+        (plane, by_start.get((plane.room_index, _point_key(plane.end))))
+        for plane in planes
+    ]
+    return [(plane, following) for plane, following in pairs if following is not None]
+
+
+def _end_shift(turn: float, thickness: float, chamfer: float) -> float:
+    # inside corners reach the next wall's centerline; outside corners trim for a chamfer
+    if abs(turn) < 1e-3:
+        return 0.0
+    if turn > 0:
+        return thickness / 2
+    return -chamfer
+
+
+def _corner_chamfer(
+    incoming: WallPlane,
+    outgoing: WallPlane,
+    chamfer: float,
+    height: float,
+    material: pf.Material,
+) -> pf.MeshObject:
+    corner = np.asarray(incoming.end)
+    start = corner - _plane_direction(incoming) * chamfer
+    end = corner + _plane_direction(outgoing) * chamfer
+    strip = vertical_strip(tuple(start), tuple(end), height, "house_wall_chamfer")
+    pf.ops.object.set_material(
+        strip, surface=material.surface, displacement=material.displacement
+    )
+    mesh_util.crease_all_edges(strip)
+    pf.ops.modifier.subdivide_surface(
+        strip, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True
+    )
+    return strip
+
+
+def _join_room_corners(
+    sides: list[HouseWallSideResult],
+    planes: list[WallPlane],
+    materials: list[pf.Material],
+    height: float,
+) -> dict[int, list[pf.MeshObject]]:
+    """Close every wall-to-wall corner and return the chamfer strips per room."""
+    chamfer = 0.015
+    pairs = _successors(planes)
+    turn_in = {
+        _plane_key(following): _turn(plane, following) for plane, following in pairs
+    }
+    turn_out = {
+        _plane_key(plane): _turn(plane, following) for plane, following in pairs
+    }
+    for side in sides:
+        key = _plane_key(side.plane)
+        low = _end_shift(turn_in.get(key, 0.0), side.plane.thickness, chamfer)
+        high = _end_shift(turn_out.get(key, 0.0), side.plane.thickness, chamfer)
+        direction = np.array([*_plane_direction(side.plane), 0.0])
+        for obj in _unique_objects([*side.result.wall_planes, *side.result.backs]):
+            shift_wall_ends(obj, direction, low, high)
+    strips: dict[int, list[pf.MeshObject]] = defaultdict(list)
+    for plane, following in pairs:
+        if _turn(plane, following) > -1e-3:
+            continue
+        material = materials[plane.room_index]
+        strip = _corner_chamfer(plane, following, chamfer, height, material)
+        strips[plane.room_index].append(strip)
+    return dict(strips)
 
 
 def _polygon_extent(polygon: BaseGeometry) -> tuple[float, float]:
@@ -530,9 +705,11 @@ def _pierced_ceiling(
     grid: CeilingGridResult,
     centers: np.ndarray,
     height: float,
+    thickness: float,
 ) -> HouseCeilingCutoutResult:
     depth = grid.reveal_depth
-    cutout = house_ceiling_cutout(polygon, centers, grid.footprint, height, depth)
+    surface = polygon.buffer(thickness / 2, join_style="mitre")
+    cutout = house_ceiling_cutout(surface, centers, grid.footprint, height, depth)
     _finish_surface(cutout.ceiling, material)
     _finish_surface(cutout.sill, material)
     delete_object(ceiling.item())
@@ -578,7 +755,9 @@ def _house_skylights_rand(
             rng_fallback, polygon, floor, ceiling, material, height, thickness
         )
     windows = _place_on_ceiling(ceiling, grid, centers)
-    cutout = _pierced_ceiling(polygon, ceiling, material, grid, centers, height)
+    cutout = _pierced_ceiling(
+        polygon, ceiling, material, grid, centers, height, thickness
+    )
     portals = []
     if grid.light is not None:
         portals = arrange_window_portals(windows, grid.instance, grid.light)
@@ -607,7 +786,9 @@ def _house_light_bars_rand(
             rng_fallback, polygon, floor, ceiling, material, height, thickness
         )
     bars = _place_on_ceiling(ceiling, grid, centers)
-    cutout = _pierced_ceiling(polygon, ceiling, material, grid, centers, height)
+    cutout = _pierced_ceiling(
+        polygon, ceiling, material, grid, centers, height, thickness
+    )
     lights = ceiling_light_bar_lights_rand(
         rng_lights, grid.footprint, bars, polygon.area
     )
@@ -728,21 +909,16 @@ def house_walls_rand(
                 wall_thickness=plane.thickness,
             )
         else:
-            result = wall_arrangement_rand(
-                plane_rng,
-                wall=plane.obj,
-                wall_material=material,
-                window_obj=shared_window.mesh,
-                window_portal=shared_window.light,
-                top_profile_height=shared_window.profile.top_profile_height,
-                bottom_profile_height=shared_window.profile.bottom_profile_height,
-                wall_thickness=plane.thickness,
-                window_reveal_depth=plane.thickness,
-            )
+            result = _exterior_wall_rand(plane_rng, plane, material, shared_window)
         exterior.append(HouseWallSideResult(plane, result))
 
-    corners_by_room = _shell_fillers(planes_exterior, materials, walls, height)
     sides = interior + exterior
+    corners_by_room = _shell_fillers(planes_exterior, materials, walls, height)
+    chamfers = _join_room_corners(
+        sides, planes_interior + planes_exterior, materials, height
+    )
+    for room_index, strips in chamfers.items():
+        corners_by_room.setdefault(room_index, []).extend(strips)
     corners = _unique_objects(
         [obj for objects in corners_by_room.values() for obj in objects]
     )
@@ -750,7 +926,7 @@ def house_walls_rand(
         rng_door_open,
         sides,
         door_walls.doors,
-        door_walls.door_widths,
+        door_walls.door_dimensions,
         corners,
         door_open_angle_deg,
     )

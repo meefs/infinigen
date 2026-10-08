@@ -14,12 +14,12 @@ from infinigen2.scenes.placement.distribute import propagate_modifiers_to_instan
 from infinigen2.scenes.room.wall_base import (
     WallResult,
     extrude_for_thickness,
+    finish_wall_plane,
     fit_grid_margins,
     plain_wall,
     plane_to_posed_canonical_mesh,
     resolve_wall_inputs,
     seat_upright_cabinet,
-    subdivide_wall_plane,
     upright_cabinet_footprint,
     wall_storage_width_rand,
     wall_uv_dimensions,
@@ -123,12 +123,7 @@ def wall_board_shelf_rand(
 
     wall_thick = extrude_for_thickness(wall, wall_thickness)
     wall_thick.item().name = "room_wall_back"
-    pf.ops.object.set_material(
-        wall,
-        surface=wall_material.surface,
-        displacement=wall_material.displacement,
-    )
-    subdivide_wall_plane(wall)
+    wall = finish_wall_plane(wall, wall_material)
     wall = plane_to_posed_canonical_mesh(wall)
 
     return WallResult(

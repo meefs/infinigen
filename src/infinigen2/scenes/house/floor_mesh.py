@@ -9,7 +9,6 @@ from typing import NamedTuple
 import numpy as np
 import procfunc as pf
 import shapely
-from mathutils.geometry import tessellate_polygon
 from shapely.geometry.base import BaseGeometry
 
 from infinigen2.scenes.house.floor_plan import (
@@ -19,6 +18,7 @@ from infinigen2.scenes.house.floor_plan import (
     wall_is_exterior,
     wall_length,
 )
+from infinigen2.util import mesh as mesh_util
 
 __all__ = [
     "HouseCeilingCutoutResult",
@@ -26,6 +26,7 @@ __all__ = [
     "WallPlane",
     "house_ceiling_cutout",
     "house_floor_profile_to_planes",
+    "vertical_strip",
 ]
 
 
@@ -55,76 +56,87 @@ class HouseCeilingCutoutResult(NamedTuple):
     back: pf.MeshObject
 
 
-def _mesh_from_faces(faces, name: str, corner_uvs: np.ndarray) -> pf.MeshObject:
-    vertices = np.asarray([point for face in faces for point in face], dtype=float)
-    stops = np.cumsum([len(face) for face in faces])
-    starts = np.concatenate(([0], stops[:-1]))
-    indices = [range(start, stop) for start, stop in zip(starts, stops, strict=True)]
-    mesh = pf.ops.primitives.mesh_from_numpy(vertices=vertices, faces=indices)
+def _mesh_from_corners(
+    corners: np.ndarray, sizes: np.ndarray, uvs: np.ndarray, name: str
+) -> pf.MeshObject:
+    mesh = mesh_util.mesh_from_corners(corners, sizes, uvs)
     mesh.item().name = name
     pf.ops.attr.write_attribute(mesh, 1.0, "crease_edge", domain="EDGE")
-    pf.ops.attr.write_attribute(
-        mesh,
-        np.asarray(corner_uvs, dtype=float).reshape(-1, 2),
-        "UVMap",
-        domain="CORNER",
-    )
     return mesh
 
 
-def _face_signed_area(face: tuple[tuple[float, float, float], ...]) -> float:
-    return 0.5 * sum(
-        x * face[(index + 1) % len(face)][1] - face[(index + 1) % len(face)][0] * y
-        for index, (x, y, _) in enumerate(face)
-    )
+def _ring_segments(rings: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    coords, ring = shapely.get_coordinates(rings, return_index=True)
+    same_ring = ring[:-1] == ring[1:]
+    return coords[:-1][same_ring], coords[1:][same_ring]
+
+
+def _axis_lines(polygon: BaseGeometry, axis: int) -> np.ndarray:
+    """Coordinates of the polygon's edges running along `1 - axis`, so cells follow them."""
+    starts, ends = _ring_segments(shapely.get_rings(polygon))
+    flat = starts[np.abs(starts[:, axis] - ends[:, axis]) < 1e-9, axis]
+    bounds = np.asarray(polygon.bounds)[[axis, axis + 2]]
+    lines = np.unique(np.concatenate([bounds, flat]))
+    keep = (np.diff(lines, prepend=-np.inf) > 0.05) & (lines[-1] - lines > 0.05)
+    keep[-1] = True
+    return lines[keep]
 
 
 def _polygon_faces(
     polygon: BaseGeometry, z: float, ceiling: bool
-) -> list[tuple[tuple[float, float, float], ...]]:
-    rings = [polygon.exterior, *polygon.interiors]
-    points = [list(ring.coords[:-1]) for ring in rings]
-    loops = [[pf.Vector((x, y, 0.0)) for x, y in ring] for ring in points]
-    vertices = [point for ring in points for point in ring]
-    faces = []
-    for triangle in tessellate_polygon(loops):
-        face = tuple((*vertices[index], z) for index in triangle)
-        signed_area = _face_signed_area(face)
-        if abs(signed_area) <= 1e-12:
-            continue
-        points_up = signed_area > 0
-        if points_up == ceiling:
-            face = tuple(reversed(face))
-        faces.append(face)
-    return faces
+) -> tuple[np.ndarray, np.ndarray]:
+    """Flat corners and face sizes of the polygon's quad lattice, clipped at the rim."""
+    xs = mesh_util.split_gaps(_axis_lines(polygon, 0), 0.8)
+    ys = mesh_util.split_gaps(_axis_lines(polygon, 1), 0.8)
+    x0, y0 = np.meshgrid(xs[:-1], ys[:-1], indexing="ij")
+    x1, y1 = np.meshgrid(xs[1:], ys[1:], indexing="ij")
+    cells = shapely.box(x0.ravel(), y0.ravel(), x1.ravel(), y1.ravel())
+    inside = shapely.within(cells, polygon)
+    rim = shapely.intersects(cells, polygon) & ~inside
+
+    quad_x = np.stack([x0, x1, x1, x0], axis=-1).reshape(-1, 4)[inside]
+    quad_y = np.stack([y0, y0, y1, y1], axis=-1).reshape(-1, 4)[inside]
+    quad_xy = np.stack([quad_x, quad_y], axis=-1).reshape(-1, 2)
+
+    pieces = shapely.get_parts(shapely.intersection(cells[rim], polygon))
+    is_area = (shapely.get_type_id(pieces) == 3) & (shapely.area(pieces) > 1e-6)
+    pieces = shapely.normalize(pieces[is_area])
+    if np.any(shapely.get_num_interior_rings(pieces) > 0):
+        raise ValueError("Floor lattice cell clipped to a piece with a hole")
+    exteriors = shapely.get_exterior_ring(pieces)
+    coords, ring = shapely.get_coordinates(exteriors, return_index=True)
+    not_closing = np.zeros(len(ring), dtype=bool)
+    not_closing[:-1] = ring[:-1] == ring[1:]
+    rim_sizes = np.bincount(ring[not_closing], minlength=len(pieces))
+    # normalize() winds exteriors clockwise; flip to counter-clockwise (upward normal)
+    rim_xy = coords[not_closing][mesh_util.reversed_faces(rim_sizes)]
+
+    xy = np.concatenate([quad_xy, rim_xy])
+    sizes = np.concatenate([np.full(len(quad_x), 4), rim_sizes])
+    if ceiling:
+        xy = xy[mesh_util.reversed_faces(sizes)]
+    return np.column_stack([xy, np.full(len(xy), z)]), sizes
 
 
 def _horizontal_surface(
     polygon: BaseGeometry, z: float, name: str, ceiling: bool
 ) -> pf.MeshObject:
-    faces = _polygon_faces(polygon, z, ceiling)
-    uvs = [[(x, y) for x, y, _ in face] for face in faces]
-    return _mesh_from_faces(faces, name, np.asarray(uvs))
+    corners, sizes = _polygon_faces(polygon, z, ceiling)
+    return _mesh_from_corners(corners, sizes, corners[:, :2], name)
 
 
-def _hole_sides(
-    corners: np.ndarray, z: float, depth: float
-) -> list[tuple[tuple[float, float, float], ...]]:
-    sides = []
-    for (x0, y0), (x1, y1) in zip(corners, np.roll(corners, -1, axis=0), strict=True):
-        sides.append(
-            ((x1, y1, z), (x0, y0, z), (x0, y0, z + depth), (x1, y1, z + depth))
-        )
-    return sides
-
-
-def _side_uvs(
-    sides: list[tuple[tuple[float, float, float], ...]], depth: float
-) -> np.ndarray:
-    lengths = [float(np.linalg.norm(np.subtract(side[0], side[1]))) for side in sides]
-    return np.asarray(
-        [((0, 0), (length, 0), (length, depth), (0, depth)) for length in lengths]
-    )
+def _side_quads(
+    starts: np.ndarray, ends: np.ndarray, z: float, depth: float
+) -> tuple[np.ndarray, np.ndarray]:
+    """(S, 4, 3) vertical quads rising `depth` from z along each segment, with metric UVs."""
+    xy = np.stack([ends, starts, starts, ends], axis=1)
+    heights = np.broadcast_to([z, z, z + depth, z + depth], xy.shape[:2])
+    corners = np.concatenate([xy, heights[..., None]], axis=-1)
+    length = np.linalg.norm(ends - starts, axis=1)
+    zeros = np.zeros_like(length)
+    corner_u = np.stack([zeros, length, length, zeros], axis=1)
+    corner_v = np.broadcast_to([0.0, 0.0, depth, depth], corner_u.shape)
+    return corners, np.stack([corner_u, corner_v], axis=-1)
 
 
 def house_ceiling_cutout(
@@ -138,18 +150,25 @@ def house_ceiling_cutout(
     z = height + 0.005
     half = np.asarray(footprint) / 2
     unit = np.asarray(((-1, -1), (1, -1), (1, 1), (-1, 1)))
-    holes = [center + unit * half for center in centers]
+    holes = np.asarray(centers)[:, None, :] + unit * half
     pierced = shapely.Polygon(polygon.exterior, [*polygon.interiors, *holes])
-    sides = [side for hole in holes for side in _hole_sides(hole, z, depth)]
-    rings = [np.asarray(r.coords[:-1]) for r in (polygon.exterior, *polygon.interiors)]
-    rim = [side for ring in rings for side in _hole_sides(ring, z, depth)]
-    top = _polygon_faces(pierced, z + depth, False)
-    top_uvs = np.asarray([(x, y) for face in top for x, y, _ in face])
-    back_uvs = np.concatenate([top_uvs, _side_uvs(rim, depth).reshape(-1, 2)])
+    sill, sill_uvs = _side_quads(
+        holes.reshape(-1, 2), np.roll(holes, -1, axis=1).reshape(-1, 2), z, depth
+    )
+    rim, rim_uvs = _side_quads(*_ring_segments(shapely.get_rings(polygon)), z, depth)
+    top, top_sizes = _polygon_faces(pierced, z + depth, False)
+    back = np.concatenate([top, rim.reshape(-1, 3)])
+    back_sizes = np.concatenate([top_sizes, np.full(len(rim), 4)])
+    back_uvs = np.concatenate([top[:, :2], rim_uvs.reshape(-1, 2)])
     return HouseCeilingCutoutResult(
         ceiling=_horizontal_surface(pierced, z, "house_ceiling_cut", True),
-        sill=_mesh_from_faces(sides, "house_ceiling_sill", _side_uvs(sides, depth)),
-        back=_mesh_from_faces(top + rim, "house_ceiling_back", back_uvs),
+        sill=_mesh_from_corners(
+            sill.reshape(-1, 3),
+            np.full(len(sill), 4),
+            sill_uvs.reshape(-1, 2),
+            "house_ceiling_sill",
+        ),
+        back=_mesh_from_corners(back, back_sizes, back_uvs, "house_ceiling_back"),
     )
 
 
@@ -213,6 +232,28 @@ def _polygon_edges(
     return [edge for ring in rings for edge in pairwise(ring.coords)]
 
 
+def vertical_strip(
+    start: tuple[float, float], end: tuple[float, float], height: float, name: str
+) -> pf.MeshObject:
+    """Metric-UV wall grid from `start` to `end`, facing left of that direction."""
+    # Square-room convention: first edge is vertical (V/up), second is U/along-wall.
+    length = float(np.linalg.norm(np.asarray(end) - np.asarray(start)))
+    along = mesh_util.split_gaps(np.array([0.0, length]), 0.8)
+    up = mesh_util.split_gaps(np.array([-0.03, height + 0.03]), 0.8)
+    direction = (np.asarray(end) - np.asarray(start)) / length
+    u0, v0 = np.meshgrid(along[:-1], up[:-1], indexing="ij")
+    u1, v1 = np.meshgrid(along[1:], up[1:], indexing="ij")
+    corner_u = np.stack([u0, u0, u1, u1], axis=-1).reshape(-1, 4)
+    corner_v = np.stack([v0, v1, v1, v0], axis=-1).reshape(-1, 4)
+    quad_uv = np.stack([corner_u, corner_v], axis=-1)
+    quad_xy = np.asarray(start) + corner_u[..., None] * direction
+    quad_xyz = np.concatenate([quad_xy, corner_v[..., None]], axis=-1)
+    mesh = mesh_util.mesh_from_quads(quad_xyz, quad_uv)
+    mesh.item().name = name
+    pf.ops.attr.write_attribute(mesh, 1.0, "crease_edge", domain="EDGE")
+    return mesh
+
+
 def _wall_plane(
     wall_index: int,
     room_index: int,
@@ -221,17 +262,10 @@ def _wall_plane(
     height: float,
     thickness: float,
 ) -> WallPlane:
-    low = -0.01
-    high = height + 0.01
-    x0, y0 = start
-    x1, y1 = end
-    # Square-room convention: first edge is vertical (V/up), second is U/along-wall.
-    quad = (x0, y0, low), (x0, y0, high), (x1, y1, high), (x1, y1, low)
     length = float(np.linalg.norm(np.asarray(end) - np.asarray(start)))
-    uvs = ((0.0, low), (0.0, high), (length, high), (length, low))
     name = f"house_wall.{wall_index:02d}.{room_index:02d}"
     return WallPlane(
-        obj=_mesh_from_faces([quad], name, np.asarray(uvs)),
+        obj=vertical_strip(start, end, height, name),
         wall_index=wall_index,
         room_index=room_index,
         thickness=thickness,
@@ -266,10 +300,12 @@ def house_floor_profile_to_planes(
                 for wall_index, low, high in spans
             ]
         floor_name = f"room_floor.{room_index:02d}"
-        floors.append(_horizontal_surface(polygon, -0.005, floor_name, False))
+        # extend to the wall centerline so rooms meet without a gap under doorways
+        surface = polygon.buffer(walls[0].thickness / 2, join_style="mitre")
+        floors.append(_horizontal_surface(surface, -0.005, floor_name, False))
         ceiling_name = f"room_ceiling.{room_index:02d}"
         ceilings.append(
-            _horizontal_surface(polygon, height + 0.005, ceiling_name, True)
+            _horizontal_surface(surface, height + 0.005, ceiling_name, True)
         )
     corners = np.asarray([(*wall.start, *wall.end) for wall in walls])
     extent = corners.reshape(-1, 2).max(axis=0)

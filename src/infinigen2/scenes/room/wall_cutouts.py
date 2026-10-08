@@ -28,12 +28,12 @@ from infinigen2.scenes.room.wall_base import (
     ROOM_SUBSURF_LEVELS,
     WallResult,
     extrude_for_thickness,
+    finish_wall_plane,
     fit_grid_margins,
     plain_wall,
     plane_to_posed_canonical_mesh,
     resolve_wall_inputs,
     seat_upright_cabinet,
-    subdivide_wall_plane,
     upright_cabinet_footprint,
     wall_plain_rand,
     wall_storage_width_rand,
@@ -304,7 +304,10 @@ def cutout_spaced_instances(
 
         if is_rectangular:
             sill = pf.nodes.to_mesh_object(split.sill)
-            subdivide_wall_plane(sill)
+            mesh_util.crease_all_edges(sill)
+            pf.ops.modifier.subdivide_surface(
+                sill, ROOM_SUBSURF_LEVELS, _skip_apply=True
+            )
         else:
             sill = _subdivide_rounded_cutout(split.sill, threshold_degrees=60.0)
         pf.ops.object.set_transform(
@@ -332,17 +335,16 @@ def cutout_spaced_instances(
     # weld coincident verts so boundary slivers don't break canonicalization
     geom = pf.nodes.geo.merge_by_distance(cut, distance=0.001)
     if is_rectangular:
-        geom = pf.nodes.to_mesh_object(geom)
-        subdivide_wall_plane(geom)
+        geom = finish_wall_plane(pf.nodes.to_mesh_object(geom), surface_material)
     else:
         geom = _subdivide_rounded_cutout(geom, threshold_degrees=35.0)
+        pf.ops.object.set_material(
+            geom,
+            surface=surface_material.surface,
+            displacement=surface_material.displacement,
+        )
     pf.ops.object.set_transform(
         geom, surface.item().location, surface.item().rotation_euler
-    )
-    pf.ops.object.set_material(
-        geom,
-        surface=surface_material.surface,
-        displacement=surface_material.displacement,
     )
 
     recess_depth = wall_thickness * recess_pct if recess else 0.0

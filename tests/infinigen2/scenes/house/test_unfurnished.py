@@ -41,8 +41,8 @@ def test_wall_planes_overlap_floor_and_ceiling_without_xy_expansion(rng) -> None
     np.testing.assert_allclose(
         highs[:2], np.asarray(shape.dimensions[:2]) - 0.15, atol=1e-5
     )
-    np.testing.assert_allclose(lows[2], -0.01, atol=1e-5)
-    np.testing.assert_allclose(highs[2], 2.76, atol=1e-5)
+    np.testing.assert_allclose(lows[2], -0.03, atol=1e-5)
+    np.testing.assert_allclose(highs[2], 2.78, atol=1e-5)
     floor_low = min(pf.ops.attr.bbox_min_max(obj)[0][2] for obj in shape.floors)
     ceiling_high = max(pf.ops.attr.bbox_min_max(obj)[1][2] for obj in shape.ceilings)
     assert lows[2] < floor_low
@@ -62,7 +62,8 @@ def test_house_unfurnished_rand_returns_rooms_with_shell_and_door_graph() -> Non
     lows = np.min([np.asarray(low) for low, _high in bounds], axis=0)
     highs = np.max([np.asarray(high) for _low, high in bounds], axis=0)
 
-    assert np.all(lows > -0.05) and np.all(highs < (12.05, 10.05, 2.8))
+    assert np.all(lows > (-0.16, -0.16, -0.05))
+    assert np.all(highs < (12.16, 10.16, 2.8))
     assert len(result.rooms) == 4
     assert result.environment is not None
     door_clearances = [

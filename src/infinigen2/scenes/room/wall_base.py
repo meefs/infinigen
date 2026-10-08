@@ -11,11 +11,13 @@ import procfunc as pf
 from infinigen2.scenes.placement import collision as ccol
 from infinigen2.shaders.functionality_lists import wall_material_rand
 from infinigen2.util import mesh as mesh_util
+from infinigen2.util.scene_cleanup import delete_object
 
 __all__ = [
     "ROOM_SUBSURF_LEVELS",
     "WallResult",
     "extrude_for_thickness",
+    "finish_wall_plane",
     "fit_grid_margins",
     "name_objects",
     "overlap_wall_plane_edges",
@@ -23,7 +25,7 @@ __all__ = [
     "plane_to_posed_canonical_mesh",
     "resolve_wall_inputs",
     "seat_upright_cabinet",
-    "subdivide_wall_plane",
+    "shift_wall_ends",
     "upright_cabinet_footprint",
     "wall_storage_width_rand",
     "wall_uv_dimensions",
@@ -136,9 +138,23 @@ def plane_to_posed_canonical_mesh(
     return obj
 
 
-def subdivide_wall_plane(obj: pf.MeshObject) -> None:
-    mesh_util.crease_all_edges(obj)
-    pf.ops.modifier.subdivide_surface(obj, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True)
+def finish_wall_plane(wall: pf.MeshObject, wall_material: pf.Material) -> pf.MeshObject:
+    refined = mesh_util.refine_lattice_cage(wall, 0.8)
+    if refined is not wall:
+        pf.ops.object.set_transform(
+            refined, wall.item().location, wall.item().rotation_euler
+        )
+        delete_object(wall.item())
+    pf.ops.object.set_material(
+        refined,
+        surface=wall_material.surface,
+        displacement=wall_material.displacement,
+    )
+    mesh_util.crease_all_edges(refined)
+    pf.ops.modifier.subdivide_surface(
+        refined, levels=ROOM_SUBSURF_LEVELS, _skip_apply=True
+    )
+    return refined
 
 
 def _name_materials(obj: pf.MeshObject, base: str) -> None:
@@ -162,29 +178,43 @@ def wall_uv_dimensions(wall: pf.MeshObject) -> tuple[float, float]:
     return width, height
 
 
-def overlap_wall_plane_edges(wall: pf.MeshObject, overlap: float) -> None:
-    positions = pf.ops.attr.vertex_positions(wall)
-    y_min = positions[:, 1].min()
-    y_max = positions[:, 1].max()
-    at_min = np.isclose(positions[:, 1], y_min, rtol=0.0, atol=1e-6)
-    at_max = np.isclose(positions[:, 1], y_max, rtol=0.0, atol=1e-6)
+def shift_wall_ends(
+    wall: pf.MeshObject, direction: np.ndarray, low: float, high: float
+) -> None:
+    """Move each end of a wall mesh along world `direction`, keeping metric U."""
+    if low == 0.0 and high == 0.0:
+        return
+    item = wall.item()
+    matrix = np.array(item.matrix_world)
+    rotation = matrix[:3, :3]
+    offset = matrix[:3, 3]
+    world = pf.ops.attr.vertex_positions(wall) @ rotation.T + offset
+    along = world @ direction
+    at_low = np.isclose(along, along.min(), rtol=0.0, atol=1e-5)
+    at_high = np.isclose(along, along.max(), rtol=0.0, atol=1e-5)
 
-    loop_vertices = np.empty(len(wall.item().data.loops), dtype=int)
-    wall.item().data.loops.foreach_get("vertex_index", loop_vertices)
-    loops_at_min = at_min[loop_vertices]
-    loops_at_max = at_max[loop_vertices]
+    loop_vertices = np.empty(len(item.data.loops), dtype=int)
+    item.data.loops.foreach_get("vertex_index", loop_vertices)
+    loops_low = at_low[loop_vertices]
+    loops_high = at_high[loop_vertices]
     uvs = pf.ops.attr.uv_coords(wall)
-    u_min_edge = np.median(uvs[loops_at_min, 0])
-    u_max_edge = np.median(uvs[loops_at_max, 0])
-    u_per_meter = (u_max_edge - u_min_edge) / (y_max - y_min)
+    u_low = np.median(uvs[loops_low, 0])
+    u_high = np.median(uvs[loops_high, 0])
+    u_per_meter = (u_high - u_low) / (along.max() - along.min())
 
-    positions[at_min, 1] -= overlap
-    positions[at_max, 1] += overlap
-    uvs[loops_at_min, 0] -= u_per_meter * overlap
-    uvs[loops_at_max, 0] += u_per_meter * overlap
-    pf.ops.attr.write_vertex_positions(wall, positions)
+    world[at_low] -= direction * low
+    world[at_high] += direction * high
+    uvs[loops_low, 0] -= u_per_meter * low
+    uvs[loops_high, 0] += u_per_meter * high
+    local = (world - offset) @ np.linalg.inv(rotation).T
+    pf.ops.attr.write_vertex_positions(wall, local)
     pf.ops.attr.write_uv_coords(wall, uvs)
-    wall.item().data.update()
+    item.data.update()
+
+
+def overlap_wall_plane_edges(wall: pf.MeshObject, overlap: float) -> None:
+    along_wall = np.array(wall.item().matrix_world)[:3, 1]
+    shift_wall_ends(wall, along_wall / np.linalg.norm(along_wall), overlap, overlap)
 
 
 def plain_wall(
@@ -193,12 +223,7 @@ def plain_wall(
     """Materialise, thicken and canonicalise a bare wall (no cutouts)."""
     wall_thick = extrude_for_thickness(wall, wall_thickness)
     wall_thick.item().name = "room_wall_back"
-    pf.ops.object.set_material(
-        wall,
-        surface=wall_material.surface,
-        displacement=wall_material.displacement,
-    )
-    subdivide_wall_plane(wall)
+    wall = finish_wall_plane(wall, wall_material)
     wall = plane_to_posed_canonical_mesh(wall)
     return wall, wall_thick
 
