@@ -1,7 +1,8 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Alexander Raistrick
+# Authors:
+# - Alexander Raistrick: refactor for Infinigen2
 
 import procfunc as pf
 import procfunc.nodes.types as t

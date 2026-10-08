@@ -1,7 +1,9 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Lingjie Mei, Alexander Raistrick
+# Authors:
+# - Yiming Zuo: original Infinigen tiles composite (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/tiles/advanced_tiles.py)
+# - Lingjie Mei, Alexander Raistrick: refactor for Infinigen2
 
 import numpy as np
 import procfunc as pf
@@ -326,7 +328,7 @@ def tile_indoor_wall_rand(
     if vector is None:
         vector = pf.nodes.shader.coord().uv
     if scale is None:
-        scale = pf.random.clip_gaussian(rngs[5], 15, 10, 7, 40)
+        scale = 1.0 / pf.random.clip_gaussian(rngs[5], 0.2, 0.4, 0.04, 1.0)
     if tile_mask is None:
         tile_mask = tile_mask_rand(
             rngs[0],
@@ -375,7 +377,7 @@ def tile_indoor_ground_rand(
     if vector is None:
         vector = pf.nodes.shader.coord().uv
     if scale is None:
-        scale = pf.random.clip_gaussian(rngs[5], 7, 5, 1, 25)
+        scale = 1.0 / pf.random.clip_gaussian(rngs[5], 0.25, 0.7, 0.05, 1.5)
     if tile_mask is None:
         mask_coord = tile_coord_transform_rand(rngs[0], vector, scale=scale)
         tile_mask = tile_mask_rand(rngs[0], mask_coord)

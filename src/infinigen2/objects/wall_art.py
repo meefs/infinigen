@@ -2,9 +2,10 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Lingjie Mei: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/wall_decorations/wall_art.py)
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Lingjie Mei: original Infinigen wall art (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/wall_decorations/wall_art.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
+from functools import partial
 from typing import NamedTuple
 
 import numpy as np
@@ -13,13 +14,14 @@ from procfunc.nodes import types as t
 
 from infinigen2.curves.skirting_board_profile import trim_profile_rand
 from infinigen2.shaders.base_materials import (
+    paint,
     terrazzo,
 )
 from infinigen2.shaders.functionality_lists import (
-    art_pattern_material_rand,
     furniture_material_rand,
     mirror_material_rand,
 )
+from infinigen2.shaders.masks import graphicdesign
 from infinigen2.util.curve import curve_to_mesh_with_uv
 
 __all__ = [
@@ -162,7 +164,10 @@ def art_frame_swept(
     centerline = pf.nodes.geo.set_curve_normal(
         centerline, normal=(0.0, 0.0, -1.0), mode="FREE"
     )
-    swept = curve_to_mesh_with_uv(centerline, frame_profile).mesh
+    mitered_profile = pf.nodes.geo.transform(
+        geometry=frame_profile, scale=(1.0, 2**0.5, 1.0)
+    )
+    swept = curve_to_mesh_with_uv(centerline, mitered_profile).mesh
     swept = pf.nodes.geo.flip_faces(swept)
     frame = pf.nodes.geo.set_material(
         geometry=swept, material=frame_material, selection=True
@@ -183,6 +188,22 @@ def mirror_surface_material_rand(
     vector: t.SocketOrVal[pf.Vector],
 ) -> pf.Material:
     return mirror_material_rand(rng, vector)
+
+
+def _art_panel_material_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+    dimensions: t.SocketOrVal[pf.Vector],
+    frame_width: t.SocketOrVal[float],
+) -> pf.Material:
+    panel_width = dimensions.y - 2.0 * frame_width
+    panel_height = dimensions.z - 2.0 * frame_width
+    tile_size = pf.nodes.math.minimum(panel_width, panel_height)
+    uv_scale = pf.nodes.math.combine_xyz(x=tile_size, y=tile_size, z=1.0)
+    tiled_uv = vector / uv_scale
+    rng_color, rng_paint = rng.spawn(2)
+    color = graphicdesign.art_rand(rng_color, tiled_uv)
+    return paint.paint_rand(rng_paint, vector, base_color=color)
 
 
 def wall_art_rand(
@@ -217,10 +238,15 @@ def wall_art_rand(
 
     if panel_material is None:
         vec = pf.nodes.shader.coord().uv
+        art_panel_material = partial(
+            _art_panel_material_rand,
+            dimensions=dimensions,
+            frame_width=frame_width,
+        )
         panel_material_fn = pf.control.choice(
             r_panel_choice,
             [
-                (art_pattern_material_rand, 1000),
+                (art_panel_material, 0.5),
                 (terrazzo.terrazzo_rand, 0.5),
             ],
         )

@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / "scripts" / "integration_v2"
@@ -27,14 +28,15 @@ def _write_event(
     cpu: float,
     gpu: float,
     legacy: bool = False,
+    generator: str = "chair_rand",
 ) -> None:
     events = root / name / "render_index" / "events"
     events.mkdir(parents=True, exist_ok=True)
-    img = f"{name}/object-chair-obj-cycles-{variant}/camera-0/0001.png"
+    img = f"{name}/object-{generator}-obj-cycles-{variant}/camera-0/0001.png"
     (root / name / img).parent.mkdir(parents=True, exist_ok=True)
     Image.new("RGB", (2, 2)).save(root / name / img)
     event = {
-        "generator": "chair_rand",
+        "generator": generator,
         "asset_type": "object",
         "variant_key": f"obj-cycles-{variant}",
         "status": "success",
@@ -60,10 +62,23 @@ def _write_run(
     cpu: float,
     gpu: float,
     legacy: bool = False,
+    generator: str = "chair_rand",
 ) -> Path:
     for variant in ("0", "1"):
-        _write_event(root, name, variant, base_tris, subdiv_tris, cpu, gpu, legacy)
+        _write_event(
+            root, name, variant, base_tris, subdiv_tris, cpu, gpu, legacy, generator
+        )
     return root / name
+
+
+def _write_alias_manifest(run: Path) -> None:
+    manifest = [
+        {
+            "name": "pkg.table_circle_rand",
+            "old_names": ["circle_table_rand"],
+        }
+    ]
+    (run / "manifest.json").write_text(json.dumps(manifest))
 
 
 def test_perf_gate_flags_subdiv_tris_regression(tmp_path):
@@ -90,6 +105,68 @@ def test_perf_gate_no_regression_when_within_threshold(tmp_path):
     pr = _write_run(tmp_path, "pr", 3050, 49000, cpu=12.4, gpu=4.1)  # <5% everywhere
     report = baseline_diff.compare(pr, base, threshold=0.05)
     assert report["fail_count"] == 0
+
+
+@pytest.mark.parametrize(
+    ("pr_subdiv_tris", "expected_status"),
+    [(48000, "ok"), (57600, "fail")],
+)
+def test_perf_gate_compares_renamed_generator(
+    tmp_path: Path, pr_subdiv_tris: int, expected_status: str
+) -> None:
+    base = _write_run(
+        tmp_path, "base", 3000, 48000, 12.0, 4.0, generator="circle_table_rand"
+    )
+    pr = _write_run(
+        tmp_path,
+        "pr",
+        3000,
+        pr_subdiv_tris,
+        12.0,
+        4.0,
+        generator="table_circle_rand",
+    )
+    _write_alias_manifest(pr)
+
+    report = baseline_diff.compare(pr, base, threshold=0.05)
+
+    assert report["missing_count"] == 0
+    assert report["results"][0]["asset"] == "table_circle_rand"
+    assert report["results"][0]["status"] == expected_status
+
+
+def test_perf_annotation_uses_canonical_row_name(tmp_path: Path) -> None:
+    base = _write_run(
+        tmp_path, "base", 3000, 48000, 12.0, 4.0, generator="circle_table_rand"
+    )
+    pr = _write_run(
+        tmp_path, "pr", 3000, 57600, 12.0, 4.0, generator="table_circle_rand"
+    )
+    _write_alias_manifest(pr)
+    rows = [{"asset": "table_circle_rand"}]
+
+    baseline_diff.annotate_rows(rows, pr, base, threshold=0.05)
+
+    assert rows[0]["perf_regressed"] is True
+    assert rows[0]["perf_summary"] == "subdiv +20%"
+
+
+def test_perf_gate_prefers_baseline_current_name_over_alias(tmp_path: Path) -> None:
+    base = _write_run(
+        tmp_path, "base", 3000, 99000, 12.0, 4.0, generator="circle_table_rand"
+    )
+    _write_event(
+        tmp_path, "base", "2", 3000, 48000, 12.0, 4.0, generator="table_circle_rand"
+    )
+    pr = _write_run(
+        tmp_path, "pr", 3000, 48000, 12.0, 4.0, generator="table_circle_rand"
+    )
+    _write_alias_manifest(pr)
+
+    report = baseline_diff.compare(pr, base, threshold=0.05)
+
+    assert [r["asset"] for r in report["results"]] == ["table_circle_rand"]
+    assert report["results"][0]["status"] == "ok"
 
 
 # A lone noisy sample (+900% cpu) shouldn't dominate the asset's delta.

@@ -11,7 +11,7 @@ import mathutils
 import numpy as np
 import procfunc as pf
 
-from infinigen2.lighting.point_lighting import point_lamp_colored_rand
+from infinigen2.lighting.point_lighting import lights_point_colored_rand
 from infinigen2.objects import (
     ceiling_light,
     chair,
@@ -37,22 +37,28 @@ __all__ = [
     "FloatingObjectsResult",
     "ObjWithPostprocessingResult",
     "ObjectResult",
-    "floating_lights_rand",
     "floating_object_asset_rand",
     "floating_objects_rand",
+    "lights_floating_rand",
+    "lights_point_colored_rand",
     "lights_with_shared_wattage_rand",
     "obj_with_postprocessing",
     "object_rand",
-    "point_lamp_colored_rand",
     "rotated_bbox_extents",
 ]
 
 logger = logging.getLogger(__name__)
 
 
-def _override_material(rng: pf.RNG, obj: pf.MeshObject) -> pf.MeshObject:
-    # override samples coord().uv, so give every object a fresh cube-projected layer
+@pf.tracer.primitive(mutates=["obj"])
+def _ensure_uv_map(obj: pf.MeshObject) -> None:
+    if len(obj.item().data.uv_layers) > 0:
+        return
     pf.ops.uv.cube_project(obj, uv_name="UVMap")
+
+
+def _override_material(rng: pf.RNG, obj: pf.MeshObject) -> pf.MeshObject:
+    _ensure_uv_map(obj)
     vec = pf.nodes.shader.coord().uv
     mat_func = pf.control.choice(
         rng,
@@ -77,13 +83,12 @@ def object_rand(rng: pf.RNG) -> ObjectResult:
         [
             (sofa.sofa_rand, 2.0),
             (chair.chair_rand, 4.0),
-            (storage.shelves_rand, 1.0),
-            (storage.cabinet_with_door_rand, 1.0),
-            # (drawers.drawers_rand, 1.0),
-            (table.side_table_rand, 0.25),
-            (table.coffee_table_rand, 0.25),
-            (table.cocktail_table_rand, 0.5),
-            (table.dining_table_rand, 1.0),
+            (storage.storage_cell_shelf_rand, 1.0),
+            (storage.storage_cabinet_with_door_rand, 1.0),
+            (table.table_side_rand, 0.25),
+            (table.table_coffee_rand, 0.25),
+            (table.table_cocktail_rand, 0.5),
+            (table.table_dining_rand, 1.0),
             (rug.rug_rand, 1.0),
             (vase.vase_rand, 2.0),
             # (plate_rack.plate_rack_rand, 1.0),
@@ -92,7 +97,7 @@ def object_rand(rng: pf.RNG) -> ObjectResult:
             (flower.flower_rand, 2.0),
             (door.door_with_handle_rand, 1.0),
             (lamp.lamp_rand, 1.0),
-            (ceiling_light.ceiling_light_rand, 0.5),
+            (ceiling_light.light_ceiling_rand, 0.5),
             (lambda rng: window.window_rand(rng, include_glass_pane=False), 1.0),
             (handles.handle_rand, 1.0),
             (wall_art.wall_art_rand, 1.0),
@@ -273,7 +278,7 @@ def lights_with_shared_wattage_rand(
 
     lights = []
     for i, w in enumerate(watt_per_light):
-        light = point_lamp_colored_rand(rng, energy=float(w))
+        light = lights_point_colored_rand(rng, energy=float(w))
         light.item().name = f"floating_light.{i:02d}"
         lights.append(light)
 
@@ -282,7 +287,7 @@ def lights_with_shared_wattage_rand(
 
 # TODO: give lights sphere colliders so check_collisions=False can go away.
 @pf.tracer.grammar
-def floating_lights_rand(
+def lights_floating_rand(
     rng: pf.RNG,
     colliders: ccol.CollisionSet | None = None,
     bbox: tuple[np.ndarray, np.ndarray] | None = None,

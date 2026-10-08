@@ -16,8 +16,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, NamedTuple
 
+import manifest_aliases
 import numpy as np
 from PIL import Image
+
+try:
+    from infinigen2.list import preset_parents as load_preset_parents
+except ModuleNotFoundError:
+    load_preset_parents = None
 
 
 class ImageInfo(NamedTuple):
@@ -460,14 +466,19 @@ def _stat_dict(st) -> dict:
     }
 
 
-def _collect_asset_stats(result, asset_name: str) -> list[dict]:
-    if asset_name not in result.assets:
+def _collect_asset_stats(result, source_asset_name: str | None) -> list[dict]:
+    if source_asset_name is None:
         return []
-    return [_stat_dict(st) for st in result.assets[asset_name].stats]
+    return [_stat_dict(st) for st in result.assets[source_asset_name].stats]
 
 
 def render_row(
-    asset_name: str, asset_type: str, collection_results: list, version_names: list[str]
+    asset_name: str,
+    asset_type: str,
+    collection_results: list,
+    version_names: list[str],
+    source_assets: dict[str, dict[str, str]],
+    aliases: dict[str, str],
 ) -> dict:
     all_variant_keys = set()
     version_images_by_key = {}
@@ -475,10 +486,14 @@ def render_row(
     for result in collection_results:
         version_name = result.version_name
         version_images_by_key[version_name] = {}
+        source_asset_name = source_assets[version_name].get(asset_name)
 
-        if asset_name in result.assets:
-            for img_info in result.assets[asset_name].images:
-                key = _alignment_key(img_info.variant_key)
+        if source_asset_name is not None:
+            for img_info in result.assets[source_asset_name].images:
+                variant_key = manifest_aliases.canonical_variant(
+                    img_info.variant_key, aliases
+                )
+                key = _alignment_key(variant_key)
                 all_variant_keys.add(key)
                 existing = version_images_by_key[version_name].get(key)
                 if existing is None:
@@ -511,6 +526,7 @@ def render_row(
     objects = []
     for result in collection_results:
         version_name = result.version_name
+        source_asset_name = source_assets[version_name].get(asset_name)
         aligned_images = []
 
         for variant_key in sorted_variant_keys:
@@ -538,15 +554,20 @@ def render_row(
 
             aligned_images.append(image_data)
 
-        asset_stats = _collect_asset_stats(result, asset_name)
+        asset_stats = _collect_asset_stats(result, source_asset_name)
         objects.append(
-            {"version": version_name, "images": aligned_images, "stats": asset_stats}
+            {
+                "version": version_name,
+                "source_asset": source_asset_name,
+                "images": aligned_images,
+                "stats": asset_stats,
+            }
         )
 
     ran_versions = [
         result.version_name
         for result in collection_results
-        if asset_name in result.assets
+        if asset_name in source_assets[result.version_name]
     ]
     missing_versions = [v for v in version_names if v not in ran_versions]
 
@@ -609,25 +630,27 @@ def _preset_parents(collection_results: list) -> dict:
     archived = _archive_preset_parents(collection_results)
     if archived is not None:
         return archived
-    try:
-        from infinigen2.list import preset_parents
-
-        return preset_parents()
-    except Exception:
+    if load_preset_parents is None:
         return {}
+    return load_preset_parents()
 
 
 def _append_preset_images(target: dict, source: dict, label: str) -> None:
+    # Presets are not matched across versions; each column lists the presets it rendered.
     for target_obj, preset_obj in zip(target["objects"], source["objects"]):
         target_obj["images"].extend(
-            {**img, "is_preset": True, "label": label} for img in preset_obj["images"]
+            {**img, "is_preset": True, "label": label}
+            for img in preset_obj["images"]
+            if img["variant_type"] != "missing"
         )
         target_obj["stats"].extend(
             {**stat, "category": "preset"} for stat in preset_obj.get("stats", [])
         )
 
 
-def _fold_presets(rows: list[dict], parents: dict) -> list[dict]:
+def _fold_presets(
+    rows: list[dict], parents: dict, aliases: dict[str, str]
+) -> list[dict]:
     """Fold each `*_preset` asset row into its parent generator row as `is_preset`
     images, so presets render on one line beneath their _rand instead of as their
     own rows. Presets whose parent isn't present stay as standalone rows."""
@@ -636,7 +659,8 @@ def _fold_presets(rows: list[dict], parents: dict) -> list[dict]:
     for row in rows:
         if row["asset_type"] != "preset":
             continue
-        target = by_name.get(parents.get(row["asset"]))
+        parent = parents.get(row["asset"])
+        target = by_name.get(aliases.get(parent, parent))
         if target is None:
             continue
         _append_preset_images(target, row, row["asset"].removesuffix("_preset"))
@@ -815,20 +839,42 @@ def build_comparison_data(
     version_names: list[str],
     sort_order: str | None = None,
 ) -> list[dict]:
-    all_assets = {}
+    aliases = {}
+    if collection_results:
+        manifest_path = collection_results[-1].version_path / "manifest.json"
+        aliases = manifest_aliases.load_ci_compare_aliases(manifest_path)
+
+    all_assets: dict[str, str] = {}
+    source_assets: dict[str, dict[str, str]] = {}
     for result in collection_results:
+        version_sources: dict[str, str] = {}
+        applied = manifest_aliases.archive_aliases(aliases, result.assets)
         for asset_name, asset_data in result.assets.items():
-            if asset_name not in all_assets:
-                all_assets[asset_name] = asset_data.asset_type
+            canonical_name = applied.get(asset_name, asset_name)
+            previous_type = all_assets.get(canonical_name)
+            if previous_type is not None and previous_type != asset_data.asset_type:
+                raise ValueError(
+                    f"{canonical_name} has asset types {previous_type} and {asset_data.asset_type}"
+                )
+            version_sources[canonical_name] = asset_name
+            all_assets[canonical_name] = asset_data.asset_type
+        source_assets[result.version_name] = version_sources
 
     rows = []
     for asset_name in sorted(all_assets.keys()):
         asset_type = all_assets[asset_name]
         rows.append(
-            render_row(asset_name, asset_type, collection_results, version_names)
+            render_row(
+                asset_name,
+                asset_type,
+                collection_results,
+                version_names,
+                source_assets,
+                aliases,
+            )
         )
 
-    rows = _fold_presets(rows, _preset_parents(collection_results))
+    rows = _fold_presets(rows, _preset_parents(collection_results), aliases)
     _attach_metrics(rows, version_names)
 
     _sort_rows(rows, version_names, sort_order)

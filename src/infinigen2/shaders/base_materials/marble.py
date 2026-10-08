@@ -2,8 +2,7 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Hongyu Wen: original nodegroup
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Hongyu Wen, Alexander Raistrick: refactor for Infinigen2
 
 from typing import NamedTuple
 
@@ -12,13 +11,6 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 __all__ = [
-    "GrainLayer001Result",
-    "GrainToShaderResult",
-    "grain_layer",
-    "grain_layer_color_rand",
-    "grain_layer_rand",
-    "grain_to_shader",
-    "grain_to_shader_rand",
     "marble_black_preset",
     "marble_black_spots_preset",
     "marble_gold_preset",

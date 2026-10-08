@@ -31,12 +31,10 @@ def snap_to_plane(
     child_side: str = "back",
     parent_side: str = "front",
     margin: float = 0.1,
-    constraint_axis: pf.Vector = pf.Vector((0, 0, 1)),
+    constraint_axis: pf.Vector | None = pf.Vector((0, 0, 1)),
     overhang: bool = False,
 ):
     """Snap child to parent using bbox sides with canonical local coordinates.
-
-    TODO: allow constraint_axis=None and 2D offsets within bounding box free dirs
 
     Args:
         child: Object to position
@@ -48,16 +46,31 @@ def snap_to_plane(
         margin: Gap between surfaces
         constraint_axis: Axis to constrain the placement to.
             The location wont change along this axis, and we may rotate the object around this axis to snap it.
+            If None, center the child face on the parent face without rotating it.
         overhang: If true, only the center of the childs bbox must attach to the parent, rather than the entire side of the bbox touching the parent.
     """
-
-    constraint_axis = pf.Vector(constraint_axis).normalized()
 
     child_axis, child_sign = _SIDES[child_side]
     parent_axis, parent_sign = _SIDES[parent_side]
 
     c_normal_local = pf.Vector(np.eye(3)[child_axis] * child_sign)
     p_normal_local = pf.Vector(np.eye(3)[parent_axis] * parent_sign)
+
+    cbb = np.stack(pf.ops.attr.bbox_min_max(child, global_coords=False), axis=0)
+    pbb = np.stack(pf.ops.attr.bbox_min_max(parent, global_coords=False), axis=0)
+    if constraint_axis is None:
+        c_attach_local = pf.Vector((cbb[0] + cbb[1]) * 0.5)
+        c_attach_local[child_axis] = cbb[int(child_sign > 0), child_axis]
+        p_attach_local = pf.Vector((pbb[0] + pbb[1]) * 0.5)
+        p_attach_local[parent_axis] = pbb[int(parent_sign > 0), parent_axis]
+        p_attach_local += margin * p_normal_local
+        child_attach_global = child.item().matrix_world @ c_attach_local
+        parent_attach_global = parent.item().matrix_world @ p_attach_local
+        offset = parent_attach_global - child_attach_global
+        pf.ops.object.set_transform(child, pf.Vector(child.item().location) + offset)
+        return child
+
+    constraint_axis = pf.Vector(constraint_axis).normalized()
 
     # Transform parent's normal to world space
     p_normal_world = parent.item().matrix_world.to_3x3() @ p_normal_local
@@ -69,11 +82,9 @@ def snap_to_plane(
     rotation_euler = pf.Vector(constraint_axis) * angle
     rotation_matrix = pf.Euler(rotation_euler, "XYZ").to_matrix()
 
-    cbb = np.stack(pf.ops.attr.bbox_min_max(child, global_coords=False), axis=0)
     c_bbside = cbb[int(child_sign > 0), child_axis]
     c_attach_base_local = _project(c_bbside, c_normal_local)
 
-    pbb = np.stack(pf.ops.attr.bbox_min_max(parent, global_coords=False), axis=0)
     p_bbside = pbb[int(parent_sign > 0), parent_axis]
     p_attach_base_local = _project(p_bbside, p_normal_local)
 
@@ -87,7 +98,21 @@ def snap_to_plane(
     c_min_point = _project(cbb[0], c_orthogonal_dir_local)
     c_max_point = _project(cbb[1], c_orthogonal_dir_local)
 
-    if not overhang:
+    if child_axis != parent_axis and not overhang:
+        p_tangent = p_orthogonal_dir_local.normalized()
+        p_values = [np.dot(bound, p_tangent) for bound in pbb]
+        child_to_parent = (
+            parent.item().matrix_world.to_3x3().inverted() @ rotation_matrix
+        )
+        c_corners = pf.ops.attr.bbox_corners(child, global_coords=False)
+        c_values = [
+            (child_to_parent @ pf.Vector(corner)).dot(p_tangent) for corner in c_corners
+        ]
+        p_min_value = min(p_values) - min(c_values)
+        p_max_value = max(p_values) - max(c_values)
+        p_min_point = p_tangent * p_min_value
+        p_max_point = p_tangent * p_max_value
+    elif not overhang:
         p_min_point = p_min_point - c_min_point
         p_max_point = p_max_point - c_max_point
 

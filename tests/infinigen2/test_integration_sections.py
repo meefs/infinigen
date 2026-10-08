@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from urllib.parse import urlencode
 
+import pytest
 from PIL import Image
 
 _SCRIPTS = Path(__file__).resolve().parents[2] / "scripts" / "integration_v2"
@@ -15,6 +16,7 @@ sys.path.insert(0, str(_SCRIPTS))
 import compare  # noqa: E402
 import display  # noqa: E402
 import freeze  # noqa: E402
+import manifest_aliases  # noqa: E402
 from display import (  # noqa: E402
     build_comparison_data,
     build_section_controls,
@@ -221,18 +223,18 @@ def test_section_controls_include_not_rendered_rows(tmp_path):
 
 def _traj_run(root: Path, name: str) -> Path:
     version = root / name
-    base = f"{name}/camera-linear_pan_camera_rand-livingroom_rand-workbench-traj2"
+    base = f"{name}/camera-camera_linear_pan_rand-room_livingroom_rand-workbench-traj2"
     mp4 = f"{base}/image_Camera.mp4"
     (version / mp4).parent.mkdir(parents=True, exist_ok=True)
     (version / mp4).write_bytes(b"not a real video")
     events = version / "render_index" / "events"
     events.mkdir(parents=True, exist_ok=True)
     payload = {
-        "generator": "livingroom_rand",
+        "generator": "room_livingroom_rand",
         "asset_type": "camera",
         "variant_key": "linear_pan-workbench-traj2",
         "status": "success",
-        "cmd": ["infinigen", "livingroom_rand"],
+        "cmd": ["infinigen", "room_livingroom_rand"],
         "images": [mp4],
         "tris": 10,
         "cpu_time_sec": 1.0,
@@ -246,19 +248,12 @@ def test_trajectory_video_does_not_crash_mse(tmp_path):
     """A camera-trajectory .mp4 must display without PIL trying to load it as an
     image, and must not poison the row's avg MSE."""
     rows = _build([_traj_run(tmp_path, "before"), _traj_run(tmp_path, "after")])
-    row = next(r for r in rows if r["asset"] == "livingroom_rand")
+    row = next(r for r in rows if r["asset"] == "room_livingroom_rand")
 
     paths = [i["path"] for i in row["objects"][-1]["images"] if i["path"]]
     assert any(p.endswith(".mp4") for p in paths)
     avg = row["avg_mse"]
     assert avg is None or math.isfinite(avg)
-
-
-def test_pairwise_mse_skips_video():
-    img = {"pass_type": "image", "filename": "x/image_Camera.mp4"}
-    png = {"pass_type": "image", "filename": "x/0000.png"}
-    assert display._pairwise_mse(img, png, Path("a"), Path("b")) is None
-    assert display._pairwise_mse(img, img, Path("a"), Path("b")) is None
 
 
 def _sort_rows():
@@ -361,6 +356,17 @@ def test_viewer_type_sort_is_opt_in(tmp_path):
     assert client.get(f"/?{query}&sort=unknown").status_code == 400
 
 
+def test_viewer_exposes_displacement_filter(tmp_path):
+    before = _viewer_sort_run(tmp_path, "before", 0, 0)
+    after = _viewer_sort_run(tmp_path, "after", 10, 255)
+    query = urlencode([("v", before), ("v", after)])
+    client = compare.app.test_client()
+
+    html = client.get(f"/?{query}").get_data(as_text=True)
+
+    assert 'data-filter-value="displacement" checked' in html
+
+
 def test_freeze_forwards_type_sort(tmp_path):
     before = _viewer_sort_run(tmp_path, "before", 0, 0)
     after = _viewer_sort_run(tmp_path, "after", 10, 255)
@@ -375,3 +381,224 @@ def test_freeze_forwards_type_sort(tmp_path):
     object_row = 'data-asset="object_rand" data-not-run'
     scene_row = 'data-asset="scene_rand" data-not-run'
     assert html.index(scene_row) < html.index(object_row)
+
+
+def _renamed_run(root: Path, version_name: str, generator: str) -> Path:
+    version = root / version_name
+    image = f"{version_name}/{generator}/Camera/0000.png"
+    _event(
+        version,
+        version_name,
+        0,
+        generator,
+        "object",
+        "demo-cycles-0",
+        [image],
+    )
+    return version
+
+
+def _write_alias_manifest(version: Path, old_names: object) -> None:
+    manifest = [
+        {
+            "category": "Object",
+            "name": "infinigen2.assets.objects.tables.table_circle_rand",
+            "old_names": old_names,
+        }
+    ]
+    (version / "manifest.json").write_text(json.dumps(manifest))
+
+
+def test_renamed_generators_share_row_with_source_names(tmp_path: Path) -> None:
+    before = _renamed_run(tmp_path, "before", "circle_table_rand")
+    after = _renamed_run(tmp_path, "after", "table_circle_rand")
+    _write_alias_manifest(after, ["circle_table_rand"])
+
+    rows = _build([before, after])
+
+    assert [row["asset"] for row in rows] == ["table_circle_rand"]
+    assert [obj["source_asset"] for obj in rows[0]["objects"]] == [
+        "circle_table_rand",
+        "table_circle_rand",
+    ]
+    assert rows[0]["is_new"] is False
+    assert rows[0]["not_run"] is False
+
+
+def test_archive_without_alias_metadata_keeps_literal_names(tmp_path: Path) -> None:
+    before = _renamed_run(tmp_path, "before", "circle_table_rand")
+    after = _renamed_run(tmp_path, "after", "table_circle_rand")
+
+    rows = _build([before, after])
+
+    assert {row["asset"] for row in rows} == {
+        "circle_table_rand",
+        "table_circle_rand",
+    }
+
+
+def test_rightmost_manifest_is_authoritative(tmp_path: Path) -> None:
+    before = _renamed_run(tmp_path, "before", "circle_table_rand")
+    after = _renamed_run(tmp_path, "after", "table_circle_rand")
+    stale_manifest = [
+        {
+            "name": "pkg.table_round_rand",
+            "old_names": ["circle_table_rand"],
+        }
+    ]
+    (before / "manifest.json").write_text(json.dumps(stale_manifest))
+    _write_alias_manifest(after, ["circle_table_rand"])
+
+    rows = _build([before, after])
+
+    assert [row["asset"] for row in rows] == ["table_circle_rand"]
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        [
+            {
+                "name": "pkg.table_circle_rand",
+                "old_names": "circle_table_rand",
+            }
+        ],
+        [
+            {
+                "name": "pkg.table_circle_rand",
+                "old_names": ["circle_table_rand"],
+            },
+            {
+                "name": "pkg.table_round_rand",
+                "old_names": ["circle_table_rand"],
+            },
+        ],
+    ],
+)
+def test_alias_manifest_rejects_malformed_or_ambiguous_metadata(
+    manifest: object,
+) -> None:
+    with pytest.raises(ValueError):
+        manifest_aliases.parse_ci_compare_aliases(manifest)
+
+
+def test_archive_with_current_name_keeps_old_name_row(tmp_path: Path) -> None:
+    before = _renamed_run(tmp_path, "before", "circle_table_rand")
+    image = "before/table_circle_rand/Camera/0000.png"
+    _event(
+        before,
+        "before",
+        1,
+        "table_circle_rand",
+        "object",
+        "demo-cycles-0",
+        [image],
+    )
+    after = _renamed_run(tmp_path, "after", "table_circle_rand")
+    _write_alias_manifest(after, ["circle_table_rand"])
+
+    rows = _build([before, after])
+
+    sources = {
+        row["asset"]: [obj["source_asset"] for obj in row["objects"]] for row in rows
+    }
+    assert sources == {
+        "circle_table_rand": ["circle_table_rand", None],
+        "table_circle_rand": ["table_circle_rand", "table_circle_rand"],
+    }
+
+
+def test_comparison_rejects_two_old_names_for_one_generator(tmp_path: Path) -> None:
+    before = _renamed_run(tmp_path, "before", "circle_table_rand")
+    image = "before/round_table_rand/Camera/0000.png"
+    _event(before, "before", 1, "round_table_rand", "object", "demo-cycles-0", [image])
+    after = _renamed_run(tmp_path, "after", "table_circle_rand")
+    _write_alias_manifest(after, ["circle_table_rand", "round_table_rand"])
+
+    with pytest.raises(ValueError, match="both alias"):
+        _build([before, after])
+
+
+def test_renamed_scene_in_camera_variant_aligns_images(tmp_path: Path) -> None:
+    before = tmp_path / "before"
+    after = tmp_path / "after"
+    _event(
+        before,
+        "before",
+        0,
+        "camera_rrt",
+        "camera",
+        "livingroom_rand-workbench-traj0",
+        ["camera-camera_rrt-livingroom_rand-workbench-traj0/Camera/0000.png"],
+    )
+    _event(
+        after,
+        "after",
+        0,
+        "camera_rrt",
+        "camera",
+        "room_livingroom_rand-workbench-traj0",
+        ["camera-camera_rrt-room_livingroom_rand-workbench-traj0/Camera/0000.png"],
+    )
+    manifest = [{"name": "pkg.room_livingroom_rand", "old_names": ["livingroom_rand"]}]
+    (after / "manifest.json").write_text(json.dumps(manifest))
+
+    rows = _build([before, after])
+
+    assert [len(obj["images"]) for obj in rows[0]["objects"]] == [1, 1]
+    assert all(obj["images"][0]["path"] for obj in rows[0]["objects"])
+
+
+def test_renamed_presets_list_under_renamed_parent(tmp_path: Path) -> None:
+    before = _renamed_run(tmp_path, "before", "stone_rand")
+    _event(
+        before,
+        "before",
+        1,
+        "stone_grey_preset",
+        "preset",
+        "cube-cycles-0",
+        ["before/stone_grey_preset/Camera/0000.png"],
+    )
+    (before / "preset_parents.json").write_text(
+        json.dumps({"stone_grey_preset": "stone_rand"})
+    )
+    after = _renamed_run(tmp_path, "after", "stone_smooth_rand")
+    _event(
+        after,
+        "after",
+        1,
+        "stone_smooth_grey_preset",
+        "preset",
+        "cube-cycles-0",
+        ["after/stone_smooth_grey_preset/Camera/0000.png"],
+    )
+    (after / "preset_parents.json").write_text(
+        json.dumps({"stone_smooth_grey_preset": "stone_smooth_rand"})
+    )
+    manifest = [{"name": "pkg.stone_smooth_rand", "old_names": ["stone_rand"]}]
+    (after / "manifest.json").write_text(json.dumps(manifest))
+
+    rows = _build([before, after])
+
+    assert [row["asset"] for row in rows] == ["stone_smooth_rand"]
+    presets = [
+        [img["label"] for img in obj["images"] if img.get("is_preset")]
+        for obj in rows[0]["objects"]
+    ]
+    assert presets == [["stone_grey"], ["stone_smooth_grey"]]
+
+
+def test_freeze_shows_each_column_source_generator_name(tmp_path: Path) -> None:
+    before = _renamed_run(tmp_path, "before", "circle_table_rand")
+    after = _renamed_run(tmp_path, "after", "table_circle_rand")
+    _write_alias_manifest(after, ["circle_table_rand"])
+    pages = tmp_path / "pages"
+    pages.mkdir()
+
+    freeze.render_pages(pages, [("before", before), ("after", after)], None)
+
+    html = (pages / "index.html").read_text()
+    assert html.count('data-asset="table_circle_rand" data-not-run') == 1
+    assert '<div class="source-asset-name">circle_table_rand</div>' in html
+    assert '<div class="source-asset-name">table_circle_rand</div>' in html

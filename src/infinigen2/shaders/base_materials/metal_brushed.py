@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Yiming Zuo: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/metal/brushed_metal.py)
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Alexander Raistrick, Erich Liang: refactor for Infinigen2
+
 # Acknowledgement: This file draws inspiration https://www.youtube.com/watch?v=QcAMYRgR03k by blenderian
 
 import numpy as np
@@ -13,11 +13,7 @@ from procfunc.nodes import types as nt
 __all__ = [
     "metal_any_color_rand",
     "metal_brushed",
-    "metal_brushed_linear",
     "metal_brushed_linear_rand",
-    "metal_brushed_linear_streaks",
-    "metal_brushed_radial",
-    "metal_brushed_radial_grooves",
     "metal_brushed_radial_rand",
 ]
 

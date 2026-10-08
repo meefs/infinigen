@@ -39,9 +39,9 @@ sys.path.insert(0, os.path.abspath("../.."))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    import _render_commands
+    import render_commands
 except ImportError:
-    _render_commands = None
+    render_commands = None
 
 project = "Infinigen"
 copyright = "2025, Princeton Vision and Learning Lab"
@@ -209,6 +209,9 @@ python_use_unqualified_type_names = True
 # above), so this wrap is driven by param names/defaults only.
 python_maximum_signature_line_length = 88
 
+# Page contents list conceptual sections, not every documented Python object.
+toc_object_entries = False
+
 # One scrollable page per package: render members inline instead of a TOC of
 # per-member sub-pages (paired with dropping apidoc's --separate below).
 # member-order bysource: no preset puts `*_rand` first/helpers last by name.
@@ -300,6 +303,7 @@ def _lint_doc_paths(app):
 _CATEGORY_IMAGE_COUNT = {
     "Material": 6,
     "Mask": 6,
+    "Displacement": 6,
     "Object": 6,
     "Scene": 6,
     "Environment": 6,
@@ -346,6 +350,8 @@ def _manifest_entries() -> tuple[dict[str, int], dict[str, str]]:
         elif e.get("num_seeds") == 0:
             # Deterministic entrypoints (asset_demo base shapes) get no example gallery.
             count = 0
+        elif category == "Scene" and e.get("num_seeds") is not None:
+            count = min(_CATEGORY_IMAGE_COUNT["Scene"], e["num_seeds"])
         else:
             count = _CATEGORY_IMAGE_COUNT.get(category, 0)
         if count:
@@ -355,6 +361,31 @@ def _manifest_entries() -> tuple[dict[str, int], dict[str, str]]:
 
 
 _IMAGE_COUNTS, _IMAGE_CATEGORIES = _manifest_entries()
+
+
+def _manifest_presets() -> dict[str, tuple[str, ...]]:
+    if not MANIFEST_PATH.exists():
+        return {}
+    try:
+        data = json.loads(MANIFEST_PATH.read_text())
+    except json.JSONDecodeError:
+        return {}
+
+    presets = {}
+    for entry in data:
+        parent = entry.get("name")
+        shortnames = entry.get("presets")
+        if not parent or not shortnames:
+            continue
+        module = parent.rsplit(".", 1)[0]
+        presets[parent] = tuple(f"{module}.{shortname}" for shortname in shortnames)
+    return presets
+
+
+_PRESETS_BY_PARENT = _manifest_presets()
+_PRESET_ENTRYPOINTS = frozenset(
+    preset for presets in _PRESETS_BY_PARENT.values() for preset in presets
+)
 
 
 def _is_video(name: str) -> bool:
@@ -378,16 +409,19 @@ _ENTRYPOINTS = _manifest_entrypoints()
 _CATEGORY_ARCHIVE = {
     "Material": ("material", "cube-cycles", "Camera/0000.png"),
     "Mask": ("mask", "planeuv-cycles", "Camera/0000.png"),
+    "Displacement": ("displacement", "torusuv-cycles", "Camera/0000.png"),
     "Object": ("object", "demo-cycles", "Camera/0000.png"),
     "Scene": ("scene", "demo-cycles", "Camera/0000.png"),
     "Environment": ("environment", "monkey-cycles", "Camera/0000.png"),
-    "Cameras": ("camera", "livingroom_rand-workbench", "image_Camera.mp4"),
+    "Cameras": ("camera", "room_livingroom_rand-workbench", "image_Camera.mp4"),
 }
 
 
 def _archive_rel(name: str, seed: int) -> str:
     category = _IMAGE_CATEGORIES.get(name)
     prefix, mid, media = _CATEGORY_ARCHIVE[category]
+    if category == "Displacement" and render_commands is not None:
+        mid = render_commands.archive_variant(category, name) or mid
     variant = f"traj{seed}" if category == "Cameras" else str(seed)
     shortname = name.rsplit(".", 1)[-1]
     return f"{prefix}-{shortname}-{mid}-{variant}/{media}"
@@ -429,9 +463,9 @@ def _image_urls(name: str) -> list[str]:
 
 
 def _replicate_command(category: str, name: str, seed: int) -> str | None:
-    if _render_commands is None:
+    if render_commands is None:
         return None
-    return _render_commands.replicate_command(category, name, seed)
+    return render_commands.replicate_command(category, name, seed)
 
 
 def _figure_html(url: str, name: str, seed: int, cmd: str | None) -> list[str]:
@@ -462,14 +496,22 @@ def _figure_html(url: str, name: str, seed: int, cmd: str | None) -> list[str]:
 
 
 def _inject_images(app, what, name, obj, options, lines):  # noqa: ARG001
-    if name not in _IMAGE_COUNTS:
+    presets = _PRESETS_BY_PARENT.get(name, ())
+    if name not in _IMAGE_COUNTS and not presets:
         return
-    category = _IMAGE_CATEGORIES.get(name)
-    is_video = _is_video(name)
-    lines += ["", ".. rubric:: Example renders", ""]
-    for seed, url in enumerate(_image_urls(name)):
-        cmd = None if is_video else _replicate_command(category, name, seed)
-        lines += _figure_html(url, name, seed, cmd)
+    if name in _IMAGE_COUNTS:
+        category = _IMAGE_CATEGORIES.get(name)
+        is_video = _is_video(name)
+        lines += ["", ".. rubric:: Example renders", ""]
+        for seed, url in enumerate(_image_urls(name)):
+            cmd = None if is_video else _replicate_command(category, name, seed)
+            lines += _figure_html(url, name, seed, cmd)
+
+    if presets:
+        lines += ["", ".. rubric:: Presets", ""]
+    for preset in presets:
+        cmd = _replicate_command("Material", preset, 0)
+        lines += _figure_html(_preset_image_url(preset), preset, 0, cmd)
 
 
 # A *_preset renders one deterministic seed at preset-<shortname>-cube-cycles-0.
@@ -481,13 +523,6 @@ def _preset_image_url(name: str) -> str:
     url = _published_url(rel)
     _check_asset_url(url)
     return url
-
-
-def _inject_preset_image(app, what, name, obj, options, lines):  # noqa: ARG001
-    if what != "function" or not _is_preset(name):
-        return
-    cmd = _replicate_command("Material", name, 0)
-    lines += _figure_html(_preset_image_url(name), name, 0, cmd)
 
 
 def _is_namedtuple(obj: object) -> bool:
@@ -512,6 +547,27 @@ def _clean_namedtuple(app, what, name, obj, options, lines):  # noqa: ARG001
     auto = f"{obj.__name__}({', '.join(obj._fields)})"
     if lines and lines[0].strip() == auto:
         del lines[:]
+    annotations = getattr(obj, "__annotations__", {})
+    fields = [
+        f"``{f}``: {_short_type(annotations[f])}" if f in annotations else f"``{f}``"
+        for f in obj._fields
+    ]
+    lines += ["", "Fields: " + "; ".join(fields)]
+
+
+def _short_type(ann: object) -> str:
+    try:
+        text = stringify_annotation(ann, "smart")
+    except Exception:
+        text = getattr(ann, "__name__", None) or str(ann)
+    leaf = re.sub(r"[\w.]*\.(\w+)", r"\1", text.lstrip("~"))
+    return f"``{leaf}``"
+
+
+def _skip_namedtuple_fields(app, what, name, obj, skip, options):  # noqa: ARG001
+    if type(obj).__name__ == "_tuplegetter":
+        return True
+    return None
 
 
 _LONG_FLOAT = re.compile(r"-?\d+\.\d{5,}")
@@ -1004,36 +1060,22 @@ _V1_APIDOC_EXCLUDE_RELPATHS = [
 ]
 
 
-def _public_child_modules(init_py: Path) -> set[str]:
+def _declared_public_names(init_py: Path) -> set[str] | None:
     tree = ast.parse(init_py.read_text())
-    public = None
     for node in tree.body:
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
             continue
         target = node.targets[0]
         if isinstance(target, ast.Name) and target.id == "__all__":
-            public = set(ast.literal_eval(node.value))
-            break
-    if public is None:
-        return set()
-
-    exported = set()
-    for node in tree.body:
-        if not isinstance(node, ast.ImportFrom):
-            continue
-        if node.level != 1 or node.module is not None:
-            continue
-        exported.update(
-            alias.name for alias in node.names if (alias.asname or alias.name) in public
-        )
-    return exported
+            return set(ast.literal_eval(node.value))
+    return None
 
 
 def _public_apidoc_excludes(package_dir: Path) -> list[str]:
     excludes = []
     for init_py in package_dir.rglob("__init__.py"):
-        exported = _public_child_modules(init_py)
-        if not exported:
+        public = _declared_public_names(init_py)
+        if public is None:
             continue
         for child in init_py.parent.iterdir():
             is_module = child.suffix == ".py" and child.stem != "__init__"
@@ -1041,9 +1083,37 @@ def _public_apidoc_excludes(package_dir: Path) -> list[str]:
             if not (is_module or is_package):
                 continue
             name = child.stem if is_module else child.name
-            if name not in exported:
+            if init_py.parent == package_dir and is_package:
+                child_public = _declared_public_names(child / "__init__.py")
+                if child_public == set():
+                    excludes.append(str(child))
+                continue
+            if name not in public:
                 excludes.append(str(child))
     return sorted(excludes)
+
+
+def _write_curated_api_pages(api_dir: Path) -> None:
+    template_dir = Path(__file__).parent / "_templates" / "api"
+    for template in template_dir.glob("*.rst"):
+        text = template.read_text()
+        if template.name == "infinigen2.exporters.rst":
+            documented = set(
+                re.findall(r"^\.\. autofunction:: (infinigen2\..+)$", text, re.M)
+            )
+            manifest = json.loads(MANIFEST_PATH.read_text())
+            exporters = {
+                entry["name"]
+                for entry in manifest
+                if entry.get("category") == "Exporter"
+            }
+            missing = exporters - documented
+            if missing:
+                listing = "\n".join(f"  - {name}" for name in sorted(missing))
+                raise RuntimeError(
+                    f"exporter API page omits manifest entrypoint(s):\n{listing}"
+                )
+        (api_dir / template.name).write_text(text)
 
 
 def _run_apidoc(_app):
@@ -1067,6 +1137,7 @@ def _run_apidoc(_app):
     _strip_api_suffixes(api_dir)
     subpkgs = _real_subpackages(api_dir)
     _build_pages(api_dir, "infinigen2", _HUBS)
+    _write_curated_api_pages(api_dir)
     for page in api_dir.glob("infinigen2.*.rst"):
         _rename_subpackage_headings(page, subpkgs)
         _shorten_module_headings(page, "infinigen2")
@@ -1134,20 +1205,22 @@ def _run_apidoc(_app):
 _orig_sort_members = ModuleDocumenter.sort_members
 
 
-def _member_rank(entry) -> int:
+def _member_rank(entry) -> tuple[int, str]:
     documenter = entry[0]
-    if getattr(documenter, "objtype", "") == "class":
-        return 4
     fn = getattr(documenter, "fullname", "") or getattr(documenter, "name", "")
     fn = fn.replace("::", ".")
     short = fn.rsplit(".", 1)[-1]
-    if short.endswith("_rand"):
-        return 0
-    if short.endswith("_presets"):
-        return 2
-    if short.endswith("_preset"):
-        return 3
-    return 1
+    if getattr(documenter, "objtype", "") == "class":
+        rank = 4
+    elif short.endswith("_rand"):
+        rank = 0
+    elif short.endswith("_presets"):
+        rank = 2
+    elif short.endswith("_preset"):
+        rank = 3
+    else:
+        rank = 1
+    return rank, short.casefold()
 
 
 def _sort_members(self, documenters, order):
@@ -1248,9 +1321,11 @@ def _resolve_xref(self, env, fromdocname, builder, typ, target, node, contnode):
 # imported names (numpy.random.randint, ...). Skip any member defined outside the
 # infinigen packages so only real module members are documented.
 def _skip_imported(app, what, name, obj, skip, options):  # noqa: ARG001
+    module = getattr(obj, "__module__", None)
+    if module is not None and f"{module}.{name}" in _PRESET_ENTRYPOINTS:
+        return True
     if skip:
         return None
-    module = getattr(obj, "__module__", None)
     if module is None:
         # C builtins report no module; skip them so third-party docstrings don't leak in.
         if isinstance(obj, (types.BuiltinFunctionType, types.BuiltinMethodType)):
@@ -1288,8 +1363,8 @@ def setup(app):
     app.connect("builder-inited", _lint_doc_paths)
     app.connect("builder-inited", _run_apidoc)
     app.connect("autodoc-process-docstring", _inject_images)
-    app.connect("autodoc-process-docstring", _inject_preset_image)
     app.connect("autodoc-process-docstring", _clean_namedtuple)
+    app.connect("autodoc-skip-member", _skip_namedtuple_fields)
     app.connect("autodoc-process-docstring", _param_defaults)
     app.connect("autodoc-process-signature", _shorten_signature)
     app.connect("autodoc-skip-member", _skip_imported)

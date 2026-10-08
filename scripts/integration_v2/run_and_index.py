@@ -43,6 +43,7 @@ def parse_asset_fields(asset_dir: str) -> tuple[str, str, str]:
     asset_type, rest = name.split("-", 1)
     if asset_type not in {
         "material",
+        "displacement",
         "object",
         "scene",
         "mask",

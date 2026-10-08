@@ -3,7 +3,6 @@ import numpy as np
 import pytest
 
 from infinigen2.exporters.rigidbody_point_tracks import (
-    _uncovered_centers,
     object_pose_matrices,
     rigid_body_point_tracks,
     save_point_tracks,
@@ -149,16 +148,3 @@ def test_point_track_tails_are_opt_in(tmp_path):
 
     assert not cv2.imread(str(plain[-1]))[8, 8].any()
     assert cv2.imread(str(tailed[-1]))[8, 8].any()
-
-
-def test_point_track_tails_default_to_two_frames():
-    assert visualize_point_tracks.__defaults__[-1] == 2
-
-
-def test_dynamic_objects_get_double_seed_density():
-    static = _uncovered_centers(np.empty((0, 2)), np.zeros((HEIGHT, WIDTH), dtype=bool))
-    dynamic = _uncovered_centers(np.empty((0, 2)), np.ones((HEIGHT, WIDTH), dtype=bool))
-
-    assert len(static) == 7 * 12
-    assert len(dynamic) == 14 * 24
-    assert len(dynamic) == 4 * len(static)

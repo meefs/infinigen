@@ -4,14 +4,18 @@
 # Authors: Alexander Raistrick
 
 import ast
-import inspect
+import types
 from typing import Callable, TypeVar
 
+import bpy
 import numpy as np
 import procfunc as pf
 import pytest
+from procfunc import codegen
 from procfunc import compute_graph as cg
 from procfunc.codegen import to_python
+from procfunc.compute_graph.operators_info import OPERATORS_TO_FUNCTIONS, OperatorType
+from procfunc.nodes import NODE_OPERATOR_TABLE
 from procfunc.tracer import TraceLevel
 from procfunc.util.manifest import import_item
 
@@ -24,6 +28,7 @@ from infinigen2.exporters.render_error_check import (
 from infinigen2.util.codestats.setup import build_model_from_compute_graph
 
 T = TypeVar("T")
+SEED = 0
 
 
 def _assert_render_valid(objects: list[pf.MeshObject]):
@@ -97,6 +102,36 @@ def test_generators_material(rng, pathspec, min_parameters):
     validate_trace_generator(material_sample, rng, min_parameters=min_parameters)
 
 
+_DISPLACEMENT_FUNCS = pf.util.manifest.filter_manifest(
+    GENERATORS_MANIFEST,
+    filter={"category": "Displacement"},
+    require_nonempty=["name"],
+    min_entries=1,
+)
+
+
+@pytest.mark.parametrize(
+    "pathspec, min_parameters",
+    _manifest_params(_DISPLACEMENT_FUNCS, {"min_parameters": 2}),
+)
+def test_generators_displacement(rng, pathspec, min_parameters):
+    displacement_sample = import_item(pathspec)
+    vector = pf.nodes.shader.coord().object
+    displacement = displacement_sample(rng=rng, vector=vector)
+    material = pf.Material(
+        surface=pf.nodes.shader.diffuse_bsdf(color=(0.35, 0.3, 0.25, 1.0)),
+        displacement=displacement,
+    )
+    plane = pf.ops.primitives.mesh_plane(size=1)
+    pf.ops.object.set_material(plane, material=material)
+    _assert_render_valid([plane])
+    validate_trace_generator(displacement_sample, rng, min_parameters=min_parameters)
+
+
+def test_displacement_integration_commands_present() -> None:
+    assert _DISPLACEMENT_FUNCS["integration_test_string"].notna().all()
+
+
 _OBJECT_FUNCS = pf.util.manifest.filter_manifest(
     GENERATORS_MANIFEST,
     filter={"category": "Object"},
@@ -104,6 +139,34 @@ _OBJECT_FUNCS = pf.util.manifest.filter_manifest(
     require_nonempty=["name"],
     min_entries=None,
 )
+
+_PRIMITIVES_TRACE_EXCLUDES = {
+    "infinigen2.objects.bed.bed_rand",
+    "infinigen2.objects.chair.chair_back_rand",
+    "infinigen2.objects.desk.desk_rand",
+    "infinigen2.objects.table.table_cocktail_rand",
+    "infinigen2.objects.table.table_coffee_rand",
+    "infinigen2.objects.table.table_dining_rand",
+    "infinigen2.objects.table.table_side_rand",
+}
+_PRIMITIVES_TRACE_FUNCS = _OBJECT_FUNCS[
+    ~_OBJECT_FUNCS["name"].isin(_PRIMITIVES_TRACE_EXCLUDES)
+]
+
+
+def _primitives_trace_params():
+    for row in _PRIMITIVES_TRACE_FUNCS[["name"]].itertuples(index=False):
+        pathspec = row[0]
+        marks = []
+        if pathspec == "infinigen2.objects.toilet.toilet_rand":
+            marks = pytest.mark.xfail(
+                reason=(
+                    "Linux CI and a local current-develop merge expose a direct/traced "
+                    "execution parity gap for toilet_rand (7367 vs 7655 evaluated faces)"
+                ),
+                strict=True,
+            )
+        yield pytest.param(pathspec, id=pathspec, marks=marks)
 
 
 @pytest.mark.parametrize(
@@ -114,77 +177,6 @@ def test_generators_object(rng, pathspec, min_parameters):
     func = import_item(pathspec)
     assert callable(func)
     res = func(rng=rng)
-    assert isinstance(res, pf.MeshObject) or hasattr(res, "mesh"), res
-
-    mesh = res if isinstance(res, pf.MeshObject) else res.mesh
-    _assert_render_valid([mesh])
-
-    validate_trace_generator(func, rng, min_parameters=min_parameters)
-
-
-_SCENE_FUNCS = pf.util.manifest.filter_manifest(
-    GENERATORS_MANIFEST,
-    filter={"category": "Scene"},
-    exclude={"name": ["LATER", "DECLINE"]},
-    require_nonempty=["name"],
-    min_entries=0,
-)
-
-
-@pytest.mark.skip(reason="Scene generators are not implemented yet")
-@pytest.mark.parametrize("pathspec", _SCENE_FUNCS["name"].values)
-def test_generators_scene(pathspec, rng):
-    raise NotImplementedError("Scene generators are not implemented yet")
-
-    SceneClass = import_item(pathspec)
-    SceneClass()
-
-    dummy_material = pf.Material(
-        surface=pf.nodes.shader.principled_bsdf(
-            base_color=(0.8, 0.8, 0.8, 1.0), roughness=0.5
-        )
-    )
-
-    def assets_to_dummies(node: cg.Node) -> cg.Node:
-        if not isinstance(node, cg.FunctionCallNode):
-            return node
-        func_output_type = inspect.signature(node.func).return_annotation
-        if func_output_type is pf.Object:
-            return cg.FunctionCallNode(
-                func=pf.primitive.cube,
-                args=(),
-                kwargs={},
-            )
-        elif func_output_type is pf.Material:
-            return cg.FunctionCallNode(
-                func=dummy_material,
-                args=(),
-                kwargs={},
-            )
-        return node
-
-    # dummied_scenegen = gtr.transform_generator(
-    #     pf.trace(generator, rng=rng), assets_to_dummies
-    # )
-
-    # _res = dummied_scenegen(rng=rng)
-    # validate_generator(generator, rng)
-
-
-_OBJECT_FUNCS = pf.util.manifest.filter_manifest(
-    GENERATORS_MANIFEST,
-    filter={"category": "Object"},
-    exclude={"name": ["LATER", "DECLINE"]},
-    require_nonempty=["name"],
-    min_entries=None,
-)
-
-
-@pytest.mark.parametrize("pathspec", _OBJECT_FUNCS["name"].values)
-def test_generators_mesh_object(pathspec, rng):
-    func = import_item(pathspec)
-    assert callable(func)
-    res = func(rng=rng)
     assert not isinstance(res, pf.MeshObject), (
         f"Expected NamedTuple with mesh field, got bare MeshObject from {pathspec}"
     )
@@ -192,8 +184,111 @@ def test_generators_mesh_object(pathspec, rng):
     assert isinstance(res.mesh, pf.MeshObject), (
         f".mesh should be MeshObject, got {type(res.mesh)} from {pathspec}"
     )
+    _assert_render_valid([res.mesh])
 
-    # validate_generator(func, rng)
+    validate_trace_generator(func, rng, min_parameters=min_parameters)
+
+
+def _evaluated_mesh_geometry(
+    res: object,
+) -> tuple[np.ndarray, list[tuple[int, ...]], np.ndarray]:
+    obj = res if isinstance(res, pf.MeshObject) else res.mesh
+    bpy_obj = obj.item()
+    evaluated = bpy_obj.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+    coords = np.empty(len(mesh.vertices) * 3)
+    mesh.vertices.foreach_get("co", coords)
+    polygons = [tuple(p.vertices) for p in mesh.polygons]
+    matrix = np.array(bpy_obj.matrix_world)
+    evaluated.to_mesh_clear()
+    return coords.reshape(-1, 3), polygons, matrix
+
+
+def _build_func_resolution_map(toplevel_graph) -> tuple[dict, list[str]]:
+    func_resolution = {
+        op_func: op_type for op_type, op_func in OPERATORS_TO_FUNCTIONS.items()
+    }
+    for oprow in NODE_OPERATOR_TABLE:
+        if oprow.operator_type is not OperatorType.NOOP:
+            func_resolution[oprow.pf_func] = oprow.operator_type
+    for name in dir(pf):
+        obj = getattr(pf, name)
+        if not name.startswith("_") and isinstance(obj, type):
+            if not isinstance(obj, types.ModuleType):
+                func_resolution[obj] = f"pf.{name}"
+    default_resolution, import_lines = codegen.default_func_resolution_map(
+        toplevel_graph, skip_funcs=set(func_resolution)
+    )
+    func_resolution.update(default_resolution)
+    specs = [toplevel_graph.outputs.spec]
+    while specs:
+        spec = specs.pop()
+        specs.extend(spec.items)
+        if spec.container is None or spec.container in func_resolution:
+            continue
+        module = spec.container.__module__
+        name = spec.container.__name__
+        import_lines.append(f"from {module} import {name}")
+        func_resolution[spec.container] = name
+    return func_resolution, import_lines
+
+
+def _trace_roundtrip(func: Callable, trace_level: TraceLevel) -> object:
+    def generate(rng: object) -> object:
+        return func(rng=rng)
+
+    rng_node = cg.InputPlaceholderNode(
+        name="rng", default_value=None, metadata={"varname": "rng"}
+    )
+    rng = pf.tracer.RngProxy(rng_node, np.random.default_rng(SEED), dirty=False)
+    graph = pf.trace(generate, trace_level=trace_level, rng=rng)
+    func_resolution, import_lines = _build_func_resolution_map(graph)
+    import_lines.append("from numpy.random import Generator")
+    code = to_python(
+        graph,
+        func_resolution=func_resolution,
+        import_lines=import_lines,
+        toplevel_as_maincall=False,
+    )
+    namespace = {}
+    exec(compile(code, f"<{trace_level.name}>", "exec"), namespace)  # noqa: S102
+    return namespace[graph.name](rng=np.random.default_rng(SEED))
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize(
+    "trace_level", [TraceLevel.PRIMITIVES], ids=lambda level: level.name
+)
+@pytest.mark.parametrize("pathspec", _primitives_trace_params())
+def test_generators_object_trace_reproduces_geometry(
+    pathspec: str, trace_level: TraceLevel
+) -> None:
+    func = import_item(pathspec)
+
+    direct = func(rng=np.random.default_rng(SEED))
+    direct_coords, direct_polygons, direct_matrix = _evaluated_mesh_geometry(direct)
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    traced = _trace_roundtrip(func, trace_level)
+    traced_coords, traced_polygons, traced_matrix = _evaluated_mesh_geometry(traced)
+
+    same_topology = direct_polygons == traced_polygons
+    assert same_topology, (
+        f"{pathspec}: {trace_level.name} changed evaluated mesh topology "
+        f"({len(direct_polygons)} direct faces, {len(traced_polygons)} traced faces)"
+    )
+    assert direct_coords.shape == traced_coords.shape
+    np.testing.assert_allclose(
+        direct_coords,
+        traced_coords,
+        atol=1e-5,
+        err_msg=f"{pathspec}: {trace_level.name} changed evaluated vertex positions",
+    )
+    np.testing.assert_allclose(
+        direct_matrix,
+        traced_matrix,
+        atol=1e-5,
+        err_msg=f"{pathspec}: {trace_level.name} changed the world transform",
+    )
 
 
 _MANIFEST_NAMES = [n for n in GENERATORS_MANIFEST["name"].values if isinstance(n, str)]

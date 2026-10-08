@@ -3,6 +3,7 @@
 
 # Authors: Alexander Raistrick
 
+import math
 from typing import NamedTuple
 
 import procfunc as pf
@@ -15,6 +16,7 @@ __all__ = [
     "NormedUvToBoundsUvResult",
     "SubgridResult",
     "faces_for_instance_grid_bboxes",
+    "grid_between",
     "grid_from_spacing",
     "grid_with_indices",
     "normed_uv_to_bounds_uv",
@@ -213,6 +215,39 @@ def _footprint_uv_bounds(
     return bb_min, bb_max
 
 
+def _uv_is_on_surface(
+    surface: pf.ProcNode[pf.MeshObject],
+    uv_field: t.SocketOrVal[pf.Vector],
+    query_uv: t.SocketOrVal[pf.Vector],
+    offset_u: t.SocketOrVal[float],
+    offset_v: t.SocketOrVal[float],
+) -> pf.ProcNode[bool]:
+    return pf.nodes.geo.sample_uv_surface(
+        mesh=surface,
+        value=pf.nodes.geo.input_position(),
+        sample_uv=query_uv + pf.nodes.math.combine_xyz(x=offset_u, y=offset_v),
+        uv_map=uv_field,
+    ).is_valid
+
+
+@pf.nodes.node_function
+def _instance_footprint_is_valid(
+    surface: pf.ProcNode[pf.MeshObject],
+    uv_field: t.SocketOrVal[pf.Vector],
+    query_uv: t.SocketOrVal[pf.Vector],
+    instance: pf.ProcNode[pf.MeshObject],
+    rotation_offset: t.SocketOrVal[pf.Vector],
+) -> pf.ProcNode[bool]:
+    lo, hi = _footprint_uv_bounds(instance, rotation_offset)
+    lower_left = _uv_is_on_surface(surface, uv_field, query_uv, lo.x, lo.y)
+    lower_right = _uv_is_on_surface(surface, uv_field, query_uv, hi.x, lo.y)
+    upper_left = _uv_is_on_surface(surface, uv_field, query_uv, lo.x, hi.y)
+    upper_right = _uv_is_on_surface(surface, uv_field, query_uv, hi.x, hi.y)
+    lower = pf.nodes.func.boolean_and(a=lower_left, b=lower_right)
+    upper = pf.nodes.func.boolean_and(a=upper_left, b=upper_right)
+    return pf.nodes.func.boolean_and(a=lower, b=upper)
+
+
 @pf.nodes.node_function
 def grid_from_spacing(
     uv_surface: pf.ProcNode[pf.MeshObject],
@@ -271,9 +306,252 @@ def grid_from_spacing(
     )
 
 
+@pf.nodes.node_function
+def grid_between(
+    first_uv: t.SocketOrVal[pf.Vector],
+    last_uv: t.SocketOrVal[pf.Vector],
+    count: t.SocketOrVal[int],
+) -> GridFromSpacingResult:
+    """`count` query points evenly spaced in UV from `first_uv` to `last_uv`."""
+    grid = grid_with_indices(vertices_x=count, vertices_y=1)
+    query_uv = pf.nodes.math.map_range(
+        value=grid.uv_factor,
+        from_min=(0.0, 0.0, 0.0),
+        from_max=(1.0, 1.0, 1.0),
+        to_min=first_uv,
+        to_max=last_uv,
+    )
+    return GridFromSpacingResult(
+        grid_mesh=grid.mesh,
+        query_uv=query_uv,
+        index_x=grid.index_x,
+        index_y=grid.index_y,
+    )
+
+
 class FacesForInstanceGridBboxesResult(NamedTuple):
     mesh: pf.ProcNode[pf.MeshObject]
     is_instance_face: pf.ProcNode[bool]
+    inset: pf.ProcNode[pf.Vector]  # per point: expanded mouth -> exact footprint
+
+
+class _InstanceGridLayoutResult(NamedTuple):
+    mesh: pf.ProcNode[pf.MeshObject]
+    uv_factor: pf.ProcNode[pf.Vector]
+    subgrid_index_x: pf.ProcNode[int]
+    subgrid_index_y: pf.ProcNode[int]
+    is_boundary_x: pf.ProcNode[bool]
+    is_boundary_y: pf.ProcNode[bool]
+    instance_uv: pf.ProcNode[pf.Vector]
+    bb_min: t.SocketOrVal[pf.Vector]
+    bb_max: t.SocketOrVal[pf.Vector]
+
+
+class _InstanceFaceCoordinatesResult(NamedTuple):
+    x: pf.ProcNode[int]
+    y: pf.ProcNode[int]
+
+
+@pf.nodes.node_function
+def _instance_grid_layout(
+    instance: pf.ProcNode[pf.MeshObject],
+    query_grid: pf.ProcNode[pf.MeshObject],
+    instance_uvs: t.SocketOrVal[pf.Vector],
+    grid_index_x: t.SocketOrVal[int],
+    grid_index_y: t.SocketOrVal[int],
+    verts_per_instance_x: t.SocketOrVal[int],
+    verts_per_instance_y: t.SocketOrVal[int],
+    margin_verts_x: t.SocketOrVal[int],
+    margin_verts_y: t.SocketOrVal[int],
+    rotation_offset: t.SocketOrVal[pf.Vector],
+) -> _InstanceGridLayoutResult:
+    index_x_stat = pf.nodes.geo.attribute_statistic(
+        geometry=query_grid,
+        attribute=grid_index_x.astype(dtype=float),
+    )
+    n_instances_x = index_x_stat.max + 1.0
+    fillmesh_verts_x = pf.nodes.math.multiply_add(
+        a=n_instances_x,
+        b=verts_per_instance_x.astype(dtype=float),
+        addend=margin_verts_x.astype(dtype=float) * 2.0,
+    )
+
+    index_y_stat = pf.nodes.geo.attribute_statistic(
+        geometry=query_grid,
+        attribute=grid_index_y.astype(dtype=float),
+    )
+    n_instances_y = index_y_stat.max + 1.0
+    fillmesh_verts_y = pf.nodes.math.multiply_add(
+        a=n_instances_y,
+        b=verts_per_instance_y.astype(dtype=float),
+        addend=margin_verts_y.astype(dtype=float) * 2.0,
+    )
+
+    grid_result = grid_with_indices(
+        vertices_x=fillmesh_verts_x.astype(dtype=int),
+        vertices_y=fillmesh_verts_y.astype(dtype=int),
+    )
+    subgrid_result = subgrid(
+        x_index=grid_result.index_x,
+        y_index=grid_result.index_y,
+        n_verts_x=fillmesh_verts_x.astype(dtype=int),
+        n_verts_y=fillmesh_verts_y.astype(dtype=int),
+        margin_verts_x=margin_verts_x,
+        margin_verts_y=margin_verts_y,
+    )
+
+    instance_x = pf.nodes.math.floor(
+        subgrid_result.subgrid_index_x.astype(dtype=float)
+        / verts_per_instance_x.astype(dtype=float)
+    )
+    instance_x = pf.nodes.math.clamp(value=instance_x, max=index_x_stat.max)
+    instance_y = pf.nodes.math.floor(
+        subgrid_result.subgrid_index_y.astype(dtype=float)
+        / verts_per_instance_y.astype(dtype=float)
+    )
+    instance_y = pf.nodes.math.clamp(value=instance_y, max=index_y_stat.max)
+    instance_id = pf.nodes.math.multiply_add(
+        a=instance_x,
+        b=n_instances_y,
+        addend=instance_y,
+    )
+    instance_uv = pf.nodes.geo.sample_index(
+        geometry=query_grid,
+        index=instance_id.astype(dtype=int),
+        value=instance_uvs,
+    )
+    bb_min, bb_max = _footprint_uv_bounds(instance, rotation_offset)
+    return _InstanceGridLayoutResult(
+        mesh=grid_result.mesh,
+        uv_factor=grid_result.uv_factor,
+        subgrid_index_x=subgrid_result.subgrid_index_x,
+        subgrid_index_y=subgrid_result.subgrid_index_y,
+        is_boundary_x=subgrid_result.is_boundary_x,
+        is_boundary_y=subgrid_result.is_boundary_y,
+        instance_uv=instance_uv,
+        bb_min=bb_min,
+        bb_max=bb_max,
+    )
+
+
+@pf.nodes.node_function
+def _instance_outline_factor(
+    subgrid_index_x: t.SocketOrVal[int],
+    subgrid_index_y: t.SocketOrVal[int],
+    verts_per_instance_x: t.SocketOrVal[int],
+    verts_per_instance_y: t.SocketOrVal[int],
+    footprint_height: t.SocketOrVal[float],
+    top_profile_height: t.SocketOrVal[float],
+    bottom_profile_height: t.SocketOrVal[float],
+) -> pf.ProcNode[pf.Vector]:
+    """Normalized footprint position of each instance vertex.
+
+    Columns are spaced uniformly in angle around ellipse quarters spanning the
+    full footprint width, with the given profile heights in metres; zero heights
+    with two columns give the plain bbox corners.
+    """
+    column = pf.nodes.math.floor_mod(
+        a=subgrid_index_x.astype(dtype=float),
+        b=verts_per_instance_x.astype(dtype=float),
+    )
+    angle = column / (verts_per_instance_x.astype(dtype=float) - 1.0) * math.pi
+    x_factor = (1.0 - pf.nodes.math.cos(angle)) * 0.5
+    profile_inset = 1.0 - pf.nodes.math.sin(angle)
+    height = pf.nodes.math.maximum(footprint_height, 1e-9)
+    bottom = bottom_profile_height * profile_inset / height
+    top = 1.0 - top_profile_height * profile_inset / height
+    row = pf.nodes.math.floor_mod(
+        a=subgrid_index_y.astype(dtype=float),
+        b=verts_per_instance_y.astype(dtype=float),
+    )
+    row_factor = row / (verts_per_instance_y.astype(dtype=float) - 1.0)
+    y_factor = pf.nodes.math.mix(a=bottom, b=top, factor=row_factor)
+    return pf.nodes.math.combine_xyz(x=x_factor, y=y_factor)
+
+
+@pf.nodes.node_function
+def _instance_face_coordinates(
+    grid_mesh: pf.ProcNode[pf.MeshObject],
+    subgrid_index_x: pf.ProcNode[int],
+    subgrid_index_y: pf.ProcNode[int],
+) -> _InstanceFaceCoordinatesResult:
+    corner = pf.nodes.geo.corners_of_face()
+    vertex = pf.nodes.geo.vertex_of_corner(corner.corner_index)
+    x = pf.nodes.geo.sample_index(
+        geometry=grid_mesh,
+        index=vertex,
+        value=subgrid_index_x,
+    )
+    y = pf.nodes.geo.sample_index(
+        geometry=grid_mesh,
+        index=vertex,
+        value=subgrid_index_y,
+    )
+    return _InstanceFaceCoordinatesResult(x=x, y=y)
+
+
+@pf.nodes.node_function
+def _faces_from_instance_grid(
+    target_surface: pf.ProcNode[pf.MeshObject],
+    target_uv: t.SocketOrVal[pf.Vector],
+    grid_mesh: pf.ProcNode[pf.MeshObject],
+    outer_vertex_uv: t.SocketOrVal[pf.Vector],
+    inner_vertex_uv: t.SocketOrVal[pf.Vector],
+    is_instance_face: t.SocketOrVal[bool],
+) -> FacesForInstanceGridBboxesResult:
+    surf_stat = pf.nodes.geo.attribute_statistic(
+        geometry=target_surface,
+        attribute=target_uv,
+    )
+    # clamp the query a hair inside the surface UV bounds; a query past the edge hits no
+    # face -> value (0,0,0), which merge welds into one stray origin vert
+    uv_lo = surf_stat.min + pf.Vector((0.001, 0.001, 0.0))
+    uv_hi = surf_stat.max - pf.Vector((0.001, 0.001, 0.0))
+    clamped_outer_uv = pf.nodes.math.vector_minimum(
+        a=pf.nodes.math.vector_maximum(a=outer_vertex_uv, b=uv_lo), b=uv_hi
+    )
+    clamped_inner_uv = pf.nodes.math.vector_minimum(
+        a=pf.nodes.math.vector_maximum(a=inner_vertex_uv, b=uv_lo), b=uv_hi
+    )
+    outer_position = pf.nodes.geo.sample_uv_surface(
+        mesh=target_surface,
+        value=pf.nodes.geo.input_position(),
+        sample_uv=clamped_outer_uv,
+        uv_map=target_uv,
+    )
+    inner_position = pf.nodes.geo.sample_uv_surface(
+        mesh=target_surface,
+        value=pf.nodes.geo.input_position(),
+        sample_uv=clamped_inner_uv,
+        uv_map=target_uv,
+    )
+    positioned = pf.nodes.geo.set_position(
+        geometry=grid_mesh,
+        position=outer_position.value,
+    )
+    with_inset = pf.nodes.geo.capture_attribute(
+        geometry=positioned,
+        domain="POINT",
+        inset=inner_position.value - outer_position.value,
+    )
+    captured = pf.nodes.geo.capture_attribute(
+        geometry=with_inset.geometry,
+        domain="FACE",
+        boolean=is_instance_face,
+    )
+    # store the sampled surface UVs back as UVMap so the wall stays textured
+    mesh_with_uv = pf.nodes.geo.store_named_attribute(
+        geometry=captured.geometry,
+        name="UVMap",
+        value=clamped_outer_uv,
+        domain="CORNER",
+        data_type="FLOAT2",
+    )
+    return FacesForInstanceGridBboxesResult(
+        mesh=mesh_with_uv,
+        is_instance_face=captured.boolean,
+        inset=with_inset.inset,
+    )
 
 
 @pf.nodes.node_function
@@ -291,185 +569,100 @@ def faces_for_instance_grid_bboxes(
     margin_verts_y: t.SocketOrVal[int] = 1,
     face_expand_margin: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
     rotation_offset: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
+    top_profile_height: t.SocketOrVal[float] = 0.0,
+    bottom_profile_height: t.SocketOrVal[float] = 0.0,
 ) -> FacesForInstanceGridBboxesResult:
-    n_verts_x = pf.nodes.geo.attribute_statistic(
-        geometry=query_grid,
-        attribute=grid_index_x.astype(dtype=float),
-    )
+    """Remesh a surface into a grid with one hole face-patch per instance footprint.
 
-    fillmesh_verts_x = pf.nodes.math.multiply_add(
-        a=n_verts_x.max + 1.0,
-        b=verts_per_instance_x.astype(dtype=float),
-        addend=margin_verts_x.astype(dtype=float) * 2.0,
-    )
-
-    n_verts_y = pf.nodes.geo.attribute_statistic(
-        geometry=query_grid,
-        attribute=grid_index_y.astype(dtype=float),
-    )
-
-    n_instances_y = n_verts_y.max + 1.0
-    fillmesh_verts_y = pf.nodes.math.multiply_add(
-        a=n_instances_y,
-        b=verts_per_instance_y.astype(dtype=float),
-        addend=margin_verts_y.astype(dtype=float) * 2.0,
-    )
-
-    grid_result = grid_with_indices(
-        vertices_x=fillmesh_verts_x.astype(dtype=int),
-        vertices_y=fillmesh_verts_y.astype(dtype=int),
-    )
-
-    input_position = pf.nodes.geo.input_position()
-
-    subgrid_result = subgrid(
-        x_index=grid_result.index_x,
-        y_index=grid_result.index_y,
-        n_verts_x=fillmesh_verts_x.astype(dtype=int),
-        n_verts_y=fillmesh_verts_y.astype(dtype=int),
+    Nonzero profile heights (metres) round the top/bottom of each footprint into
+    ellipse quarters; use more than two `verts_per_instance_x` columns for them.
+    `face_expand_margin` grows the mesh outline; `inset` maps it back per point.
+    """
+    layout = _instance_grid_layout(
+        instance=instance,
+        query_grid=query_grid,
+        instance_uvs=instance_uvs,
+        grid_index_x=grid_index_x,
+        grid_index_y=grid_index_y,
+        verts_per_instance_x=verts_per_instance_x,
+        verts_per_instance_y=verts_per_instance_y,
         margin_verts_x=margin_verts_x,
         margin_verts_y=margin_verts_y,
+        rotation_offset=rotation_offset,
     )
-
-    mix_value = pf.nodes.math.combine_xyz(
-        x=subgrid_result.is_boundary_x.astype(dtype=float),
-        y=subgrid_result.is_boundary_y.astype(dtype=float),
+    footprint_size = pf.nodes.math.separate_xyz(layout.bb_max - layout.bb_min)
+    factor = _instance_outline_factor(
+        subgrid_index_x=layout.subgrid_index_x,
+        subgrid_index_y=layout.subgrid_index_y,
+        verts_per_instance_x=verts_per_instance_x,
+        verts_per_instance_y=verts_per_instance_y,
+        footprint_height=footprint_size.y,
+        top_profile_height=top_profile_height,
+        bottom_profile_height=bottom_profile_height,
     )
-
-    corner_idx_x_a = pf.nodes.math.floor_mod(
-        a=subgrid_result.subgrid_index_x.astype(dtype=float),
-        b=verts_per_instance_x.astype(dtype=float),
-    )
-    corner_idx_x = pf.nodes.func.equal(a=corner_idx_x_a, b=1.0, epsilon=0.001)
-
-    corner_idx_y_a = pf.nodes.math.floor_mod(
-        a=subgrid_result.subgrid_index_y.astype(dtype=float),
-        b=verts_per_instance_y.astype(dtype=float),
-    )
-    corner_idx_y = pf.nodes.func.equal(a=corner_idx_y_a, b=1.0, epsilon=0.001)
-
-    take_which_corner_value = pf.nodes.math.combine_xyz(
-        x=corner_idx_x.astype(dtype=float),
-        y=corner_idx_y.astype(dtype=float),
-    )
-
-    bb_min, bb_max = _footprint_uv_bounds(instance, rotation_offset)
-
-    subgrid_instance_x = pf.nodes.math.floor(
-        subgrid_result.subgrid_index_x.astype(dtype=float)
-        / verts_per_instance_x.astype(dtype=float)
-    )
-    instance_a = pf.nodes.math.clamp(value=subgrid_instance_x, max=n_verts_x.max)
-
-    subgrid_instance_y = pf.nodes.math.floor(
-        subgrid_result.subgrid_index_y.astype(dtype=float)
-        / verts_per_instance_y.astype(dtype=float)
-    )
-    instance_addend = pf.nodes.math.clamp(value=subgrid_instance_y, max=n_verts_y.max)
-
-    instance_id = pf.nodes.math.multiply_add(
-        a=instance_a, b=n_instances_y, addend=instance_addend
-    )
-    instance_uv = pf.nodes.geo.sample_index(
-        geometry=query_grid,
-        index=instance_id.astype(dtype=int),
-        value=instance_uvs,
-    )
-
-    take_which_corner = pf.nodes.math.map_range(
-        value=take_which_corner_value,
+    outer_instance_uv = pf.nodes.math.map_range(
+        value=factor,
         from_min=(0.0, 0.0, 0.0),
         from_max=(1.0, 1.0, 1.0),
-        to_min=bb_min - face_expand_margin + instance_uv,
-        to_max=bb_max + face_expand_margin + instance_uv,
+        to_min=layout.bb_min - face_expand_margin + layout.instance_uv,
+        to_max=layout.bb_max + face_expand_margin + layout.instance_uv,
     )
+    inset_direction = factor * -2.0 + pf.Vector((1.0, 1.0, 1.0))
+    inner_instance_uv = outer_instance_uv + face_expand_margin * inset_direction
 
-    normed_uv = normed_uv_to_bounds_uv(
+    boundary_uv = normed_uv_to_bounds_uv(
         geometry=target_surface,
         target_uv=target_uv,
-        query_uv=grid_result.uv_factor,
+        query_uv=layout.uv_factor,
         margin_low=(0.0, 0.0, 0.0),
         margin_high=(0.0, 0.0, -0.1),
     )
-
-    mix_for_corners_vs_boundaries = pf.nodes.math.map_range(
-        value=mix_value,
+    boundary_factor = pf.nodes.math.combine_xyz(
+        x=layout.is_boundary_x.astype(dtype=float),
+        y=layout.is_boundary_y.astype(dtype=float),
+    )
+    outer_vertex_uv = pf.nodes.math.map_range(
+        value=boundary_factor,
         from_min=(0.0, 0.0, 0.0),
         from_max=(1.0, 1.0, 1.0),
-        to_min=take_which_corner,
-        to_max=normed_uv.uv_out,
+        to_min=outer_instance_uv,
+        to_max=boundary_uv.uv_out,
+    )
+    inner_vertex_uv = pf.nodes.math.map_range(
+        value=boundary_factor,
+        from_min=(0.0, 0.0, 0.0),
+        from_max=(1.0, 1.0, 1.0),
+        to_min=inner_instance_uv,
+        to_max=boundary_uv.uv_out,
     )
 
-    # clamp the query a hair inside the surface UV bounds; a query past the edge hits no
-    # face -> value (0,0,0), which merge welds into one stray origin vert
-    surf_stat = pf.nodes.geo.attribute_statistic(
-        geometry=target_surface, attribute=target_uv
+    face = _instance_face_coordinates(
+        grid_mesh=layout.mesh,
+        subgrid_index_x=layout.subgrid_index_x,
+        subgrid_index_y=layout.subgrid_index_y,
     )
-    clamped_uv = pf.nodes.math.vector_minimum(
-        a=pf.nodes.math.vector_maximum(
-            a=mix_for_corners_vs_boundaries,
-            b=surf_stat.min + pf.Vector((0.001, 0.001, 0.0)),
-        ),
-        b=surf_stat.max - pf.Vector((0.001, 0.001, 0.0)),
-    )
-    sample_uv_surface = pf.nodes.geo.sample_uv_surface(
-        mesh=target_surface,
-        value=input_position,
-        sample_uv=clamped_uv,
-        uv_map=target_uv,
-    )
-    mix_for_corners_vs_boundaries = clamped_uv
-
-    set_position = pf.nodes.geo.set_position(
-        geometry=grid_result.mesh,
-        position=sample_uv_surface.value,
-    )
-
-    corners_of_face = pf.nodes.geo.corners_of_face()
-    vertex_of_corner = pf.nodes.geo.vertex_of_corner(corners_of_face.corner_index)
-
-    sample_index = pf.nodes.geo.sample_index(
-        geometry=grid_result.mesh,
-        index=vertex_of_corner,
-        value=subgrid_result.subgrid_index_x,
-    )
-    capture_a_1 = pf.nodes.math.floor_mod(
-        a=sample_index.astype(dtype=float),
+    face_x = pf.nodes.math.floor_mod(
+        a=face.x.astype(dtype=float),
         b=verts_per_instance_x.astype(dtype=float),
     )
-    is_instance_x = pf.nodes.func.equal(a=capture_a_1, b=0.0, epsilon=0.001)
-
-    sample_index_1 = pf.nodes.geo.sample_index(
-        geometry=grid_result.mesh,
-        index=vertex_of_corner,
-        value=subgrid_result.subgrid_index_y,
+    is_instance_x = pf.nodes.func.less_than(
+        a=face_x, b=verts_per_instance_x.astype(dtype=float) - 1.0
     )
-    capture_a_0 = pf.nodes.math.floor_mod(
-        a=sample_index_1.astype(dtype=float),
+    face_y = pf.nodes.math.floor_mod(
+        a=face.y.astype(dtype=float),
         b=verts_per_instance_y.astype(dtype=float),
     )
-    is_instance_y = pf.nodes.func.equal(a=capture_a_0, b=0.0, epsilon=0.001)
-
+    is_instance_y = pf.nodes.func.less_than(
+        a=face_y, b=verts_per_instance_y.astype(dtype=float) - 1.0
+    )
     is_instance_face = pf.nodes.func.boolean_and(a=is_instance_x, b=is_instance_y)
-
-    capture_attribute = pf.nodes.geo.capture_attribute(
-        geometry=set_position,
-        domain="FACE",
-        boolean=is_instance_face,
-    )
-
-    # store the sampled surface UVs back as UVMap so the wall stays textured
-    mesh_with_uv = pf.nodes.geo.store_named_attribute(
-        geometry=capture_attribute.geometry,
-        name="UVMap",
-        value=mix_for_corners_vs_boundaries,
-        domain="CORNER",
-        data_type="FLOAT2",
-    )
-
-    return FacesForInstanceGridBboxesResult(
-        mesh=mesh_with_uv,
-        is_instance_face=capture_attribute.boolean,
+    return _faces_from_instance_grid(
+        target_surface=target_surface,
+        target_uv=target_uv,
+        grid_mesh=layout.mesh,
+        outer_vertex_uv=outer_vertex_uv,
+        inner_vertex_uv=inner_vertex_uv,
+        is_instance_face=is_instance_face,
     )
 
 
@@ -484,12 +677,12 @@ def place_instances_on_uv_grid(
     rotation_offset: t.SocketOrVal[pf.Vector] = (0.0, 0.0, 0.0),
     normal_offset: t.SocketOrVal[float] = 0.0,
 ) -> pf.ProcNode[t.Instances]:
-    position = pf.nodes.geo.sample_uv_surface(
+    position_sample = pf.nodes.geo.sample_uv_surface(
         mesh=surface,
         value=pf.nodes.geo.input_position(),
         sample_uv=query_uv,
         uv_map=uv_field,
-    ).value
+    )
     normal = pf.nodes.geo.sample_uv_surface(
         mesh=surface,
         value=pf.nodes.geo.input_normal(),
@@ -497,7 +690,19 @@ def place_instances_on_uv_grid(
         uv_map=uv_field,
     ).value
 
-    seated = position + normal * normal_offset
+    footprint_valid = _instance_footprint_is_valid(
+        surface=surface,
+        uv_field=uv_field,
+        query_uv=query_uv,
+        instance=instance,
+        rotation_offset=rotation_offset,
+    )
+    sample_valid = pf.nodes.func.boolean_and(
+        a=position_sample.is_valid,
+        b=footprint_valid,
+    )
+
+    seated = position_sample.value + normal * normal_offset
     grid_positioned = pf.nodes.geo.set_position(geometry=grid_mesh, position=seated)
 
     # local +X -> normal (out), +Z -> secondary reference (world up on walls),
@@ -513,5 +718,8 @@ def place_instances_on_uv_grid(
     )
 
     return pf.nodes.geo.instance_on_points(
-        points=grid_positioned, instance=instance, rotation=rotation
+        points=grid_positioned,
+        instance=instance,
+        rotation=rotation,
+        selection=sample_valid,
     )

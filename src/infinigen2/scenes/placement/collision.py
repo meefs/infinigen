@@ -1,11 +1,13 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Karhan Kayan, Alexander Raistrick
+# Authors:
+# - Karhan Kayan, Alexander Raistrick
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -62,7 +64,6 @@ def _object_id(obj: pf.Object) -> int:
 
 
 def _mesh_from_object(obj: pf.Object) -> trimesh.Trimesh:
-    bpy.context.view_layer.update()
     vertices = pf.ops.attr.vertex_positions(obj, global_coords=False)
     if vertices.shape[0] == 0:
         raise ValueError(f"{obj.item().name} has no vertices")
@@ -102,12 +103,10 @@ def _mesh_from_object(obj: pf.Object) -> trimesh.Trimesh:
 
 
 def _object_transform(obj: pf.Object) -> np.ndarray:
-    bpy.context.view_layer.update()
     return np.asarray(obj.item().matrix_world, dtype=np.float64)
 
 
-def _assert_rigid(obj: pf.Object, tol: float = 1e-5) -> None:
-    T = _object_transform(obj)
+def _assert_rigid(obj: pf.Object, T: np.ndarray, tol: float = 1e-5) -> None:
     R = T[:3, :3]
     err = np.max(np.abs(R.T @ R - np.eye(3)))
     if err > tol:
@@ -123,7 +122,7 @@ def _fcl_transform(transform: np.ndarray) -> fcl.Transform:
     return fcl.Transform(transform[:3, :3], transform[:3, 3])
 
 
-def _add_object_cached(
+def _register_object(
     manager: trimesh.collision.CollisionManager,
     name: str,
     col_obj: fcl.CollisionObject,
@@ -134,24 +133,31 @@ def _add_object_cached(
     manager._objs[name] = {"obj": col_obj, "geom": fcl_geom}
     manager._names[id(fcl_geom)] = name
     manager._manager.registerObject(col_obj)
+
+
+def _add_object_cached(
+    manager: trimesh.collision.CollisionManager,
+    name: str,
+    col_obj: fcl.CollisionObject,
+    fcl_geom: Any,
+) -> None:
+    _register_object(manager, name, col_obj, fcl_geom)
     manager._manager.update()
 
 
 def _sync_transforms(col: CollisionSet) -> None:
-    """Update FCL collision objects whose Blender transforms have changed since last query."""
-    if not col.objs:
-        return
-    bpy.context.view_layer.update()
+    """Update FCL collision objects whose Blender transforms have changed since the
+    last query. Callers refresh the view layer first."""
     any_changed = False
     for obj in col.objs:
         oid = _object_id(obj)
         col_obj = col.object_fcl_objs.get(oid)
         if col_obj is None:
             continue
-        _assert_rigid(obj)
         T = np.asarray(obj.item().matrix_world, dtype=np.float64)
         last_T = col.object_last_transforms.get(oid)
         if last_T is None or not np.array_equal(last_T, T):
+            _assert_rigid(obj, T)
             col_obj.setTransform(_fcl_transform(T))
             col.object_last_transforms[oid] = T
             any_changed = True
@@ -164,7 +170,7 @@ def n_colliders(col: CollisionSet) -> int:
 
 
 def collision_set(
-    objs: list[pf.Object], cache: CollisionSet | None = None
+    objs: Sequence[pf.Object], cache: CollisionSet | None = None
 ) -> CollisionSet:
     mesh_colliders: dict[int, trimesh.Trimesh] = (
         {} if cache is None else dict(cache.mesh_colliders)
@@ -178,10 +184,12 @@ def collision_set(
     manager = trimesh.collision.CollisionManager()
     collidable_objs: list[pf.Object] = []
 
+    bpy.context.view_layer.update()
     for obj in objs:
         if not _is_collidable_object(obj):
             continue
-        _assert_rigid(obj)
+        T = _object_transform(obj)
+        _assert_rigid(obj, T)
         collidable_objs.append(obj)
         mesh_id = _mesh_id(obj)
         if mesh_id not in mesh_colliders:
@@ -197,13 +205,13 @@ def collision_set(
             mesh_fcl_colliders[mesh_id] = fcl_geom
 
         name = _mesh_name(obj)
-        T = _object_transform(obj)
         col_obj = fcl.CollisionObject(fcl_geom, _fcl_transform(T))
-        _add_object_cached(manager, name, col_obj, fcl_geom)
+        _register_object(manager, name, col_obj, fcl_geom)
         oid = _object_id(obj)
         object_names[oid] = name
         object_fcl_objs[oid] = col_obj
         object_last_transforms[oid] = T
+    manager._manager.update()
 
     return CollisionSet(
         objs=collidable_objs,
@@ -221,7 +229,9 @@ def intersection_test(col: CollisionSet, obj: pf.Object) -> bool:
         return False
     if not _is_collidable_object(obj):
         return False
-    _assert_rigid(obj)
+    bpy.context.view_layer.update()
+    T = _object_transform(obj)
+    _assert_rigid(obj, T)
     _sync_transforms(col)
 
     mesh_id = _mesh_id(obj)
@@ -242,7 +252,7 @@ def intersection_test(col: CollisionSet, obj: pf.Object) -> bool:
     _add_object_cached(
         probe,
         "__probe__",
-        fcl.CollisionObject(fcl_geom, _fcl_transform(_object_transform(obj))),
+        fcl.CollisionObject(fcl_geom, _fcl_transform(T)),
         fcl_geom,
     )
     hit = col.collision_manager.in_collision_other(probe, return_data=False)
@@ -250,15 +260,16 @@ def intersection_test(col: CollisionSet, obj: pf.Object) -> bool:
 
 
 def box_intersection_test(
-    col: CollisionSet, transform: np.ndarray, size: float = 1.0
+    col: CollisionSet,
+    transform: np.ndarray,
+    size: float | tuple[float, float, float] = 1.0,
 ) -> bool:
     if n_colliders(col) == 0:
         return False
+    bpy.context.view_layer.update()
     _sync_transforms(col)
-    box = trimesh.creation.box(
-        extents=np.broadcast_to(np.asarray(size, dtype=float), 3)
-    )
-    fcl_geom = col.collision_manager._get_fcl_obj(box)
+    extents = np.broadcast_to(np.asarray(size, dtype=float), 3)
+    fcl_geom = fcl.Box(*extents)
     probe = trimesh.collision.CollisionManager()
     _add_object_cached(
         probe,
@@ -273,6 +284,7 @@ def any_self_collision(col: CollisionSet) -> bool:
     """Return True if any two objects in the set currently intersect each other."""
     if n_colliders(col) < 2:
         return False
+    bpy.context.view_layer.update()
     _sync_transforms(col)
     return bool(col.collision_manager.in_collision_internal())
 
@@ -288,6 +300,7 @@ def raycast(
             np.empty((0,), dtype=np.int64),
         )
 
+    bpy.context.view_layer.update()
     meshes = []
     for obj in col.objs:
         mesh = col.mesh_colliders.get(_mesh_id(obj))

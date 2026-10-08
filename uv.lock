@@ -672,6 +672,7 @@ dependencies = [
     { name = "python-fcl" },
     { name = "rtree" },
     { name = "scipy" },
+    { name = "shapely" },
     { name = "trimesh" },
 ]
 
@@ -788,7 +789,7 @@ requires-dist = [
     { name = "pandas", specifier = ">=1.5" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pre-commit", marker = "extra == 'dev'" },
-    { name = "procfunc", specifier = ">=0.35,<0.36" },
+    { name = "procfunc", specifier = ">=0.37.0,<0.38" },
     { name = "psutil", marker = "extra == 'infinigen1'" },
     { name = "pyglet", marker = "extra == 'vis'", specifier = "<2" },
     { name = "pyrender", marker = "extra == 'terrain'", specifier = "<0.2.0" },
@@ -807,6 +808,7 @@ requires-dist = [
     { name = "scikit-learn", marker = "extra == 'infinigen1'", specifier = "<1.4.0" },
     { name = "scipy", specifier = ">=1.10" },
     { name = "setuptools", marker = "extra == 'terrain'", specifier = "<81" },
+    { name = "shapely", specifier = ">=2,<3" },
     { name = "shapely", marker = "extra == 'infinigen1'", specifier = "<=2.0.5" },
     { name = "sphinx", marker = "extra == 'dev'" },
     { name = "sphinx-argparse", marker = "extra == 'dev'" },
@@ -1296,16 +1298,16 @@ wheels = [
 
 [[package]]
 name = "procfunc"
-version = "0.35.1"
+version = "0.37.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bpy" },
     { name = "numpy" },
     { name = "pandas" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/7d/ee/b680ddc47829f496491cd94c2c9fd695e8481769abfe9450bd9ddddd2911/procfunc-0.35.1.tar.gz", hash = "sha256:71d0f779c07ab72156d8b3aa8a9316ec37da61ed84cc718b393961fa6d493fa3", size = 304331, upload-time = "2026-08-25T03:06:01.231Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/26/3d/43d2898bdbd457415772a24d3c33a6cb20f9f560a505bde514e67b697d65/procfunc-0.37.0.tar.gz", hash = "sha256:f90189d962583728981bc32826563b15ca9b78075a56716bebe954cca760de1f", size = 319701, upload-time = "2026-10-06T14:15:28.547Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/17/74/943e84fff18067eab7cdb578f93b07c9935ee0a50045a6d6c5cad28b1108/procfunc-0.35.1-py3-none-any.whl", hash = "sha256:98fb670b7113c6d3053f45482fa9a30efe8157ae39dcafb3a39d5d159bec14dd", size = 319776, upload-time = "2026-08-25T03:06:00.024Z" },
+    { url = "https://files.pythonhosted.org/packages/58/79/ea1ba987665b48cd4306372b8bb65618b958349ac7df928373234195c0d9/procfunc-0.37.0-py3-none-any.whl", hash = "sha256:85ac05b559a3d735e04dea3b50e348ec460d9eb4591b811fd4efecb507b9a660", size = 332029, upload-time = "2026-10-06T14:15:27.285Z" },
 ]
 
 [[package]]

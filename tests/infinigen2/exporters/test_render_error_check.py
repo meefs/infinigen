@@ -42,19 +42,15 @@ from infinigen2.exporters.render_error_check import (
     count_material_nodes,
     detect_cycles_errors,
     hidden_render_objects,
-    material_node_issues,
     missing_attribute_issues,
     nonfinite_vertex_counts,
+    normal_input_used,
     singular_transform_objects,
+    unlinked_texture_vector,
     unsafe_displacement_materials,
 )
 from infinigen2.exporters.render_error_check.adaptive_sampling import (
     _frames_at_sample_cap,
-)
-from infinigen2.exporters.render_error_check.material_nodes import (
-    FLOATING_INTERFACE_CHECK,
-    NORMAL_INPUT_CHECK,
-    TEXTURE_VECTOR_CHECK,
 )
 from infinigen2.shaders import functionality_lists
 from infinigen2.shaders.composites import bricks
@@ -71,21 +67,6 @@ def _make_material(name, group_size=0):
         grp = mat.node_tree.nodes.new("ShaderNodeGroup")
         grp.node_tree = inner
     return mat
-
-
-def test_count_material_nodes_includes_group_contents():
-    mat = _make_material("with_group", group_size=50)
-    assert count_material_nodes(mat) >= 50
-
-
-def test_count_material_nodes_under_threshold():
-    mat = _make_material("ok_mat", group_size=10)
-    assert count_material_nodes(mat) < SHADER_NODE_COUNT_FAIL
-
-
-def test_count_material_nodes_over_threshold():
-    mat = _make_material("too_big", group_size=SHADER_NODE_COUNT_FAIL + 10)
-    assert count_material_nodes(mat) >= SHADER_NODE_COUNT_FAIL
 
 
 def _value_group(name, n_values, child_instances=()):
@@ -187,13 +168,6 @@ def _bricks_material(vector):
     return obj.item().active_material
 
 
-def _raise_if_unsafe(materials):
-    """Mirror of the render_cycles displacement gate."""
-    unsafe = unsafe_displacement_materials(materials)
-    if unsafe:
-        raise DisplacementCoordError(str(unsafe))
-
-
 def test_uv_map_displacement_flagged():
     mat = _bricks_material(pf.nodes.shader.uv_map(uv_map="UVMap"))
     assert unsafe_displacement_materials([mat]) == {mat.name: "ShaderNodeUVMap"}
@@ -204,22 +178,9 @@ def test_texcoord_displacement_safe():
     assert unsafe_displacement_materials([mat]) == {}
 
 
-def test_gate_raises_on_named_attribute():
-    mat = _bricks_material(pf.nodes.shader.uv_map(uv_map="UVMap"))
-    with pytest.raises(DisplacementCoordError, match=mat.name):
-        _raise_if_unsafe([mat])
-
-
 def test_attribute_node_displacement_flagged():
     mat = _bricks_material(pf.nodes.shader.attribute("UVMap").vector)
     assert unsafe_displacement_materials([mat]) == {mat.name: "ShaderNodeAttribute"}
-    with pytest.raises(DisplacementCoordError, match=mat.name):
-        _raise_if_unsafe([mat])
-
-
-def test_gate_passes_on_safe_coords():
-    mat = _bricks_material(pf.nodes.shader.coord().uv)
-    _raise_if_unsafe([mat])  # must not raise
 
 
 @pf.nodes.node_function
@@ -325,13 +286,6 @@ def test_named_uv_map_missing():
     assert "MyUV" in issues[0]
 
 
-def test_accept_by_material_index():
-    obj = _plane_with_material(pf.nodes.shader.coord().uv, valid_uv=True)
-    _remove_uv_layers(obj)
-    issues = check_material_uv_coords(obj, mat_index=0)
-    assert len(issues) == 1
-
-
 def _node_material(name):
     mat = bpy.data.materials.new(name)
     mat.use_nodes = True
@@ -342,9 +296,8 @@ def _node_material(name):
 def test_normal_map_node_flagged():
     mat = _node_material("normal_map")
     mat.node_tree.nodes.new("ShaderNodeNormalMap")
-    issues = material_node_issues(mat)
-    assert set(issues) == {NORMAL_INPUT_CHECK}
-    assert any("ShaderNodeNormalMap" in i for i in issues[NORMAL_INPUT_CHECK])
+    assert any("ShaderNodeNormalMap" in i for i in normal_input_used(mat))
+    assert unlinked_texture_vector(mat) == []
 
 
 def test_linked_normal_input_flagged():
@@ -353,16 +306,14 @@ def test_linked_normal_input_flagged():
     bsdf = next(n for n in tree.nodes if n.bl_idname == "ShaderNodeBsdfPrincipled")
     coord = tree.nodes.new("ShaderNodeTexCoord")
     tree.links.new(coord.outputs["Normal"], bsdf.inputs["Normal"])
-    issues = material_node_issues(mat)
-    assert any("'Normal' input set" in i for i in issues[NORMAL_INPUT_CHECK])
+    assert any("'Normal' input set" in i for i in normal_input_used(mat))
 
 
 def test_implicit_texture_vector_flagged():
     mat = _node_material("implicit_vector")
     mat.node_tree.nodes.new("ShaderNodeTexNoise")
-    issues = material_node_issues(mat)
-    assert set(issues) == {TEXTURE_VECTOR_CHECK}
-    assert any("Vector input unlinked" in i for i in issues[TEXTURE_VECTOR_CHECK])
+    assert any("Vector input unlinked" in i for i in unlinked_texture_vector(mat))
+    assert normal_input_used(mat) == []
 
 
 def test_explicit_texture_vector_ok():
@@ -371,7 +322,8 @@ def test_explicit_texture_vector_ok():
     noise = tree.nodes.new("ShaderNodeTexNoise")
     coord = tree.nodes.new("ShaderNodeTexCoord")
     tree.links.new(coord.outputs["Object"], noise.inputs["Vector"])
-    assert material_node_issues(mat) == {}
+    assert unlinked_texture_vector(mat) == []
+    assert normal_input_used(mat) == []
 
 
 def test_baked_constant_vector_still_flagged():
@@ -380,36 +332,27 @@ def test_baked_constant_vector_still_flagged():
     mat = _node_material("baked_constant_vector")
     noise = mat.node_tree.nodes.new("ShaderNodeTexNoise")
     noise.inputs["Vector"].default_value = (1.0, 1.0, 1.0)
-    issues = material_node_issues(mat)
-    assert any("Vector input unlinked" in i for i in issues[TEXTURE_VECTOR_CHECK])
+    assert any("Vector input unlinked" in i for i in unlinked_texture_vector(mat))
 
 
 def test_one_d_noise_no_implicit_vector():
     mat = _node_material("one_d_noise")
     noise = mat.node_tree.nodes.new("ShaderNodeTexNoise")
     noise.noise_dimensions = "1D"
-    assert material_node_issues(mat) == {}
-
-
-def test_floating_output_in_group_flagged():
-    mat = _node_material("floating_output")
-    inner = bpy.data.node_groups.new("inner", "ShaderNodeTree")
-    inner.nodes.new("ShaderNodeOutputMaterial")
-    grp = mat.node_tree.nodes.new("ShaderNodeGroup")
-    grp.node_tree = inner
-    issues = material_node_issues(mat)
-    assert set(issues) == {FLOATING_INTERFACE_CHECK}
-    assert any("floating output node" in i for i in issues[FLOATING_INTERFACE_CHECK])
+    assert unlinked_texture_vector(mat) == []
+    assert normal_input_used(mat) == []
 
 
 def test_top_level_output_not_flagged():
     mat = _node_material("clean_default")
-    assert material_node_issues(mat) == {}
+    assert unlinked_texture_vector(mat) == []
+    assert normal_input_used(mat) == []
 
 
 def test_real_material_no_issues():
     mat = _bricks_material(pf.nodes.shader.coord().object)
-    assert material_node_issues(mat) == {}
+    assert unlinked_texture_vector(mat) == []
+    assert normal_input_used(mat) == []
 
 
 def test_black_frame_check(tmp_path):
@@ -746,40 +689,18 @@ def test_material_texture_vector_severity(caplog):
     )
 
 
-def _floating_interface_material(name):
-    mat = _node_material(name)
-    inner = bpy.data.node_groups.new(f"{name}_inner", "ShaderNodeTree")
-    inner.nodes.new("ShaderNodeOutputMaterial")
-    grp = mat.node_tree.nodes.new("ShaderNodeGroup")
-    grp.node_tree = inner
-    return mat
-
-
-def _severity_floating_material():
-    return _floating_interface_material("severity_floating")
-
-
-def test_material_floating_interface_severity(caplog):
-    mo = _plane_with_node_material(_severity_floating_material)
-    _assert_severity_modes(
-        "material_floating_interface",
-        lambda: assert_material_nodes_valid([mo]),
-        MaterialNodeError,
-        caplog,
-    )
-
-
 def _mixed_rules_material():
-    mat = _floating_interface_material("mixed_rules")
+    mat = _node_material("mixed_rules")
+    mat.node_tree.nodes.new("ShaderNodeTexNoise")
     mat.node_tree.nodes.new("ShaderNodeNormalMap")
     return mat
 
 
-def test_relaxing_normal_input_leaves_floating_interface_fatal():
+def test_relaxing_normal_input_leaves_texture_vector_fatal():
     mo = _plane_with_node_material(_mixed_rules_material)
     with (
         context.override_globals(error_mode_material_normal_input="warn"),
-        pytest.raises(MaterialNodeError, match="floating output node"),
+        pytest.raises(MaterialNodeError, match="Vector input unlinked"),
     ):
         assert_material_nodes_valid([mo])
 

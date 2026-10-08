@@ -1,7 +1,10 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Alexander Raistrick, Zeyu Ma
+# Authors:
+# - Alexander Raistrick: primary author of the original Infinigen v1 animation policy (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/placement/animation_policy.py)
+# - Zeyu Ma: path-finding animation in the original Infinigen v1 animation policy (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/placement/animation_policy.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import logging
 from typing import Callable

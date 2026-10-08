@@ -11,16 +11,15 @@ import procfunc as pf
 
 def iter_all_nodes(
     node_tree: bpy.types.NodeTree,
-    nested: bool = False,
     seen: set[int] | None = None,
-) -> Iterator[tuple[bpy.types.Node, bool]]:
+) -> Iterator[bpy.types.Node]:
     if seen is None:
         seen = set()
     for node in node_tree.nodes:
-        yield node, nested
+        yield node
         if node.type == "GROUP" and node.node_tree and id(node.node_tree) not in seen:
             seen.add(id(node.node_tree))
-            yield from iter_all_nodes(node.node_tree, True, seen)
+            yield from iter_all_nodes(node.node_tree, seen)
 
 
 def flattened_node_count(node_tree: bpy.types.NodeTree, memo: dict[int, int]) -> int:

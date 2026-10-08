@@ -4,6 +4,24 @@
 # Authors: Karhan Kayan, Alexander Raistrick
 
 import procfunc as pf
+from procfunc.nodes import types as t
+
+
+@pf.nodes.node_function
+def instances_on_line(
+    instance: t.SocketOrVal[pf.MeshObject],
+    start: t.SocketOrVal[pf.Vector],
+    end: t.SocketOrVal[pf.Vector],
+    count: t.SocketOrVal[int],
+    rotation: t.SocketOrVal[pf.Euler] = (0.0, 0.0, 0.0),
+) -> pf.ProcNode[pf.MeshObject]:
+    half_slot = pf.nodes.math.vector_scale(end - start, 0.5 / count.astype(dtype=float))
+    points = pf.nodes.geo.mesh_line_from_endpoints(
+        count=count, start_location=start + half_slot, end_location=end - half_slot
+    )
+    return pf.nodes.geo.instance_on_points(
+        points=points, instance=instance, rotation=rotation
+    )
 
 
 @pf.nodes.node_function

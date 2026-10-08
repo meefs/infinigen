@@ -22,7 +22,7 @@ requires-python = "==3.11.*"
 dependencies = [
     # Floors are covered by the compatibility workflow; caps represent known breaks.
     "bpy==4.2.0",
-    "procfunc>=0.35,<0.36",
+    "procfunc>=0.37.0,<0.38",
     "imageio>=2.31",
     "matplotlib>=3.6",
     "numpy>=1.25,<2",
@@ -30,6 +30,7 @@ dependencies = [
     "pandas>=1.5",
     "scipy>=1.10", # trimesh collision path
     "trimesh>=3.22",
+    "shapely>=2,<3",
     "OpenEXR>=3.2.3",
     "pillow>=11.3.0",
     # used by trimesh, we could specify "trimesh[easy]" but this brings more packages

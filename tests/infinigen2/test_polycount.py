@@ -74,7 +74,10 @@ def test_estimate_matches_evaluated_mesh(
             rendered, levels=levels, subdivision_type=subdivision_type
         )
 
-    assert estimated_eval_tricount(obj) == _evaluated_tris(rendered)
+    total, object_tris = estimated_eval_tricount([obj])
+
+    assert total == _evaluated_tris(rendered)
+    assert object_tris == [(obj, total)]
 
 
 def test_stacked_subsurf_levels_sum() -> None:
@@ -84,7 +87,10 @@ def test_stacked_subsurf_levels_sum() -> None:
         pf.ops.modifier.subdivide_surface(obj, levels=levels, _skip_apply=True)
         pf.ops.modifier.subdivide_surface(rendered, levels=levels)
 
-    assert estimated_eval_tricount(obj) == _evaluated_tris(rendered)
+    total, object_tris = estimated_eval_tricount([obj])
+
+    assert total == _evaluated_tris(rendered)
+    assert object_tris == [(obj, total)]
 
 
 def test_render_levels_not_viewport_levels() -> None:
@@ -93,11 +99,28 @@ def test_render_levels_not_viewport_levels() -> None:
     mod = obj.item().modifiers[-1]
     mod.levels = 0
 
-    assert estimated_eval_tricount(obj) == 768
+    total, object_tris = estimated_eval_tricount([obj])
+
+    assert total == 768
+    assert object_tris == [(obj, total)]
     assert _evaluated_tris(obj) == 12
 
 
 def test_non_mesh_objects_ignored() -> None:
     obj = pf.ops.primitives.curve_bezier()
 
-    assert estimated_eval_tricount(obj) == 0
+    total, object_tris = estimated_eval_tricount([obj])
+
+    assert total == 0
+    assert object_tris == [(obj, total)]
+
+
+def test_returns_total_and_ascending_object_counts() -> None:
+    small = quads()
+    large = tris()
+    empty = pf.ops.primitives.curve_bezier()
+
+    total, object_tris = estimated_eval_tricount([large, small, empty])
+
+    assert total == 92
+    assert object_tris == [(empty, 0), (small, 12), (large, 80)]

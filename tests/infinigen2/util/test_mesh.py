@@ -5,6 +5,7 @@ import math
 
 import bmesh
 import bpy
+import numpy as np
 import procfunc as pf
 import pytest
 
@@ -90,3 +91,113 @@ def test_crease_by_angle_matches_binary_when_band_narrow():
     vals = _crease_values(geo)
     assert all(v > 0.99 or v < 0.01 for v in vals)
     assert sum(1 for v in vals if v > 0.5) == 2 * 16
+
+
+def test_metric_box_uv_puts_each_face_long_axis_on_v():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    cube = pf.nodes.geo.mesh_cube(size=(0.2, 0.4, 1.0)).mesh
+    obj = pf.nodes.to_mesh_object(mesh_util.metric_box_uv(cube))
+    mesh = obj.item().data
+    uv = np.array([entry.uv[:] for entry in mesh.uv_layers["UVMap"].data])
+
+    for polygon in mesh.polygons:
+        face_uv = uv[list(polygon.loop_indices)]
+        u_span, v_span = np.ptp(face_uv, axis=0)
+        assert v_span > u_span
+
+
+def test_box_places_anchor_and_preserves_grid_counts():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    result = mesh_util.box(
+        size=(2.0, 3.0, 4.0),
+        location=(5.0, 6.0, 7.0),
+        vertices_x=3,
+        vertices_y=4,
+        vertices_z=5,
+    )
+    mesh = pf.nodes.to_mesh_object(result).item().data
+    positions = np.array([vertex.co[:] for vertex in mesh.vertices])
+
+    np.testing.assert_array_equal(positions.min(axis=0), (4.0, 4.5, 5.0))
+    np.testing.assert_array_equal(positions.max(axis=0), (6.0, 7.5, 9.0))
+    np.testing.assert_allclose(np.unique(positions[:, 0]), (4.0, 5.0, 6.0))
+    np.testing.assert_allclose(np.unique(positions[:, 1]), (4.5, 5.5, 6.5, 7.5))
+    np.testing.assert_allclose(np.unique(positions[:, 2]), (5.0, 6.0, 7.0, 8.0, 9.0))
+    assert [len(np.unique(positions[:, i])) for i in range(3)] == [3, 4, 5]
+    assert "UVMap" in mesh.uv_layers
+
+
+def test_box_places_fractional_anchor_and_stores_crease():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    result = mesh_util.box(
+        size=(2.0, 3.0, 4.0),
+        location=(5.0, 6.0, 7.0),
+        anchor=(0.1, 0.5, 1.0),
+        crease=0.25,
+    )
+    mesh = pf.nodes.to_mesh_object(result).item().data
+    positions = np.array([vertex.co[:] for vertex in mesh.vertices])
+
+    np.testing.assert_allclose(positions.min(axis=0), (4.8, 4.5, 3.0))
+    np.testing.assert_allclose(positions.max(axis=0), (6.8, 7.5, 7.0))
+    assert all(item.value == 0.25 for item in mesh.attributes["crease_edge"].data)
+
+
+def test_box_clamps_anchor_to_normalized_range():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    result = mesh_util.box(size=(2.0, 3.0, 4.0), anchor=(0.0, 0.5, -1.0))
+    mesh = pf.nodes.to_mesh_object(result).item().data
+    positions = np.array([vertex.co[:] for vertex in mesh.vertices])
+
+    np.testing.assert_allclose(positions.min(axis=0), (0.0, -1.5, 0.0))
+    np.testing.assert_allclose(positions.max(axis=0), (2.0, 1.5, 4.0))
+
+
+def test_support_loop_box_anchor_preserves_geometry():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    centered = mesh_util.box_with_support_loops(
+        size=(2.0, 3.0, 4.0),
+        location=(5.0, 6.0, 7.0),
+        vertices_x=4,
+        vertices_y=5,
+        vertices_z=6,
+        support_loop_offset=(0.1, 0.2, 0.3),
+    )
+    corner = mesh_util.box_with_support_loops(
+        size=(2.0, 3.0, 4.0),
+        location=(4.0, 4.5, 5.0),
+        anchor=(0.0, 0.0, 0.0),
+        vertices_x=4,
+        vertices_y=5,
+        vertices_z=6,
+        support_loop_offset=(0.1, 0.2, 0.3),
+    )
+    centered_mesh = pf.nodes.to_mesh_object(centered).item().data
+    corner_mesh = pf.nodes.to_mesh_object(corner).item().data
+    centered_positions = np.array([vertex.co[:] for vertex in centered_mesh.vertices])
+    corner_positions = np.array([vertex.co[:] for vertex in corner_mesh.vertices])
+
+    np.testing.assert_array_equal(centered_positions, corner_positions)
+    np.testing.assert_allclose(
+        np.unique(centered_positions[:, 0]), (4.0, 4.1, 5.9, 6.0)
+    )
+    np.testing.assert_allclose(
+        np.unique(centered_positions[:, 1]), (4.5, 4.7, 6.0, 7.3, 7.5)
+    )
+    np.testing.assert_allclose(
+        np.unique(centered_positions[:, 2]),
+        (5.0, 5.3, 19 / 3, 23 / 3, 8.7, 9.0),
+        atol=1e-6,
+    )
+
+
+def test_fill_between_curves_stores_metric_uvs():
+    bpy.ops.wm.read_homefile(use_empty=True)
+    left = pf.nodes.geo.curve_line(start=(0, 0, 0), end=(0, 2, 0))
+    right = pf.nodes.geo.curve_line(start=(3, 0, 0), end=(3, 2, 0))
+    surface = mesh_util.fill_between_curves(left, right, n_points=5, n_rows=3)
+    obj = pf.nodes.to_mesh_object(surface)
+    uv = obj.item().data.uv_layers["UVMap"].data
+    coords = np.array([entry.uv[:] for entry in uv])
+
+    assert np.allclose(np.ptp(coords, axis=0), (2.0, 3.0))

@@ -6,10 +6,10 @@
 Two subcommands share a common walk over `render_index/events/*.json`, report
 envelope, and markdown summary:
 
-- `pixel`: pairs still images by relative path, computes mean squared error in
-  [0,1], and flags any pair with MSE > EPS. Missing images (one side has it, the
-  other doesn't) are reported but do not fail — crashes are handled by the
-  render job's own exit code.
+- `pixel`: pairs still images by relative path, or by canonical asset/variant
+  when the PR manifest declares a rename, then computes mean squared error in
+  [0,1]. Missing images are reported but do not fail — crashes are handled by
+  the render job's own exit code.
 - `perf`: groups render events by generator, takes the median of each gated
   metric across an asset's seeds/variants on each side, and flags a regression
   when the PR's median grows past the baseline's median by more than the
@@ -31,6 +31,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
+import manifest_aliases
 import numpy as np
 from PIL import Image
 
@@ -81,9 +82,13 @@ def _load(path: Path) -> np.ndarray:
 
 
 # shape_mismatch keeps json valid; float("inf") would serialize as bare `Infinity`
-def _mse(pr_root: Path, base_root: Path, rel: str) -> tuple[float | None, str]:
-    pr_path = pr_root / rel
-    base_path = base_root / rel
+def _mse(
+    pr_root: Path, base_root: Path, pr_rel: str, base_rel: str | None
+) -> tuple[float | None, str]:
+    pr_path = pr_root / pr_rel
+    base_path = base_root / base_rel if base_rel is not None else None
+    if base_path is None:
+        return None, "missing_baseline"
     if not pr_path.exists() or not base_path.exists():
         return None, "missing_baseline"
     a = _load(pr_path)
@@ -94,12 +99,35 @@ def _mse(pr_root: Path, base_root: Path, rel: str) -> tuple[float | None, str]:
     return mse, ("fail" if mse > EPS else "ok")
 
 
-def _pixel_result(event: dict, pr_root: Path, base_root: Path, rel: str) -> dict:
-    mse, status = _mse(pr_root, base_root, rel)
+def _event_name(event: dict) -> str:
+    name = event.get("generator", "unknown")
+    return name if isinstance(name, str) else "unknown"
+
+
+def _canonical_name(event: dict, aliases: dict[str, str]) -> str:
+    name = _event_name(event)
+    return aliases.get(name, name)
+
+
+def _event_variant(event: dict) -> str:
+    variant = event.get("variant_key", "unknown")
+    return variant if isinstance(variant, str) else "unknown"
+
+
+def _pixel_result(
+    event: dict,
+    pr_root: Path,
+    base_root: Path,
+    pr_rel: str,
+    base_rel: str | None,
+    aliases: dict[str, str],
+) -> dict:
+    mse, status = _mse(pr_root, base_root, pr_rel, base_rel)
     return {
-        "asset": event.get("generator", "unknown"),
-        "variant": event.get("variant_key", "unknown"),
-        "image": rel,
+        "asset": _canonical_name(event, aliases),
+        "variant": _event_variant(event),
+        "image": pr_rel,
+        "baseline_image": base_rel,
         "mse": mse,
         "status": status,
     }
@@ -111,11 +139,106 @@ def _still_images(event: dict) -> list[str]:
     ]
 
 
+def _applied_aliases(aliases: dict[str, str], events: list[dict]) -> dict[str, str]:
+    names = [_event_name(event) for event in events]
+    return manifest_aliases.archive_aliases(aliases, names)
+
+
+def _relative_to_asset_dir(event: dict, image: str) -> str | None:
+    asset_dir = event.get("asset_dir")
+    if not isinstance(asset_dir, str) or not asset_dir:
+        return None
+    try:
+        return Path(image).relative_to(Path(asset_dir)).as_posix()
+    except ValueError:
+        return None
+
+
+def _add_image_key(
+    index: dict[tuple[str, str, str, str], str],
+    key: tuple[str, str, str, str],
+    image: str,
+) -> None:
+    previous = index.get(key)
+    if previous is not None and previous != image:
+        raise ValueError(f"multiple baseline images match {key}: {previous}, {image}")
+    index[key] = image
+
+
+def _baseline_image_index(
+    events: list[dict], aliases: dict[str, str], variant_aliases: dict[str, str]
+) -> dict[tuple[str, str, str, str], str]:
+    index: dict[tuple[str, str, str, str], str] = {}
+    event_images: dict[tuple[str, str], list[str]] = {}
+    for event in events:
+        name = _canonical_name(event, aliases)
+        variant = manifest_aliases.canonical_variant(
+            _event_variant(event), variant_aliases
+        )
+        for image in _still_images(event):
+            event_images.setdefault((name, variant), []).append(image)
+            _add_image_key(index, (name, variant, "path", image), image)
+            local = _relative_to_asset_dir(event, image)
+            if local is not None:
+                _add_image_key(index, (name, variant, "asset", local), image)
+    for (name, variant), images in event_images.items():
+        if len(images) == 1:
+            index[(name, variant, "single", "")] = images[0]
+    return index
+
+
+def _matching_baseline_image(
+    event: dict,
+    image: str,
+    aliases: dict[str, str],
+    variant_aliases: dict[str, str],
+    index: dict[tuple[str, str, str, str], str],
+) -> str | None:
+    name = _canonical_name(event, aliases)
+    variant = manifest_aliases.canonical_variant(_event_variant(event), variant_aliases)
+    local = _relative_to_asset_dir(event, image)
+    if local is not None:
+        match = index.get((name, variant, "asset", local))
+        if match is not None:
+            return match
+    match = index.get((name, variant, "path", image))
+    if match is not None:
+        return match
+    if len(_still_images(event)) == 1:
+        return index.get((name, variant, "single", ""))
+    return None
+
+
 def compare_pixel(pr_root: Path, base_root: Path) -> dict:
+    aliases = manifest_aliases.load_ci_compare_aliases(pr_root / "manifest.json")
+    pr_events = list(_events(pr_root))
     results = []
-    for event in _events(pr_root):
+    if not aliases:
+        for event in pr_events:
+            for rel in _still_images(event):
+                results.append(
+                    _pixel_result(event, pr_root, base_root, rel, rel, aliases)
+                )
+        return _pixel_report(results)
+
+    base_events = list(_events(base_root))
+    pr_applied = _applied_aliases(aliases, pr_events)
+    base_applied = _applied_aliases(aliases, base_events)
+    baseline_images = _baseline_image_index(base_events, base_applied, aliases)
+    for event in pr_events:
         for rel in _still_images(event):
-            results.append(_pixel_result(event, pr_root, base_root, rel))
+            baseline_rel = rel if (base_root / rel).exists() else None
+            if baseline_rel is None:
+                baseline_rel = _matching_baseline_image(
+                    event, rel, pr_applied, aliases, baseline_images
+                )
+            results.append(
+                _pixel_result(event, pr_root, base_root, rel, baseline_rel, pr_applied)
+            )
+    return _pixel_report(results)
+
+
+def _pixel_report(results: list[dict]) -> dict:
     fails = [r for r in results if r["status"] in ("fail", "shape_mismatch")]
     missing = [r for r in results if r["status"] == "missing_baseline"]
     return {
@@ -193,8 +316,10 @@ def _metric_value(event: dict, metric: str) -> float | None:
     return event.get(metric)
 
 
-def _record_event(samples: dict[str, dict[str, list[float]]], event: dict) -> None:
-    bucket = samples.setdefault(event.get("generator", "unknown"), {})
+def _record_event(
+    samples: dict[str, dict[str, list[float]]], event: dict, asset: str
+) -> None:
+    bucket = samples.setdefault(asset, {})
     for metric in METRICS:
         value = _metric_value(event, metric)
         if value is None:
@@ -202,11 +327,15 @@ def _record_event(samples: dict[str, dict[str, list[float]]], event: dict) -> No
         bucket.setdefault(metric, []).append(value)
 
 
-def _asset_metric_samples(root: Path) -> dict[str, dict[str, list[float]]]:
+def _asset_metric_samples(
+    root: Path, aliases: dict[str, str]
+) -> dict[str, dict[str, list[float]]]:
     """asset key -> metric -> every sample seen across its seeds/variants/presets."""
     samples: dict[str, dict[str, list[float]]] = {}
-    for event in _events(root):
-        _record_event(samples, event)
+    events = list(_events(root))
+    applied = _applied_aliases(aliases, events)
+    for event in events:
+        _record_event(samples, event, _canonical_name(event, applied))
     return samples
 
 
@@ -260,8 +389,9 @@ def _asset_result(
 def compare(
     pr_root: Path, base_root: Path, threshold: float = THRESHOLD, metrics=GATED_METRICS
 ) -> dict:
-    pr_samples = _asset_metric_samples(pr_root)
-    base_samples = _asset_metric_samples(base_root)
+    aliases = manifest_aliases.load_ci_compare_aliases(pr_root / "manifest.json")
+    pr_samples = _asset_metric_samples(pr_root, aliases)
+    base_samples = _asset_metric_samples(base_root, aliases)
     results = [
         _asset_result(key, pr_samples[key], base_samples.get(key), metrics, threshold)
         for key in sorted(pr_samples)

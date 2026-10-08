@@ -21,12 +21,13 @@ fi
 MATERIAL_PARALLEL=${MATERIAL_PARALLEL:-1}
 MATERIAL_XARGS="-t -I {} -P $MATERIAL_PARALLEL"
 
-MATERIALS=${MATERIALS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Material --missing_values drop --columns shortname $REST_ARGS)}
-OBJECTS=${OBJECTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Object --missing_values drop --columns shortname $REST_ARGS)}
-MASKS=${MASKS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Mask --missing_values drop --columns shortname $REST_ARGS)}
-PRESETS=${PRESETS-$(uv run python -m infinigen2.list $LIST_ARGS --presets --missing_values drop --columns shortname $REST_ARGS)}
-ENVIRONMENTS=${ENVIRONMENTS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Environment --missing_values drop --columns shortname $REST_ARGS)}
-CAMERAS=${CAMERAS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Cameras --missing_values drop --columns shortname $REST_ARGS)}
+MATERIALS=${MATERIALS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Material --missing_values drop --columns shortname $REST_ARGS)}
+OBJECTS=${OBJECTS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Object --missing_values drop --columns shortname $REST_ARGS)}
+MASKS=${MASKS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Mask --missing_values drop --columns shortname $REST_ARGS)}
+DISPLACEMENTS=${DISPLACEMENTS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Displacement --missing_values drop --columns shortname $REST_ARGS)}
+PRESETS=${PRESETS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --presets --missing_values drop --columns shortname $REST_ARGS)}
+ENVIRONMENTS=${ENVIRONMENTS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Environment --missing_values drop --columns shortname $REST_ARGS)}
+CAMERAS=${CAMERAS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Cameras --missing_values drop --columns shortname $REST_ARGS)}
 
 # store git info (for display purposes)
 mkdir -p "$OUTPUT_PATH"
@@ -53,18 +54,18 @@ cp src/infinigen2/manifest.json $OUTPUT_PATH
 
 # store the preset -> parent-generator map so the viewer can group presets beneath
 # their _rand without importing infinigen2 (the web server runs a minimal env)
-uv run python -c "import json, sys; from infinigen2.list import preset_parents; sys.stdout.write(json.dumps(preset_parents()))" > $OUTPUT_PATH/preset_parents.json
+uv run --no-sync python -c "import json, sys; from infinigen2.list import preset_parents; sys.stdout.write(json.dumps(preset_parents()))" > $OUTPUT_PATH/preset_parents.json
 
-GEN_ARGS="--loglevel WARNING"
+GEN_ARGS="--loglevel WARNING --sampling_noise_threshold 0.02 --cpu_threads 8"
 if [ -n "${RENDER_RUNNER:-}" ]; then
     read -r -a RENDER_RUNNER_ARGS <<< "$RENDER_RUNNER"
     PY_BIN="${RENDER_RUNNER_ARGS[0]}"
     CAM_RUNNER_ARGS=("$PY_BIN" scripts/integration_v2/run_and_index.py --index-root "$OUTPUT_PATH" -- "$PY_BIN" scripts/integration_v2/render_trajectory_video.py)
     EXAMPLE_RUNNER_ARGS=("$PY_BIN" scripts/integration_v2/run_and_index.py --index-root "$OUTPUT_PATH" -- "$PY_BIN")
 else
-    RENDER_RUNNER_ARGS=(uv run infinigen)
-    CAM_RUNNER_ARGS=(uv run python scripts/integration_v2/render_trajectory_video.py)
-    EXAMPLE_RUNNER_ARGS=(uv run python)
+    RENDER_RUNNER_ARGS=(uv run --no-sync infinigen)
+    CAM_RUNNER_ARGS=(uv run --no-sync python scripts/integration_v2/render_trajectory_video.py)
+    EXAMPLE_RUNNER_ARGS=(uv run --no-sync python)
 fi
 
 # nothing else puts the plain example scripts under the tracer, so coverage stays empty
@@ -75,8 +76,9 @@ fi
 if [ "${INTEGRATION_SLOT_INDEX:-0}" = 0 ]; then
     # name/script/args, listed explicitly so a renamed or added example fails loudly
     EXAMPLE_SCRIPTS=(
-        "clay_pan_video examples/render_clay_pan_video.py"
-        "flying_indoor examples/flying_indoor/render.py --camera_idx 0"
+        "clay_pan_video examples/clay_orbit/render.py --frames 0 3"
+        "flying_indoor examples/flying_indoor/render.py --camera_idx 0 --frames 0 3"
+        "house_tour examples/house_tour/render.py --frames 0 239 --render_frames 0 3"
     )
 
     LISTED_EXAMPLES=$(printf '%s\n' "${EXAMPLE_SCRIPTS[@]}" | cut -d' ' -f2 | sort)
@@ -92,7 +94,7 @@ if [ "${INTEGRATION_SLOT_INDEX:-0}" = 0 ]; then
         shift
         "${EXAMPLE_RUNNER_ARGS[@]}" "$@" \
             --output $OUTPUT_PATH/example-$example_name-scene-cycles-0 --seed 0 \
-            --frames 0 3 --resolution 640 360 --samples 32
+            --resolution 640 360 --samples 32
     done
 fi
 
@@ -101,15 +103,18 @@ fi
 NORMAL_STEPS="render_cycles_ground_truth visualize_gt"
 
 # integration_test_string = full command tail; few materials set it, rest default to the cube.
-MATERIAL_CMDS=$(uv run python -m infinigen2.list $LIST_ARGS --categories Material \
+MATERIAL_CMDS=$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Material \
+    --columns shortname integration_test_string --missing_values drop \
+    --separator $'\t' $REST_ARGS)
+DISPLACEMENT_CMDS=$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Displacement \
     --columns shortname integration_test_string --missing_values drop \
     --separator $'\t' $REST_ARGS)
 
 # Presets inherit the demo geometry (2nd token) of the generator that owns them.
 PRESET_CMDS=$(awk -F'\t' 'NR==FNR{split($2,a," "); g[$1]=a[2]; next}
     ($2 in g){print $1"\t"$1" "g[$2]" render_cycles"}' \
-    <(printf '%s\n' "$MATERIAL_CMDS") \
-    <(uv run python -c "from infinigen2.list import preset_parents
+    <(printf '%s\n' "$MATERIAL_CMDS" "$DISPLACEMENT_CMDS") \
+    <(uv run --no-sync python -c "from infinigen2.list import preset_parents
 for k, v in preset_parents().items():
     print(f'{k}\t{v}')"))
 
@@ -127,6 +132,7 @@ defaults_in_shard() {
 
 MATERIAL_OVERRIDES=$(overrides_in_shard "$MATERIAL_CMDS" "$MATERIALS")
 MATERIAL_DEFAULTS=$(defaults_in_shard "$MATERIAL_CMDS" "$MATERIALS")
+DISPLACEMENT_OVERRIDES=$(overrides_in_shard "$DISPLACEMENT_CMDS" "$DISPLACEMENTS")
 PRESET_OVERRIDES=$(overrides_in_shard "$PRESET_CMDS" "$PRESETS")
 PRESET_DEFAULTS=$(defaults_in_shard "$PRESET_CMDS" "$PRESETS")
 
@@ -134,24 +140,24 @@ PRESET_DEFAULTS=$(defaults_in_shard "$PRESET_CMDS" "$PRESETS")
 for i in {0..5}; do
     echo "$MATERIAL_DEFAULTS" | xargs $MATERIAL_XARGS "${RENDER_RUNNER_ARGS[@]}" {} material_cube render_cycles $NORMAL_STEPS \
         $GEN_ARGS --output $OUTPUT_PATH/material-{}-cube-cycles-$i --seed $i \
-        --passes rgb surface-normal --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+        --passes rgb surface-normal --displacement_mode DISPLACEMENT -r 192 192 -s 128
     while IFS=$'\t' read -r sn cmd; do
         [ -z "$sn" ] && continue
         "${RENDER_RUNNER_ARGS[@]}" $cmd $NORMAL_STEPS \
             $GEN_ARGS --output $OUTPUT_PATH/material-$sn-cube-cycles-$i --seed $i \
-            --passes rgb surface-normal --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+            --passes rgb surface-normal --displacement_mode DISPLACEMENT -r 192 192 -s 128
     done <<< "$MATERIAL_OVERRIDES"
 done
 
 # MATERIAL PRESETS VISUAL CHECK (fixed-look variants; deterministic, one seed each)
 echo "$PRESET_DEFAULTS" | xargs $MATERIAL_XARGS "${RENDER_RUNNER_ARGS[@]}" {} material_cube render_cycles \
     $GEN_ARGS --output $OUTPUT_PATH/preset-{}-cube-cycles-0 --seed 0 \
-    --passes rgb --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+    --passes rgb --displacement_mode DISPLACEMENT -r 192 192 -s 128
 while IFS=$'\t' read -r sn cmd; do
     [ -z "$sn" ] && continue
     "${RENDER_RUNNER_ARGS[@]}" $cmd \
         $GEN_ARGS --output $OUTPUT_PATH/preset-$sn-cube-cycles-0 --seed 0 \
-        --passes rgb --displacement_mode DISPLACEMENT_AND_BUMP -r 192 192 -s 128
+        --passes rgb --displacement_mode DISPLACEMENT -r 192 192 -s 128
 done <<< "$PRESET_OVERRIDES"
 
 # MATERIALS DISPLACEMENT TEST (Cycles GT is geometry-agnostic; DISPLACEMENT_AND_BUMP from seed loop)
@@ -175,6 +181,20 @@ for i in {0..5}; do
         --passes rgb -r 384 384 -s 128
 done
 
+# DISPLACEMENTS VISUAL CHECK (warm-grey geometric displacement on declared demo geometry)
+for i in {0..5}; do
+    while IFS=$'\t' read -r sn cmd; do
+        [ -z "$sn" ] && continue
+        read -r _ demo renderer <<< "$cmd"
+        demo_slug=${demo#material_}
+        demo_slug=${demo_slug//_/}
+        renderer_slug=${renderer#render_}
+        "${RENDER_RUNNER_ARGS[@]}" $cmd \
+            $GEN_ARGS --output $OUTPUT_PATH/displacement-$sn-$demo_slug-$renderer_slug-$i --seed $i \
+            --passes rgb --displacement_mode DISPLACEMENT -r 384 384 -s 128
+    done <<< "$DISPLACEMENT_OVERRIDES"
+done
+
 # OBJECTS VISUAL CHECK
 for i in {0..5}; do
     echo "$OBJECTS" | xargs $XARGS "${RENDER_RUNNER_ARGS[@]}" {} object_demo render_cycles $NORMAL_STEPS \
@@ -183,21 +203,27 @@ for i in {0..5}; do
 done
 
 # \x1f-separated: cmd can be an empty middle field, and tab-IFS read collapses those
-SCENE_CMDS=${SCENE_CMDS-$(uv run python -m infinigen2.list $LIST_ARGS --categories Scene \
+SCENE_CMDS=${SCENE_CMDS-$(uv run --no-sync python -m infinigen2.list $LIST_ARGS --categories Scene \
     --columns shortname integration_test_string num_seeds --missing_values keep \
     --separator $'\x1f' $REST_ARGS)}
 
-# launch_andromeda shards scenes via SCENES; unfiltered, every slot renders every scene
+# SCENES filters to the gated scene list; unset, every scene is eligible
 if [ -n "${SCENES+set}" ]; then
     SCENE_CMDS=$(awk -F$'\x1f' 'NR==FNR{keep[$1];next} $1 in keep' <(echo "$SCENES") <(echo "$SCENE_CMDS"))
 fi
 
+# each slot takes every SLOT_COUNT-th (scene, seed) pair, so a slow scene's seeds run in parallel
+SLOT_COUNT=${INTEGRATION_SLOT_COUNT:-1}
+SLOT_INDEX=${INTEGRATION_SLOT_INDEX:-0}
+SCENE_JOB=0
 while IFS=$'\x1f' read -r sn cmd num_seeds; do
     [ -z "$sn" ] && continue
     cmd=${cmd:-"$sn render_cycles"}
     num_seeds=${num_seeds%.*}
     num_seeds=${num_seeds:-9}
     for ((i = 0; i < num_seeds; i++)); do
+        SCENE_JOB=$((SCENE_JOB + 1))
+        [ $(((SCENE_JOB - 1) % SLOT_COUNT)) = "$SLOT_INDEX" ] || continue
         echo "+ scene $sn -> $cmd $NORMAL_STEPS (seed $i)"
         "${RENDER_RUNNER_ARGS[@]}" $cmd $NORMAL_STEPS \
             $GEN_ARGS --output $OUTPUT_PATH/scene-$sn-demo-cycles-$i --seed $i \
@@ -225,7 +251,7 @@ if grep -Fxq fabric_patterned_rand <<< "$MATERIALS"; then
 fi
 
 # CAMERA TRAJECTORIES VISUAL CHECK (48-frame workbench mp4 per camera generator, 3 seeds)
-CAM_SCENE=${CAM_SCENE:-livingroom_rand}
+CAM_SCENE=${CAM_SCENE:-room_livingroom_rand}
 for i in {0..2}; do
     echo "$CAMERAS" | xargs $XARGS "${CAM_RUNNER_ARGS[@]}" \
         --output $OUTPUT_PATH/camera-{}-$CAM_SCENE-workbench-traj$i \

@@ -5,28 +5,125 @@
 
 from typing import NamedTuple
 
+import bpy
 import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 from procfunc.nodes.util.bpy_node_info import NodeDataType
 
+from infinigen2.util.curve import curve_to_mesh_with_uv
+
 __all__ = [
-    "CubeWithVertexIndicesResult",
     "ExtrudeSeamlessResult",
     "LoftingResult",
     "WallCutoutResult",
-    "corner_box",
+    "box",
+    "box_with_support_loops",
+    "center_footprint",
+    "crease_all_edges",
     "crease_by_angle",
     "crease_sharp",
+    "evaluated_world_bbox",
     "extrude_mesh_seamless_uvs",
+    "extrude_mesh_seamless_uvs_along",
     "face_selection_boundary_curve",
     "fill_between_curves",
     "grid_from_corners",
     "lofting",
+    "mesh_from_corners",
+    "mesh_from_quads",
     "metric_box_uv",
+    "metric_cylinder_uv",
+    "quad_cap",
+    "quad_cylinder",
+    "quad_disc",
+    "refine_lattice_cage",
+    "reversed_faces",
+    "split_gaps",
     "uv_winding_sign",
     "wall_cutout_split",
 ]
+
+
+def evaluated_world_bbox(obj: pf.MeshObject) -> tuple[np.ndarray, np.ndarray]:
+    item = obj.item()
+    evaluated = item.evaluated_get(bpy.context.evaluated_depsgraph_get())
+    mesh = evaluated.to_mesh()
+    count = len(mesh.vertices)
+    matrix = np.asarray(item.matrix_world)
+    if count == 0:
+        local = np.asarray(item.bound_box)
+    else:
+        local = np.empty(count * 3)
+        mesh.vertices.foreach_get("co", local)
+        local = local.reshape(-1, 3)
+    evaluated.to_mesh_clear()
+    world = (matrix[:3, :3] @ local.T).T + matrix[:3, 3]
+    return world.min(axis=0), world.max(axis=0)
+
+
+def quad_cap(
+    profile: pf.ProcNode[pf.CurveObject], insets: int = 1, scale: float = 0.55
+) -> pf.ProcNode[pf.MeshObject]:
+    """Fill a closed profile with concentric quad rings around a centre face.
+
+    A cap filled as one bare ngon shares its vertices with the rim, so a rim
+    crease drags on the whole face; a single inset ring isolates the two and the
+    subdivided cap comes out flat. Ring vertices inherit the profile's angular
+    spacing, which is what keeps the subdivided silhouette round.
+    """
+    cap = pf.nodes.geo.fill_curve(profile, mode="NGONS")
+    for _ in range(insets):
+        extruded = pf.nodes.geo.extrude_mesh(
+            cap, offset_scale=0.0, individual=False, mode="FACES"
+        )
+        cap = pf.nodes.geo.scale_elements(
+            extruded.mesh, scale=scale, selection=extruded.top
+        )
+    position = pf.nodes.geo.input_position()
+    uv = pf.nodes.math.combine_xyz(x=position.x, y=position.y)
+    return pf.nodes.geo.store_named_attribute(
+        geometry=cap, name="UVMap", value=uv, domain="CORNER", data_type="FLOAT2"
+    )
+
+
+def quad_disc(
+    radius: t.SocketOrVal[float] = 1.0,
+    resolution: t.SocketOrVal[int] = 20,
+    insets: int = 1,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Disc of concentric quad rings, uniformly spaced around the rim."""
+    circle = pf.nodes.geo.curve_circle(radius=radius, resolution=resolution)
+    return quad_cap(circle, insets=insets)
+
+
+def quad_cylinder(
+    radius: t.SocketOrVal[float] = 1.0,
+    depth: t.SocketOrVal[float] = 1.0,
+    resolution: t.SocketOrVal[int] = 20,
+    insets: int = 1,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Cylinder capped by quad rings, centred on the origin like mesh_cylinder.
+
+    mesh_cylinder caps each end with a bare ngon whose vertices are the creased
+    rim itself, which tilts the subdivided face; this sweeps the same circle for
+    the wall and caps it with quad_cap instead.
+    """
+    profile = pf.nodes.geo.curve_circle(radius=radius, resolution=resolution)
+    line = pf.nodes.geo.curve_line(
+        start=(0.0, 0.0, 0.0), end=pf.nodes.math.combine_xyz(z=depth)
+    )
+    walls = curve_to_mesh_with_uv(curve=line, profile=profile, fill_caps=False).mesh
+    cap = quad_cap(profile, insets=insets)
+    cap_start = pf.nodes.geo.flip_faces(cap)
+    cap_end = pf.nodes.geo.transform(
+        geometry=cap, translation=pf.nodes.math.combine_xyz(z=depth)
+    )
+    solid = pf.nodes.geo.join_geometry([walls, cap_start, cap_end])
+    centred = pf.nodes.geo.transform(
+        geometry=solid, translation=pf.nodes.math.combine_xyz(z=depth * -0.5)
+    )
+    return pf.nodes.geo.merge_by_distance(centred, distance=1e-6)
 
 
 def metric_box_uv(geometry: pf.ProcNode) -> pf.ProcNode:
@@ -68,6 +165,23 @@ def metric_box_uv(geometry: pf.ProcNode) -> pf.ProcNode:
     )
 
 
+@pf.tracer.primitive(mutates=["obj"])
+def metric_cylinder_uv(obj: pf.MeshObject) -> None:
+    """Project sides at the widest circumference, with metric Z and planar caps."""
+    positions = pf.ops.attr.vertex_positions(obj)
+    radius = np.linalg.norm(positions[:, :2], axis=1).max()
+    pf.ops.uv.cylinder_project(obj, direction="ALIGN_TO_OBJECT", correct_aspect=False)
+    uv = pf.ops.attr.uv_coords(obj)
+    mesh = obj.item().data
+    corner_positions = positions[[loop.vertex_index for loop in mesh.loops]]
+    uv[:, 0] *= 2 * np.pi * radius
+    uv[:, 1] = corner_positions[:, 2]
+    caps = np.abs(pf.ops.attr.polygon_normals(obj)[:, 2]) > 0.9999
+    cap_corners = np.repeat(caps, [face.loop_total for face in mesh.polygons])
+    uv[cap_corners] = corner_positions[cap_corners, :2]
+    pf.ops.attr.write_uv_coords(obj, uv)
+
+
 class _CylinderSideResult(NamedTuple):
     geometry: pf.ProcNode[pf.MeshObject]
     top: pf.ProcNode[pf.MeshObject]
@@ -85,10 +199,10 @@ def _cylinder_side(
     )
     store_named_attribute = pf.nodes.geo.store_named_attribute(
         geometry=cylinder.mesh,
-        name="uv_map",
+        name="UVMap",
         value=cylinder.uv_map,
         domain="CORNER",
-        data_type=NodeDataType.FLOAT_VECTOR,
+        data_type="FLOAT2",
     )
     return _CylinderSideResult(
         store_named_attribute, cylinder.top, cylinder.side, cylinder.bottom
@@ -215,7 +329,7 @@ def extrude_mesh_seamless_uvs(
     offset_scale: t.SocketOrVal[float],
     uv_winding_sign: t.SocketOrVal[float] = 1.0,
 ) -> ExtrudeSeamlessResult:
-    """Extrude faces and continue source UVs onto the new side faces seamlessly.
+    """Extrude faces along their normals and continue source UVs seamlessly.
 
     Each side corner gets uv0 plus a perpendicular offset proportional to its
     extrusion depth. The boundary edge driving that offset is found per corner via
@@ -223,6 +337,24 @@ def extrude_mesh_seamless_uvs(
     broadcast across the side face with accumulate_field.
     """
 
+    return extrude_mesh_seamless_uvs_along(
+        mesh=mesh,
+        selection=selection,
+        offset_scale=offset_scale,
+        offset=pf.nodes.geo.input_normal(),
+        uv_winding_sign=uv_winding_sign,
+    )
+
+
+@pf.nodes.node_function
+def extrude_mesh_seamless_uvs_along(
+    mesh: pf.ProcNode[pf.MeshObject],
+    selection: t.SocketOrVal[bool],
+    offset_scale: t.SocketOrVal[float],
+    offset: t.SocketOrVal[pf.Vector],
+    uv_winding_sign: t.SocketOrVal[float] = 1.0,
+) -> ExtrudeSeamlessResult:
+    """Continue source UVs while extruding along an explicit offset."""
     uv_name = "UVMap"
     pos0 = pf.nodes.geo.input_position()
     uv0 = pf.nodes.geo.input_named_attribute(
@@ -234,6 +366,7 @@ def extrude_mesh_seamless_uvs(
         mesh=cap.geometry,
         selection=selection,
         offset_scale=offset_scale,
+        offset=offset,
         individual=False,
     )
 
@@ -279,6 +412,18 @@ def extrude_mesh_seamless_uvs(
         data_type="FLOAT2",
     )
     return ExtrudeSeamlessResult(mesh=out, top=ext.top, side=ext.side)
+
+
+def center_footprint(obj: pf.MeshObject) -> None:
+    """Shift geometry so its bounding box is centered on x/y, leaving z alone.
+
+    Storage carcasses are built into the positive octant while tables are built
+    centered on their footprint; placement code sets a location expecting the
+    latter, so a carcass used as a table has to be recentered first.
+    """
+    bbox = pf.ops.attr.bbox_min_max(obj, global_coords=False)
+    lo, hi = bbox[0], bbox[1]
+    pf.ops.mesh.move(obj, value=(-(lo[0] + hi[0]) * 0.5, -(lo[1] + hi[1]) * 0.5, 0.0))
 
 
 def uv_winding_sign(obj: pf.MeshObject) -> float:
@@ -534,7 +679,7 @@ def _grid_from_curves(
 
 
 def _store_metric_box_uvs(mesh: pf.ProcNode) -> pf.ProcNode:
-    """Box-projected UVs in world units (1 UV unit = 1 meter), as 'uv_map'.
+    """Box-projected UVs in world units (1 UV unit = 1 meter), as 'UVMap'.
     Inlines into the calling node_function; corner-domain normals evaluate to the
     exact owning-face normal, which picks the projection axis per face."""
     axis = pf.nodes.math.separate_xyz(
@@ -546,24 +691,57 @@ def _store_metric_box_uvs(mesh: pf.ProcNode) -> pf.ProcNode:
         axis.x * p.z + axis.y * p.z + axis.z * p.y,
     )
     return pf.nodes.geo.store_named_attribute(
-        geometry=mesh, name="uv_map", value=uv, domain="CORNER"
+        geometry=mesh,
+        name="UVMap",
+        value=uv,
+        domain="CORNER",
+        data_type="FLOAT2",
     )
 
 
-class CubeWithVertexIndicesResult(NamedTuple):
-    mesh: pf.ProcNode[pf.MeshObject]
-    index_x: pf.ProcNode[int]
-    index_y: pf.ProcNode[int]
-    index_z: pf.ProcNode[int]
-
-
-@pf.nodes.node_function
-def _cube_with_vertex_indices(
+def box(
     size: t.SocketOrVal[pf.Vector] = (1, 1, 1),
+    location: t.SocketOrVal[pf.Vector] = (0, 0, 0),
+    anchor: t.SocketOrVal[pf.Vector] = (0.5, 0.5, 0.5),
     vertices_x: t.SocketOrVal[int] = 2,
     vertices_y: t.SocketOrVal[int] = 2,
     vertices_z: t.SocketOrVal[int] = 2,
-) -> CubeWithVertexIndicesResult:
+    crease: t.SocketOrVal[float] = 0.0,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Create a box with ``location`` at its normalized ``anchor`` point."""
+    cube = pf.nodes.geo.mesh_cube(
+        size=size,
+        vertices_x=vertices_x,
+        vertices_y=vertices_y,
+        vertices_z=vertices_z,
+    )
+    center_factor = pf.nodes.math.map_range(
+        value=anchor,
+        from_min=(0.0, 0.0, 0.0),
+        from_max=(1.0, 1.0, 1.0),
+        to_min=(0.5, 0.5, 0.5),
+        to_max=(-0.5, -0.5, -0.5),
+    )
+    center = pf.nodes.math.vector_multiply_add(a=center_factor, b=size, addend=location)
+    placed = pf.nodes.geo.transform(geometry=cube.mesh, translation=center)
+    creased = pf.nodes.geo.store_named_attribute(
+        geometry=placed, domain="EDGE", name="crease_edge", value=crease
+    )
+    return _store_metric_box_uvs(creased)
+
+
+@pf.nodes.node_function
+def box_with_support_loops(
+    size: t.SocketOrVal[pf.Vector] = (1, 1, 1),
+    location: t.SocketOrVal[pf.Vector] = (0, 0, 0),
+    anchor: t.SocketOrVal[pf.Vector] = (0.5, 0.5, 0.5),
+    vertices_x: t.SocketOrVal[int] = 4,
+    vertices_y: t.SocketOrVal[int] = 4,
+    vertices_z: t.SocketOrVal[int] = 4,
+    support_loop_offset: t.SocketOrVal[pf.Vector] = (0.05, 0.05, 0.05),
+    crease: t.SocketOrVal[float] = 0.0,
+) -> pf.ProcNode[pf.MeshObject]:
+    """Create a support-loop box with the same placement contract as ``box``."""
     cube = pf.nodes.geo.mesh_cube(
         size=size,
         vertices_x=vertices_x,
@@ -571,10 +749,13 @@ def _cube_with_vertex_indices(
         vertices_z=vertices_z,
     )
 
+    vertices_x_float = vertices_x.astype(dtype=float)
+    vertices_y_float = vertices_y.astype(dtype=float)
+    vertices_z_float = vertices_z.astype(dtype=float)
     index_max = pf.nodes.math.combine_xyz(
-        pf.nodes.math.subtract(vertices_x, 1),
-        pf.nodes.math.subtract(vertices_y, 1),
-        pf.nodes.math.subtract(vertices_z, 1),
+        pf.nodes.math.subtract(vertices_x_float, 1.0),
+        pf.nodes.math.subtract(vertices_y_float, 1.0),
+        pf.nodes.math.subtract(vertices_z_float, 1.0),
     )
     index_float = pf.nodes.math.map_range(
         clamp=False,
@@ -588,48 +769,27 @@ def _cube_with_vertex_indices(
 
     capture = pf.nodes.geo.capture_attribute(
         geometry=cube.mesh,
-        index_x=pf.nodes.math.round(index_xyz.x).astype(dtype=int),
-        index_y=pf.nodes.math.round(index_xyz.y).astype(dtype=int),
-        index_z=pf.nodes.math.round(index_xyz.z).astype(dtype=int),
-    )
-    return CubeWithVertexIndicesResult(
-        mesh=_store_metric_box_uvs(capture.geometry),
-        index_x=capture.index_x,
-        index_y=capture.index_y,
-        index_z=capture.index_z,
+        index=pf.nodes.math.combine_xyz(
+            pf.nodes.math.round(index_xyz.x),
+            pf.nodes.math.round(index_xyz.y),
+            pf.nodes.math.round(index_xyz.z),
+        ),
     )
 
-
-@pf.nodes.node_function
-def corner_box(
-    size: t.SocketOrVal[pf.Vector] = (1, 1, 1),
-    loops_x: t.SocketOrVal[int] = 0,
-    loops_y: t.SocketOrVal[int] = 0,
-    loops_z: t.SocketOrVal[int] = 0,
-    support_loop_offset: t.SocketOrVal[pf.Vector] = (0.05, 0.05, 0.05),
-) -> CubeWithVertexIndicesResult:
-    cube = _cube_with_vertex_indices(
-        size=size,
-        vertices_x=pf.nodes.math.add(loops_x, 4),
-        vertices_y=pf.nodes.math.add(loops_y, 4),
-        vertices_z=pf.nodes.math.add(loops_z, 4),
-    )
-    index = pf.nodes.math.combine_xyz(cube.index_x, cube.index_y, cube.index_z)
-
+    index = capture.index
     half = pf.nodes.math.vector_scale(vector=size, scale=0.5)
     neg_half = pf.nodes.math.vector_scale(vector=size, scale=-0.5)
     ones = (1.0, 1.0, 1.0)
-
-    even_index_max = pf.nodes.math.combine_xyz(
-        pf.nodes.math.add(loops_x, 2),
-        pf.nodes.math.add(loops_y, 2),
-        pf.nodes.math.add(loops_z, 2),
+    interior_index_max = pf.nodes.math.combine_xyz(
+        pf.nodes.math.subtract(vertices_x_float, 2.0),
+        pf.nodes.math.subtract(vertices_y_float, 2.0),
+        pf.nodes.math.subtract(vertices_z_float, 2.0),
     )
     even = pf.nodes.math.map_range(
         clamp=False,
         value=index,
         from_min=ones,
-        from_max=even_index_max,
+        from_max=interior_index_max,
         to_min=neg_half,
         to_max=half,
     )
@@ -637,30 +797,48 @@ def corner_box(
         pf.nodes.math.vector_minimum(even, half - support_loop_offset),
         neg_half + support_loop_offset,
     )
-
     mask_first = pf.nodes.math.vector_subtract(
         ones, pf.nodes.math.vector_minimum(index, ones)
     )
-    index_last = pf.nodes.math.vector_add(even_index_max, ones)
+    index_last = pf.nodes.math.vector_add(interior_index_max, ones)
     mask_last = pf.nodes.math.vector_subtract(
         ones,
         pf.nodes.math.vector_minimum(
             pf.nodes.math.vector_subtract(index_last, index), ones
         ),
     )
-    corner_correction = pf.nodes.math.vector_multiply(
+    corrected = clamped + pf.nodes.math.vector_multiply(
         mask_last - mask_first, support_loop_offset
     )
-
-    repositioned = pf.nodes.geo.set_position(
-        geometry=cube.mesh, position=clamped + corner_correction
+    position = pf.nodes.math.separate_xyz(pf.nodes.geo.input_position())
+    corrected_xyz = pf.nodes.math.separate_xyz(corrected)
+    offset = pf.nodes.math.separate_xyz(support_loop_offset)
+    supported_position = pf.nodes.math.combine_xyz(
+        x=pf.nodes.func.switch(switch=offset.x > 0.0, a=position.x, b=corrected_xyz.x),
+        y=pf.nodes.func.switch(switch=offset.y > 0.0, a=position.y, b=corrected_xyz.y),
+        z=pf.nodes.func.switch(switch=offset.z > 0.0, a=position.z, b=corrected_xyz.z),
     )
-    return CubeWithVertexIndicesResult(
-        mesh=_store_metric_box_uvs(repositioned),
-        index_x=cube.index_x,
-        index_y=cube.index_y,
-        index_z=cube.index_z,
+    supported = pf.nodes.geo.set_position(
+        geometry=capture.geometry, position=supported_position
     )
+    center_factor = pf.nodes.math.map_range(
+        value=anchor,
+        from_min=(0.0, 0.0, 0.0),
+        from_max=(1.0, 1.0, 1.0),
+        to_min=(0.5, 0.5, 0.5),
+        to_max=(-0.5, -0.5, -0.5),
+    )
+    center = pf.nodes.math.vector_multiply_add(a=center_factor, b=size, addend=location)
+    placed = pf.nodes.geo.transform(
+        geometry=supported,
+        translation=center,
+        rotation=(0, 0, 0),
+        scale=(1, 1, 1),
+    )
+    creased = pf.nodes.geo.store_named_attribute(
+        geometry=placed, domain="EDGE", name="crease_edge", value=crease
+    )
+    return _store_metric_box_uvs(creased)
 
 
 @pf.nodes.node_function
@@ -672,10 +850,15 @@ def fill_between_curves(
 ) -> pf.ProcNode[pf.MeshObject]:
     """Ruled surface bridging two curves: resample both to n_points, then lerp
     an n_rows x n_points grid between the sample positions. n_rows > 2 keeps
-    faces small and near-planar so downstream bevel/warp modifiers behave."""
+    faces small and near-planar so downstream bevel/warp modifiers behave.
+
+    Stores metric UVs with U along the curves and V between them."""
     grid = pf.nodes.geo.mesh_grid(vertices_x=n_rows, vertices_y=n_points)
     left = pf.nodes.geo.resample_curve_count(curve=curve_left, count=n_points)
     right = pf.nodes.geo.resample_curve_count(curve=curve_right, count=n_points)
+    left = pf.nodes.geo.capture_attribute(
+        geometry=left, length=pf.nodes.geo.spline_parameter().length
+    )
     index = pf.nodes.geo.input_index()
     index_f = index.astype(dtype=float)
     n_points_f = n_points.astype(dtype=float)
@@ -684,7 +867,7 @@ def fill_between_curves(
     factor = row / (n_rows.astype(dtype=float) - 1.0)
     position = pf.nodes.geo.input_position()
     left_pos = pf.nodes.geo.sample_index(
-        geometry=left,
+        geometry=left.geometry,
         index=along.astype(dtype=int),
         value=position,
         data_type=NodeDataType.FLOAT_VECTOR,
@@ -696,8 +879,25 @@ def fill_between_curves(
         data_type=NodeDataType.FLOAT_VECTOR,
     )
     lerped = left_pos + (right_pos - left_pos) * factor
-    return pf.nodes.geo.set_position(
-        geometry=grid.mesh, position=lerped, offset=(0.0, 0.0, 0.0)
+    u = pf.nodes.geo.sample_index(
+        geometry=left.geometry,
+        index=along.astype(dtype=int),
+        value=left.length,
+    )
+    v = factor * pf.nodes.math.vector_length(right_pos - left_pos)
+    uv = pf.nodes.geo.capture_attribute(
+        geometry=grid.mesh,
+        uv=pf.nodes.math.combine_xyz(x=u, y=v),
+    )
+    positioned = pf.nodes.geo.set_position(
+        geometry=uv.geometry, position=lerped, offset=(0.0, 0.0, 0.0)
+    )
+    return pf.nodes.geo.store_named_attribute(
+        geometry=positioned,
+        name="UVMap",
+        value=uv.uv,
+        domain="CORNER",
+        data_type="FLOAT2",
     )
 
 
@@ -770,6 +970,120 @@ def grid_from_corners(
 
     set_position = pf.nodes.geo.set_position(geometry=grid.mesh, position=position)
     return set_position
+
+
+def split_gaps(lines: np.ndarray, max_cell: float) -> np.ndarray:
+    """Sorted `lines` plus evenly spaced extras so no gap exceeds `max_cell`."""
+    gaps = np.diff(lines)
+    counts = np.maximum(1, np.ceil(gaps / max_cell - 1e-6)).astype(int)
+    gap_of_line = np.repeat(np.arange(len(gaps)), counts)
+    step = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+    inner = lines[gap_of_line] + step * (gaps / counts)[gap_of_line]
+    return np.concatenate([inner, lines[-1:]])
+
+
+def mesh_from_corners(
+    corners: np.ndarray, sizes: np.ndarray, uvs: np.ndarray
+) -> pf.MeshObject:
+    """Shared-vertex mesh from flat (N, 3) face corners, per-face corner counts and (N, 2) UVs."""
+    _, first, inverse = np.unique(
+        np.round(corners, 6), axis=0, return_index=True, return_inverse=True
+    )
+    data = bpy.data.meshes.new("mesh_from_corners")
+    data.vertices.add(len(first))
+    data.vertices.foreach_set("co", corners[first].astype(np.float32).ravel())
+    data.loops.add(len(corners))
+    data.loops.foreach_set("vertex_index", inverse.reshape(-1).astype(np.int32))
+    data.polygons.add(len(sizes))
+    starts = np.cumsum(sizes) - sizes
+    data.polygons.foreach_set("loop_start", starts.astype(np.int32))
+    data.update(calc_edges=True)
+    obj = bpy.data.objects.new("mesh_from_corners", data)
+    bpy.context.scene.collection.objects.link(obj)
+    mesh = pf.MeshObject(obj)
+    pf.ops.attr.write_attribute(mesh, uvs, "UVMap", domain="CORNER")
+    return mesh
+
+
+def mesh_from_quads(corners: np.ndarray, uvs: np.ndarray) -> pf.MeshObject:
+    sizes = np.full(len(corners), 4)
+    return mesh_from_corners(corners.reshape(-1, 3), sizes, uvs.reshape(-1, 2))
+
+
+def reversed_faces(sizes: np.ndarray) -> np.ndarray:
+    """Corner permutation that reverses the winding of every face in a flat layout."""
+    starts = np.repeat(np.cumsum(sizes) - sizes, sizes)
+    offset = np.arange(sizes.sum()) - starts
+    return starts + np.repeat(sizes, sizes) - 1 - offset
+
+
+def _quad_uv_area(quad_uv: np.ndarray) -> np.ndarray:
+    u = quad_uv[..., 0]
+    v = quad_uv[..., 1]
+    return 0.5 * np.sum(
+        u * np.roll(v, -1, axis=-1) - np.roll(u, -1, axis=-1) * v, axis=-1
+    )
+
+
+def _cells_per_quad(
+    lines: np.ndarray, low: np.ndarray, high: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    first = np.searchsorted(lines, low - 1e-5)
+    last = np.searchsorted(lines, high + 1e-5) - 1
+    return first, last - first
+
+
+def refine_lattice_cage(obj: pf.MeshObject, max_cell: float) -> pf.MeshObject:
+    """Split oversized cells of a quad cage whose faces are axis-aligned UV rectangles.
+
+    New lines go only inside UV gaps wider than `max_cell` metres, so small faces
+    (chamfers, reveals) stay untouched and no T-junctions appear. Returns `obj`
+    unchanged if any face is not a UV rectangle or nothing needs splitting.
+    """
+    if np.any(pf.ops.attr.loop_totals(obj) != 4):
+        return obj
+    loops = pf.ops.attr.loop_starts(obj)[:, None] + np.arange(4)
+    quad_uv = pf.ops.attr.uv_coords(obj)[loops]
+    quad_xyz = pf.ops.attr.vertex_positions(obj)[
+        pf.ops.attr.loop_vertex_indices(obj)[loops]
+    ]
+    low = quad_uv.min(axis=1)
+    high = quad_uv.max(axis=1)
+    area = _quad_uv_area(quad_uv)
+    if not np.allclose(np.prod(high - low, axis=1), np.abs(area), atol=1e-6):
+        return obj
+
+    u_lines = np.unique(np.round(quad_uv[..., 0], 5))
+    v_lines = np.unique(np.round(quad_uv[..., 1], 5))
+    us = split_gaps(u_lines, max_cell)
+    vs = split_gaps(v_lines, max_cell)
+    if len(us) == len(u_lines) and len(vs) == len(v_lines):
+        return obj
+
+    # affine uv -> xyz per quad, exact for flat axis-aligned UV rectangles
+    design = np.concatenate([quad_uv, np.ones((len(quad_uv), 4, 1))], axis=2)
+    uv_to_xyz = np.linalg.pinv(design) @ quad_xyz
+
+    u_first, u_count = _cells_per_quad(us, low[:, 0], high[:, 0])
+    v_first, v_count = _cells_per_quad(vs, low[:, 1], high[:, 1])
+    counts = u_count * v_count
+    quad = np.repeat(np.arange(len(counts)), counts)
+    step = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+    iu = u_first[quad] + step // v_count[quad]
+    iv = v_first[quad] + step % v_count[quad]
+    corner_u = np.stack([us[iu], us[iu + 1], us[iu + 1], us[iu]], axis=1)
+    corner_v = np.stack([vs[iv], vs[iv], vs[iv + 1], vs[iv + 1]], axis=1)
+    cell_uv = np.stack([corner_u, corner_v], axis=2)
+    flipped = area[quad] < 0
+    cell_uv[flipped] = cell_uv[flipped, ::-1]
+
+    cell_design = np.concatenate([cell_uv, np.ones((len(cell_uv), 4, 1))], axis=2)
+    cell_xyz = cell_design @ uv_to_xyz[quad]
+    return mesh_from_quads(cell_xyz, cell_uv)
+
+
+def crease_all_edges(obj: pf.MeshObject) -> None:
+    pf.ops.attr.write_attribute(obj, 1.0, "crease_edge", domain="EDGE", overwrite=True)
 
 
 @pf.nodes.node_function

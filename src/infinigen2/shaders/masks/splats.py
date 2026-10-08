@@ -1,7 +1,8 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Alexander Raistrick
+# Authors:
+# - Alexander Raistrick: refactor for Infinigen2
 
 from typing import NamedTuple
 
@@ -492,7 +493,7 @@ def splats_spots(vector: t.SocketOrVal[pf.Vector]):
     )
 
 
-def splats_metal_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode[float]:
+def splats_metal_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> SplatsMaskResult:
     small_dots = splat_dots(
         vector=vector,
         size=0.05,
@@ -533,10 +534,10 @@ def splats_metal_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode[fl
 
     mask = pf.nodes.math.clamp(small_dots)
     mask = pf.nodes.math.clamp(mask + large_dots)
-    return mask
+    return SplatsMaskResult(mask=mask)
 
 
-def splats_cookware_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode[float]:
+def splats_cookware_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> SplatsMaskResult:
     small_dots = splat_dots(
         vector=vector,
         size=0.05,
@@ -617,10 +618,10 @@ def splats_cookware_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode
     mask = pf.nodes.math.clamp(mask + medium_dots)
     mask = pf.nodes.math.clamp(mask + large_dots)
     mask = pf.nodes.math.clamp(mask + long_dots)
-    return mask
+    return SplatsMaskResult(mask=mask)
 
 
-def splats_spots_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode[float]:
+def splats_spots_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> SplatsMaskResult:
     small_dots = splat_dots(
         vector=vector,
         size=0.05,
@@ -660,10 +661,10 @@ def splats_spots_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode[fl
 
     mask = pf.nodes.math.clamp(small_dots)
     mask = pf.nodes.math.clamp(mask + large_dots)
-    return mask
+    return SplatsMaskResult(mask=mask)
 
 
-def splats_streaks_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode[float]:
+def splats_streaks_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> SplatsMaskResult:
     dots_1 = splat_dots(
         vector=vector,
         size=0.1,
@@ -764,11 +765,11 @@ def splats_streaks_mask_preset(vector: t.SocketOrVal[pf.Vector]) -> pf.ProcNode[
     mask = pf.nodes.math.clamp(mask + streaks_1)
     mask = pf.nodes.math.clamp(mask + streaks_2)
     mask = pf.nodes.math.clamp(mask + streaks_3)
-    return mask
+    return SplatsMaskResult(mask=mask)
 
 
 def splats_streaks(vector: t.SocketOrVal[pf.Vector]):
-    mask = splats_streaks_mask_preset(vector=vector)
+    mask = splats_streaks_mask_preset(vector=vector).mask
 
     principled = pf.nodes.shader.principled_bsdf(
         base_color=pf.Color((0.526, 0.526, 0.526)),

@@ -1,7 +1,8 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Karhan Kayan
+# Authors:
+# - Karhan Kayan, Alexander Raistrick: refactor for Infinigen2
 
 import functools
 from typing import NamedTuple
@@ -183,7 +184,7 @@ def _fieldspar(
         blend_type="SOFT_LIGHT",
     )
 
-    fractal_chip_result = fractal_chip(
+    fractal_chip_height = fractal_chip(
         vector=space_warp_result_2.vector,
         w=w,
         size=0.006,
@@ -192,7 +193,7 @@ def _fieldspar(
     )
 
     color_color_1 = pf.nodes.math.map_range(
-        value=fractal_chip_result.height, from_min=0.1, from_max=0.25
+        value=fractal_chip_height, from_min=0.1, from_max=0.25
     )
     color_color = pf.nodes.color.mix_rgb(
         factor=0.5333,
@@ -259,7 +260,7 @@ def _quartz(
         lacunarity=1.5,
     )
 
-    fractal_chip_result = fractal_chip(
+    fractal_chip_height = fractal_chip(
         vector=space_warp_result.vector,
         w=w + 50.0,
         size=0.0043,
@@ -275,7 +276,7 @@ def _quartz(
     alpha_1 = pf.nodes.math.map_range(value=alpha_value, to_min=0.61, to_max=-0.04)
     alpha_from_max = pf.nodes.math.mix(factor=smoothness, a=alpha_1 + 0.0001, b=1.0)
     alpha = pf.nodes.math.map_range(
-        value=fractal_chip_result.height,
+        value=fractal_chip_height,
         from_min=alpha_1,
         from_max=alpha_from_max,
     )
@@ -364,7 +365,7 @@ def _quartz(
     )
 
     height_2 = color_hue_1 - 0.5
-    height_1 = fractal_chip_result.height + (height_2 * 0.1)
+    height_1 = fractal_chip_height + (height_2 * 0.1)
     height = (height_scale * height_1) + 2.0
 
     chisel = pf.nodes.texture.voronoi(
@@ -412,7 +413,7 @@ def _mica_hornblende(
         roughness=0.6583,
     )
 
-    fractal_chip_result = fractal_chip(
+    fractal_chip_height = fractal_chip(
         vector=space_warp_result.vector,
         w=w + 50.0,
         size=0.0029,
@@ -428,7 +429,7 @@ def _mica_hornblende(
     alpha_1 = pf.nodes.math.map_range(value=alpha_value, to_min=0.4, to_max=0.0)
     alpha_from_max = pf.nodes.math.mix(factor=smoothness, a=alpha_1 + 0.0001, b=1.0)
     alpha = pf.nodes.math.map_range(
-        value=fractal_chip_result.height,
+        value=fractal_chip_height,
         from_min=alpha_1,
         from_max=alpha_from_max,
     )
@@ -485,7 +486,7 @@ def _mica_hornblende(
     )
 
     height_2 = color_hue_1 - 0.5
-    height_1 = fractal_chip_result.height + (height_2 * 0.1)
+    height_1 = fractal_chip_height + (height_2 * 0.1)
     height = (height_scale * height_1) + 1.0
 
     chisel = pf.nodes.texture.voronoi(

@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Alexander Raistrick, Zeyu Ma, Kaiyu Yang, Lingjie Mei: original Infinigen v1 sky lighting (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/lighting/sky_lighting.py)
-# - Alexander Raistrick: port to v2
+# - Alexander Raistrick, Zeyu Ma, Kaiyu Yang, and Lingjie Mei: original Infinigen sky lighting (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/lighting/sky_lighting.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 from typing import NamedTuple
 
@@ -12,11 +12,11 @@ import procfunc as pf
 
 __all__ = [
     "EnvironmentResult",
-    "hosek_wilkie_sky",
-    "hosek_wilkie_sky_rand",
-    "hosek_wilkie_sky_with_sun_lamp_rand",
-    "nishita_sky",
-    "nishita_sky_rand",
+    "sky_hosek_wilkie",
+    "sky_hosek_wilkie_rand",
+    "sky_hosek_wilkie_with_sun_lamp_rand",
+    "sky_nishita",
+    "sky_nishita_rand",
     "sky_with_sun_lamp_rand",
 ]
 
@@ -56,24 +56,33 @@ def _nishita_sky(
     strength: float = 0.4,
     sun_disc: bool = True,
 ) -> pf.World:
-    sky_texture = pf.nodes.texture.sky(
-        sky_type="NISHITA",
-        sun_size=np.deg2rad(sun_size_deg),
-        sun_intensity=sun_intensity,
-        sun_elevation=np.deg2rad(sun_elevation_deg),
-        sun_rotation=np.deg2rad(sun_rotation_deg),
-        altitude=altitude,
-        air_density=air_density,
-        dust_density=dust_density,
-        ozone_density=ozone_density,
-        sun_disc=sun_disc,
-    )
+    if sun_disc:
+        sky_texture = pf.nodes.texture.sky_texture_nishita(
+            sun_size=np.deg2rad(sun_size_deg),
+            sun_intensity=sun_intensity,
+            sun_elevation=np.deg2rad(sun_elevation_deg),
+            sun_rotation=np.deg2rad(sun_rotation_deg),
+            altitude=altitude,
+            air_density=air_density,
+            dust_density=dust_density,
+            ozone_density=ozone_density,
+        )
+    else:
+        sky_texture = pf.nodes.texture.sky_texture_nishita(
+            sun_elevation=np.deg2rad(sun_elevation_deg),
+            sun_rotation=np.deg2rad(sun_rotation_deg),
+            altitude=altitude,
+            air_density=air_density,
+            dust_density=dust_density,
+            ozone_density=ozone_density,
+            sun_disc=False,
+        )
 
     shader = pf.nodes.shader.background(sky_texture, strength=strength)
     return pf.nodes.to_environment(surface=shader)
 
 
-def nishita_sky(
+def sky_nishita(
     sun_size_deg: float = 0.5,
     sun_intensity: float = 0.6,
     sun_elevation_deg: float = 10.0,
@@ -101,7 +110,7 @@ def nishita_sky(
 
 
 @pf.tracer.grammar
-def nishita_sky_rand(
+def sky_nishita_rand(
     rng: np.random.Generator,
     sun_elevation_deg: float | None = None,
     sun_rotation_deg: float | None = None,
@@ -145,8 +154,7 @@ def _hosek_wilkie_sky(
     )
     sun_direction = euler.to_matrix() @ pf.Vector((0, 0, 1))
 
-    sky_texture = pf.nodes.texture.sky(
-        sky_type="HOSEK_WILKIE",
+    sky_texture = pf.nodes.texture.sky_texture_hosek_wilkie(
         sun_direction=sun_direction,
         turbidity=turbidity,
         ground_albedo=ground_albedo,
@@ -156,7 +164,7 @@ def _hosek_wilkie_sky(
     return pf.nodes.to_environment(surface=shader)
 
 
-def hosek_wilkie_sky(
+def sky_hosek_wilkie(
     sun_elevation_deg: float = 45.0,
     sun_rotation_deg: float = 0.0,
     turbidity: float = 2.0,
@@ -174,7 +182,7 @@ def hosek_wilkie_sky(
 
 
 @pf.tracer.grammar
-def hosek_wilkie_sky_rand(
+def sky_hosek_wilkie_rand(
     rng: np.random.Generator,
     sun_elevation_deg: float | None = None,
     sun_rotation_deg: float | None = None,
@@ -194,7 +202,7 @@ def hosek_wilkie_sky_rand(
 
 
 @pf.tracer.grammar
-def hosek_wilkie_sky_with_sun_lamp_rand(
+def sky_hosek_wilkie_with_sun_lamp_rand(
     rng: np.random.Generator,
     sun_elevation_deg: float | None = None,
     sun_rotation_deg: float | None = None,
@@ -250,7 +258,7 @@ def sky_with_sun_lamp_rand(
     if sun_intensity is None:
         sun_intensity = pf.random.uniform(rng, 0.8, 1.0)
 
-    sky = nishita_sky_rand(
+    sky = sky_nishita_rand(
         rng,
         sun_elevation_deg=sun_elevation_deg,
         sun_rotation_deg=sun_rotation_deg,

@@ -2,8 +2,7 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Erich Liang: original nodegroup
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Erich Liang, Alexander Raistrick: refactor for Infinigen2
 
 import logging
 from typing import NamedTuple
@@ -19,7 +18,6 @@ __all__ = [
     "fabric_color_rand",
     "fabric_fine_preset",
     "fabric_rand",
-    "fabric_translucent_rand",
 ]
 
 logger = logging.getLogger(__name__)
@@ -234,14 +232,10 @@ def fabric_coarse_preset(
     )
 
 
-def fabric_color_rand(
-    rng: pf.RNG,
-    value: t.SocketOrVal[float] | None = None,
-) -> pf.Color:
+def fabric_color_rand(rng: pf.RNG) -> pf.Color:
     hue = pf.random.uniform(rng, 0.0, 1.0)
     saturation = pf.random.clip_gaussian(rng, 0.6, 0.32, 0.0, 0.7)
-    if value is None:
-        value = pf.random.uniform(rng, 0.0, 1.0)
+    value = pf.random.clip_gaussian(rng, 0.4, 0.3, 0.1, 0.9)
     return pf.color.hsv_color(hue=hue, saturation=saturation, value=value)
 
 
@@ -249,7 +243,8 @@ def fabric_rand(
     rng: pf.RNG,
     vector: t.SocketOrVal[pf.Vector],
     base_color: t.SocketOrVal[pf.Color] | None = None,
-):
+    translucency: float = 0.0,
+) -> pf.Material:
     if base_color is None:
         base_color = fabric_color_rand(rng)
 
@@ -281,23 +276,8 @@ def fabric_rand(
         sheen_roughness=sheen_roughness,
         gab=gab,
     )
-    return pf.Material(
-        surface=fabric_result.surface,
-        displacement=fabric_result.displacement,
-    )
-
-
-def fabric_translucent_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-    translucency: float = 0.5,
-) -> pf.Material:
-    if base_color is None:
-        base_color = fabric_color_rand(rng)
-    material = fabric_rand(rng, vector, base_color=base_color)
     translucent = pf.nodes.shader.translucent_bsdf(color=base_color)
     surface = pf.nodes.shader.mix_shader(
-        factor=translucency, a=material.surface, b=translucent
+        factor=translucency, a=fabric_result.surface, b=translucent
     )
-    return pf.Material(surface=surface, displacement=material.displacement)
+    return pf.Material(surface=surface, displacement=fabric_result.displacement)

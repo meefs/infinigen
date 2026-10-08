@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Yiming Zuo: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/tiles/brick.py)
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Yiming Zuo: original Infinigen brick cutter mask (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/tiles/brick.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 from typing import NamedTuple
 
@@ -27,6 +27,7 @@ class BrickCutterResult(NamedTuple):
     brick_id: pf.ProcNode[pf.Vector]
     random: pf.ProcNode[pf.Color]
     height: pf.ProcNode[float]
+    height_offset: pf.ProcNode[float]
 
 
 @pf.nodes.node_function
@@ -220,7 +221,16 @@ def brick_cutter(
         factor=grout_bevel_concavity,
     )
     height_b_0 = 1.0 - height_b_b_0
+    max_brick_extrusion = pf.nodes.math.maximum(
+        a=brick_extrusion, b=brick_extrusion + brick_extrusion_variation
+    )
+    height_offset = pf.nodes.math.maximum(
+        a=0.0,
+        b=pf.nodes.math.maximum(a=max_brick_extrusion, b=grout_extrusion),
+    )
+    height_offset = height_offset * 0.01
     height = (height_a_3 * height_a_2) + (height_b_4 * height_b_0)
+    height = height - height_offset
     return BrickCutterResult(
         mask=mask,
         vector=coord_1,
@@ -228,6 +238,7 @@ def brick_cutter(
         brick_id=brick_id,
         random=white_noise.color,
         height=height,
+        height_offset=height_offset,
     )
 
 

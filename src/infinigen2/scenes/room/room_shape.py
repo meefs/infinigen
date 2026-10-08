@@ -9,6 +9,7 @@ import numpy as np
 import procfunc as pf
 from procfunc.nodes import types as t
 
+from infinigen2.cameras import framing
 from infinigen2.curves.room_edge import (
     RoomEdgeCurveResult,
     room_edge_curve_rand,
@@ -32,10 +33,8 @@ class RoomShapeResult(NamedTuple):
     ceiling: pf.MeshObject
     dimensions: pf.Vector
     edge_curve: RoomEdgeCurveResult
-
-    @property
-    def all_objects(self) -> list[pf.MeshObject]:
-        return [self.walls, self.floor, self.ceiling]
+    all_objects: list[pf.MeshObject]
+    cameras: list[pf.CameraObject]
 
 
 class RoomEdgeToWallsResult(NamedTuple):
@@ -66,7 +65,8 @@ def room_edge_to_walls(
     )
 
     curve_to_mesh_with_uv_result = curve_to_mesh_with_uv(
-        curve=curve, profile=capture_attribute.geometry
+        curve=pf.nodes.geo.set_curve_normal(curve, mode="Z_UP"),
+        profile=capture_attribute.geometry,
     )
 
     input_index_1 = pf.nodes.geo.input_index()
@@ -203,15 +203,15 @@ def room_shape_rand(
     floor = grid_from_corners(
         point_1=(0, 0, -eps),
         point_2=(dimensions.x, dimensions.y, -eps),
-        vertices_x=pf.nodes.math.ceil(dimensions.x),
-        vertices_y=pf.nodes.math.ceil(dimensions.y),
+        vertices_x=pf.nodes.math.ceil(dimensions.x / 0.8) + 1.0,
+        vertices_y=pf.nodes.math.ceil(dimensions.y / 0.8) + 1.0,
     )
 
     ceiling = grid_from_corners(
         point_1=(0, 0, dimensions.z + eps),
         point_2=(dimensions.x, dimensions.y, dimensions.z + eps),
-        vertices_x=pf.nodes.math.ceil(dimensions.x),
-        vertices_y=pf.nodes.math.ceil(dimensions.y),
+        vertices_x=pf.nodes.math.ceil(dimensions.x / 0.8) + 1.0,
+        vertices_y=pf.nodes.math.ceil(dimensions.y / 0.8) + 1.0,
     )
     ceiling = pf.nodes.geo.flip_faces(ceiling)
 
@@ -232,6 +232,7 @@ def room_shape_rand(
     )
 
     flat_walls = _split_flat_walls(walls_mesh)
+    camera = framing.camera_in_room_corner(floor, float(dimensions.z))
 
     return RoomShapeResult(
         walls=walls_mesh,
@@ -240,4 +241,6 @@ def room_shape_rand(
         ceiling=ceiling,
         dimensions=dimensions,
         edge_curve=edge_curve,
+        all_objects=[walls_mesh, *flat_walls, floor, ceiling],
+        cameras=[camera],
     )

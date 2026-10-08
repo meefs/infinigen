@@ -35,9 +35,3 @@ def test_export_blender_file_and_mesh(
     # Cube is roughly 4 units in each dimension
     assert np.all(extents > 3.9), f"Mesh extents too small: {extents}"
     assert np.all(extents < 4.1), f"Mesh extents too large: {extents}"
-
-
-@pytest.mark.slow
-@pytest.mark.xfail(reason="OBJECTS_FILE not yet implemented")
-def test_export_objects_file(tmp_path):
-    pytest.skip("OBJECTS_FILE not yet implemented")

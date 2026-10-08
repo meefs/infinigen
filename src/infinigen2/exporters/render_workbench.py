@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Lahav Lipson, Hei Law, Alexander Raistrick: original Infinigen v1 rendering pipeline (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/rendering/render.py)
-# - Alexander Raistrick: port to v2
+# - Lahav Lipson and Hei Law: original Infinigen rendering and flat-shading path (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/rendering/render.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import logging
 from contextlib import nullcontext

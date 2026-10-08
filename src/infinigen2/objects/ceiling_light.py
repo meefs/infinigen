@@ -2,27 +2,29 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Hongyu Wen - original version
-# - Alexander Raistrick - add point light, refactor to procfunc
+# - Hongyu Wen: original Infinigen ceiling light (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/lamp/ceiling_lights.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 from typing import NamedTuple
 
 import procfunc as pf
 from procfunc.nodes import types as t
 
-from infinigen2.objects.lamp import point_light_indoor, point_light_indoor_rand
+from infinigen2.objects.lamp import light_point_indoor, light_point_indoor_rand
 from infinigen2.shaders.base_materials.emissive_nonblocking import (
     lamp_bulb_nonemissive,
 )
 from infinigen2.shaders.functionality_lists import (
     furniture_material_rand,
 )
+from infinigen2.util.curve import curve_to_mesh_with_uv
+from infinigen2.util.mesh import extrude_mesh_seamless_uvs
 
 __all__ = [
     "CeilingLightResult",
     "black_for_reflections",
-    "ceiling_light",
-    "ceiling_light_rand",
+    "light_ceiling",
+    "light_ceiling_rand",
 ]
 
 
@@ -52,11 +54,11 @@ def _ceiling_light_geometry(
     curve_line_end = pf.nodes.math.combine_xyz(z=transform_translation_z)
     curve_line = pf.nodes.geo.curve_line(start=(0.0, 0.0, -0.001), end=curve_line_end)
     curve_circle = pf.nodes.geo.curve_circle(resolution=16, radius=inner_radius)
-    curve_to = pf.nodes.geo.curve_to_mesh(
+    curve_to = curve_to_mesh_with_uv(
         curve=curve_line,
-        profile_curve=curve_circle,
+        profile=curve_circle,
         fill_caps=True,
-    )
+    ).mesh
 
     icosphere = pf.nodes.geo.mesh_icosphere(radius=inner_radius, subdivisions=3)
 
@@ -92,19 +94,30 @@ def _ceiling_light_geometry(
     )
 
     circle = pf.nodes.geo.mesh_circle(vertices=16, radius=radius, fill_type="NGON")
+    circle_position = pf.nodes.geo.input_position()
+    circle = pf.nodes.geo.store_named_attribute(
+        geometry=circle,
+        name="UVMap",
+        value=pf.nodes.math.combine_xyz(
+            x=circle_position.x,
+            y=circle_position.y,
+        ),
+        domain="CORNER",
+        data_type="FLOAT2",
+    )
 
     curve_line_1_end = pf.nodes.math.combine_xyz(z=height * -1.0)
     curve_line_1 = pf.nodes.geo.curve_line(end=curve_line_1_end, start=(0, 0, 0))
     curve_line_1 = pf.nodes.geo.resample_curve_count(curve=curve_line_1, count=4)
     curve_circle_1 = pf.nodes.geo.curve_circle(resolution=16, radius=radius)
-    curve_to_1 = pf.nodes.geo.curve_to_mesh(
-        curve=curve_line_1, profile_curve=curve_circle_1
-    )
+    curve_to_1 = curve_to_mesh_with_uv(curve=curve_line_1, profile=curve_circle_1).mesh
 
     flip_faces = pf.nodes.geo.flip_faces(curve_to_1)
 
-    extrude = pf.nodes.geo.extrude_mesh(
-        mesh=curve_to_1, offset_scale=thickness, individual=False
+    extrude = extrude_mesh_seamless_uvs(
+        mesh=curve_to_1,
+        selection=True,
+        offset_scale=thickness,
     )
 
     join_2 = pf.nodes.geo.join_geometry([flip_faces, extrude.mesh])
@@ -142,14 +155,14 @@ def black_for_reflections(
     return pf.Material(surface=surface)
 
 
-def ceiling_light(
+def light_ceiling(
     radius: float = 0.12,
     thickness: float = 0.0275,
     inner_radius: float = 0.078,
     height: float = 0.063,
     inner_height: float = 0.0504,
     curvature: float = 0.3,
-    energy: float = 75.0,
+    energy: float = 9.0,
     temperature: float = 4500.0,
     shadow_soft_size: float = 0.025,
     turned_on: bool = True,
@@ -173,12 +186,11 @@ def ceiling_light(
     )
 
     obj = pf.nodes.to_mesh_object(geo.geometry)
-    pf.ops.uv.cylinder_project(obj)
     pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
 
     light = None
     if turned_on:
-        light = point_light_indoor(
+        light = light_point_indoor(
             energy=energy,
             temperature=temperature,
             shadow_soft_size=shadow_soft_size,
@@ -188,7 +200,7 @@ def ceiling_light(
     return CeilingLightResult(mesh=obj, light=light)
 
 
-def ceiling_light_rand(
+def light_ceiling_rand(
     rng: pf.RNG,
     energy: float | None = None,
     shadow_soft_size: float | None = None,
@@ -221,17 +233,16 @@ def ceiling_light_rand(
     )
 
     obj = pf.nodes.to_mesh_object(geo.geometry)
-    pf.ops.uv.cylinder_project(obj)
     pf.ops.modifier.subdivide_surface(obj, levels=2, _skip_apply=True)
 
     light = None
     if turned_on:
         if energy is None:
-            energy = pf.random.uniform(rng, 50, 100)
+            energy = pf.random.uniform(rng, 800, 3000) / 177
         if shadow_soft_size is None:
             shadow_soft_size = pf.random.uniform(rng, 0.02, 0.03)
 
-        light = point_light_indoor_rand(
+        light = light_point_indoor_rand(
             rng,
             energy=energy,
             temperature=temperature,

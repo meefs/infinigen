@@ -1,7 +1,10 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Transpiled into procfunc/v2 format by Alexander Raistrick
+# Authors:
+# - Yiming Zuo: original Infinigen leather material (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/fabric/leather.py)
+# - Alexander Raistrick: refactor for Infinigen2
+# Acknowledgement: This file draws inspiration https://www.youtube.com/watch?v=In9V4-ih16o by Ryan King Art
 
 from typing import NamedTuple
 
@@ -13,27 +16,13 @@ from procfunc.nodes.util.bpy_node_info import NodeDataType
 from infinigen2.shaders.util.coord import coord_warp, space_warp
 
 __all__ = [
-    "ColorOffsetResult",
-    "GrungeResult",
-    "GrungeVoronoiResult",
-    "LeatherCellResult",
-    "LeatherLinesResult",
-    "LeatherShaderResult",
-    "color_offset",
-    "grunge",
-    "grunge_voronoi",
+    "leather_allcolor_color_rand",
+    "leather_allcolor_rand",
     "leather_animal_preset",
-    "leather_animal_rand",
-    "leather_cell",
     "leather_furniture_patina_preset",
-    "leather_furniture_patina_rand",
     "leather_furniture_rough_preset",
-    "leather_furniture_rough_rand",
     "leather_handheld_preset",
-    "leather_handheld_rand",
-    "leather_lines",
     "leather_rand",
-    "leather_shader",
 ]
 
 # --- Node functions (verbatim from transpiler) ---
@@ -978,56 +967,6 @@ def _leather_color_rand(
     return pf.color.hsv_color(hue=hue, saturation=saturation, value=value)
 
 
-def leather_animal_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.3, 0.67)
-    return leather_animal_preset(vector, color=base_color, roughness=roughness)
-
-
-def leather_furniture_patina_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.3, 0.6)
-    return leather_furniture_patina_preset(
-        vector, color=base_color, roughness=roughness
-    )
-
-
-def leather_furniture_rough_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.25, 0.5)
-    return leather_furniture_rough_preset(vector, color=base_color, roughness=roughness)
-
-
-def leather_handheld_rand(
-    rng: pf.RNG,
-    vector: t.SocketOrVal[pf.Vector],
-    base_color: t.SocketOrVal[pf.Color] | None = None,
-) -> pf.Material:
-    rng_color, rng_rough = rng.spawn(2)
-    if base_color is None:
-        base_color = _leather_color_rand(rng_color)
-    roughness = pf.random.uniform(rng_rough, 0.25, 0.45)
-    return leather_handheld_preset(vector, color=base_color, roughness=roughness)
-
-
 def _leather_grain_rand(
     rng: pf.RNG,
     vector: t.SocketOrVal[pf.Vector],
@@ -1195,3 +1134,21 @@ def leather_rand(
         [(_leather_relief_rand, 2.0), (_leather_patina_rand, 1.0)],
     )
     return variant(rng_variant, vector, base_color)
+
+
+def leather_allcolor_color_rand(rng: pf.RNG) -> pf.Color:
+    rng_hue, rng_saturation, rng_value = rng.spawn(3)
+    hue = pf.random.wrap_gaussian(rng_hue, 0.12, 0.16, 0.0, 1.0)
+    saturation = pf.random.clip_gaussian(rng_saturation, 0.8, 0.13, 0.6, 0.97)
+    value = pf.random.uniform(rng_value, 0.0, 1.0)
+    return pf.color.hsv_color(hue=hue, saturation=saturation, value=value)
+
+
+@pf.tracer.grammar
+def leather_allcolor_rand(
+    rng: pf.RNG,
+    vector: t.SocketOrVal[pf.Vector],
+) -> pf.Material:
+    rng_color, rng_leather = rng.spawn(2)
+    base_color = leather_allcolor_color_rand(rng_color)
+    return leather_rand(rng_leather, vector, base_color=base_color)

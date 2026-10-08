@@ -1,7 +1,10 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Alexander Raistrick, Karhan Kayan
+# Authors:
+# - Karhan Kayan, Alexander Raistrick: refactor for Infinigen2
+
+import functools
 
 import numpy as np
 import procfunc as pf
@@ -13,20 +16,20 @@ from infinigen2.util.errors import RejectedScene
 from .util import (
     AcceptPred,
     _place_camera_in_bbox,
-    camera_collision_check,
+    camera_cube_free_space_check,
     total_bbox,
 )
 
 __all__ = [
-    "linear_pan_camera_rand",
-    "monocular_360_camera_rand",
-    "monocular_camera_in_bbox_rand",
-    "orbit_90_camera_rand",
+    "camera_linear_pan_rand",
+    "camera_monocular_360_rand",
+    "camera_monocular_in_bbox_rand",
+    "camera_orbit_90_rand",
 ]
 
 
 @pf.tracer.grammar
-def monocular_camera_in_bbox_rand(
+def camera_monocular_in_bbox_rand(
     rng: pf.RNG,
     objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
@@ -70,12 +73,12 @@ def _linear_pan_attempt(
     max_length: float,
     frame_start: int,
     steps: int,
-    forward_clearance: float,
+    accept_pred: AcceptPred,
 ) -> pf.CameraObject | None:
     """One linear-pan trajectory: a straight segment between two points sampled
     uniformly in the interior box, shortened to `max_length` if it would exceed
     the per-frame speed cap. Sets/checks/keyframes each pose in a single pass;
-    returns None (for retry) the moment a pose fails the collision probe."""
+    returns None (for retry) the moment a pose fails `accept_pred`."""
     height_frac = float(pf.random.clip_gaussian(r, 0.5, 0.2, 0.2, 0.8))
     z = box_lo.z + height_frac * (box_hi.z - box_lo.z)
     lo_z = pf.Vector((box_lo.x, box_lo.y, z))
@@ -98,9 +101,7 @@ def _linear_pan_attempt(
     for t in range(steps + 1):
         loc = start.lerp(end, t / steps)
         pf.ops.object.set_transform(camera, location=loc, rotation_euler=rot)
-        if not camera_collision_check(
-            camera, colliders, forward_clearance=forward_clearance
-        ):
+        if not accept_pred(camera, colliders):
             return None
         camera.item().keyframe_insert("location", frame=frame_start + t)
         camera.item().keyframe_insert("rotation_euler", frame=frame_start + t)
@@ -108,7 +109,7 @@ def _linear_pan_attempt(
 
 
 @pf.tracer.grammar
-def linear_pan_camera_rand(
+def camera_linear_pan_rand(
     rng: pf.RNG,
     objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
@@ -120,12 +121,21 @@ def linear_pan_camera_rand(
     footprint_frac: float = 0.4,
     forward_clearance: float = 0.75,
     max_tries: int = 200,
+    accept_pred: AcceptPred | None = None,
 ) -> list[pf.CameraObject]:
     """Dolly travelling in a straight line between two points drawn uniformly in
     the room interior, at up to `speed` metres/frame, holding a random fixed yaw
-    and slight downward pitch so the scene slides across the view."""
+    and slight downward pitch so the scene slides across the view.
+
+    `accept_pred` replaces the default collision probe as the test every pose
+    along the trajectory must satisfy, so a custom predicate must include any
+    required collision checks."""
     if bbox is None:
         bbox = total_bbox(objects)
+    if accept_pred is None:
+        accept_pred = functools.partial(
+            camera_cube_free_space_check, forward_clearance=forward_clearance
+        )
     bb_lo, bb_hi = bbox
     lo = pf.Vector(tuple(float(v) for v in bb_lo))
     hi = pf.Vector(tuple(float(v) for v in bb_hi))
@@ -163,7 +173,7 @@ def linear_pan_camera_rand(
         max_length=max_length,
         frame_start=frame_start,
         steps=steps,
-        forward_clearance=forward_clearance,
+        accept_pred=accept_pred,
     )
     if result is None:
         raise RejectedScene(
@@ -173,7 +183,7 @@ def linear_pan_camera_rand(
 
 
 @pf.tracer.grammar
-def monocular_360_camera_rand(
+def camera_monocular_360_rand(
     objects: list[pf.MeshObject],
     camera: pf.CameraObject | None = None,
     bbox: tuple[np.ndarray, np.ndarray] | None = None,
@@ -215,7 +225,7 @@ def monocular_360_camera_rand(
 
 
 @pf.tracer.grammar
-def orbit_90_camera_rand(
+def camera_orbit_90_rand(
     objects: list[pf.MeshObject],
     bbox: tuple[np.ndarray, np.ndarray] | None = None,
     frame_start: int = 0,
@@ -237,7 +247,7 @@ def orbit_90_camera_rand(
         center = ((lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2)
         radius = 0.4 * min(hi[0] - lo[0], hi[1] - lo[1])
         height = min(1.5, 0.8 * (hi[2] - lo[2]))
-    return monocular_360_camera_rand(
+    return camera_monocular_360_rand(
         objects=objects,
         center=center,
         radius=radius,

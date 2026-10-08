@@ -14,7 +14,7 @@ from infinigen2.animations.random_walk import random_walk
 from infinigen2.cameras.util import (
     AcceptPred,
     _propose_pose_in_bbox,
-    camera_collision_check,
+    camera_cube_free_space_check,
     pose_and_filter,
     total_bbox,
 )
@@ -22,7 +22,7 @@ from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.util.errors import RejectedScene
 
 __all__ = [
-    "random_walk_camera",
+    "camera_random_walk",
 ]
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def _camera_pose_rand(
     return pose_rand
 
 
-def random_walk_camera(
+def camera_random_walk(
     rng: pf.RNG,
     colliders: ccol.CollisionSet,
     objects: list[pf.MeshObject],
@@ -76,7 +76,7 @@ def random_walk_camera(
 ) -> pf.CameraObject:
     if bbox is None:
         bbox = total_bbox(objects)
-    pred = accept_pred or camera_collision_check
+    pred = accept_pred or camera_cube_free_space_check
     if camera is None:
         camera = pf.ops.primitives.perspective_camera(focal_length_mm=focal_length_mm)
 

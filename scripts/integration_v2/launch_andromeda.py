@@ -72,6 +72,11 @@ CATEGORIES = {
     "objects": (["--categories", "Object"], "OBJECT_LIMIT", "OBJECTS"),
     "scenes": (["--categories", "Scene"], "SCENE_LIMIT", "SCENES"),
     "masks": (["--categories", "Mask"], "MASK_LIMIT", "MASKS"),
+    "displacements": (
+        ["--categories", "Displacement"],
+        "DISPLACEMENT_LIMIT",
+        "DISPLACEMENTS",
+    ),
     "presets": (["--presets"], "PRESET_LIMIT", "PRESETS"),
     "environments": (
         ["--categories", "Environment"],
@@ -417,6 +422,8 @@ def main() -> int:
             name: shard_items(items, slot_count, slot_idx, limits[name])
             for name, items in items_all.items()
         }
+        # launch.sh shards scenes per (scene, seed) so one slow scene's seeds spread across slots
+        shards["scenes"] = shard_items(items_all["scenes"], 1, 0, limits["scenes"])
         counts = " ".join(f"{n}={count_items(s)}" for n, s in shards.items())
         print(f"slot={slot_idx}/{slot_count - 1} gpu={gpu_id} {counts}")
 
@@ -424,6 +431,7 @@ def main() -> int:
         env["CUDA_VISIBLE_DEVICES"] = gpu_id
         env["GPU"] = gpu_id
         env["INTEGRATION_SLOT_INDEX"] = str(slot_idx)
+        env["INTEGRATION_SLOT_COUNT"] = str(slot_count)
         env["RENDER_RUNNER"] = runner
         for name, shard in shards.items():
             env[CATEGORIES[name][2]] = shard

@@ -1,7 +1,8 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Transpiled into procfunc/v2 format by Alexander Raistrick
+# Authors:
+# - Alexander Raistrick: refactor for Infinigen2
 
 import numpy as np
 import procfunc as pf
@@ -355,13 +356,14 @@ def paint_color_rand(
     rng: pf.RNG,
     value: float | None = None,
     saturation: float | None = None,
+    saturation_power: float = 2.0,
 ) -> pf.Color:
     hue = pf.random.uniform(rng, 0.0, 1.0)  # all hues
 
     # folded ramp: ~half white/off-white (sat<=0.05), rest ramps up toward fully saturated
     if saturation is None:
         sat_axis = pf.random.uniform(rng, -1.0, 1.0)
-        saturation = 0.95 * max(0.0, sat_axis) ** 2.0 + pf.random.uniform(
+        saturation = 0.95 * max(0.0, sat_axis) ** saturation_power + pf.random.uniform(
             rng, 0.0, 0.05
         )
     if value is None:

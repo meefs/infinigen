@@ -34,7 +34,8 @@ from infinigen2.exporters.render_error_check.material_attributes import (
 from infinigen2.exporters.render_error_check.material_nodes import (
     MaterialNodeError,
     assert_material_nodes_valid,
-    material_node_issues,
+    normal_input_used,
+    unlinked_texture_vector,
 )
 from infinigen2.exporters.render_error_check.object_transform import (
     SingularTransformError,
@@ -63,7 +64,6 @@ from infinigen2.exporters.render_error_check.uv_coords import (
 )
 
 __all__ = [
-    "SHADER_NODE_COUNT_FAIL",
     "AdaptiveSamplingError",
     "CyclesShaderError",
     "DisplacementCoordError",
@@ -75,26 +75,15 @@ __all__ = [
     "ShaderTooComplexError",
     "SingularTransformError",
     "UVCoordError",
-    "UVLayerInfo",
-    "assert_adaptive_sampling_converged",
-    "assert_displacement_coords_safe",
-    "assert_frames_not_black",
-    "assert_geometry_finite",
-    "assert_material_attributes_present",
-    "assert_material_nodes_valid",
-    "assert_render_objects_visible",
-    "assert_shader_complexity_ok",
-    "assert_transforms_nonsingular",
-    "assert_uv_coords_satisfied",
     "check_material_uv_coords",
-    "configure_sample_count_output",
     "count_material_nodes",
     "detect_cycles_errors",
     "hidden_render_objects",
-    "material_node_issues",
     "missing_attribute_issues",
     "nonfinite_vertex_counts",
+    "normal_input_used",
     "render_validity_check",
     "singular_transform_objects",
+    "unlinked_texture_vector",
     "unsafe_displacement_materials",
 ]

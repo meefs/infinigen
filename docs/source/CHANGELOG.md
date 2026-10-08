@@ -1,5 +1,85 @@
 # CHANGELOG
 
+v2.0.0a3
+
+**Scenes**
+
+- Add living rooms, dining rooms, bedrooms, bathrooms and kitchens as top-level scene generators
+- Add scene setups for beds, bathrooms, desks, dining tables, cocktail tables, sofas, wall storage and kitchens
+- Refactor Infinigen 1 house layouts into furnished three-to-eight-room house scenes for Infinigen 2
+- Add indoor grid scenes for storage, desks, chairs, sofas, dining tables and cocktail tables
+- Add standalone wall scenes for windows, painting grids, board shelves, storage shelves, cubbies, flush storage, doors and full-height windows
+- Add collision-safe rotation variation to furniture arrangements
+- Add collision-aware camera tours through at least three connected rooms in furnished houses
+
+**Objects**
+
+- Add beds with varied frames, headboards, footboards, mattresses, storage bases, pillows and bedside furniture
+- Refactor Infinigen 1 sinks, taps, bathtubs, toilets and wall-mounted bathroom hardware for Infinigen 2
+- Expand storage furniture with open, drawer, single-door, double-door and glazed-door fronts, including cabinets raised on legs
+- Expand desks with plain, integrated-storage, top-storage and side-storage forms
+- Expand dining and occasional furniture with circular tables, storage-bodied coffee and side tables, benches and new dining-chair variations
+- Diversify sofas with real-scale proportions, sectional layouts, raised bases, varied arms, piped cushions and throw pillows
+- Diversify floor, ceiling and table lamps with classic, vase-shaped, straight-leg, pedestal and square bases
+- Refactor Infinigen 1 foliage into simple, broadleaf, ginkgo and maple leaf generators, phyllotactic plants and nursery-scale potted houseplants for Infinigen 2
+- Adapt vessel generators to create ribbed and twisted bowls and cups
+- Add terrain generators for canyons, cliffs, mesas, mountains, rivers and volcanoes
+- Add abstract, cauliflower, crystalline, flat-stone, ridged and natural-rock boulders
+- Expand windows with rounded and rectangular frames, matching wall openings, curtains and shutters
+- Expand doors with handles, glass panels and double-door variants
+- Refactor Infinigen 1 television and monitor generators for Infinigen 2
+- Add rigged humans with procedurally fitted clothing and randomized body, hand, facial and eye-gaze poses
+
+**Materials**
+
+- Refactor Infinigen 1 terrain and environment materials for sandstone, stone, cobblestone, cracked ground, soil, dirt, mud, sand, ice, lava and atmospheric haze for Infinigen 2
+- Add flaked-tile wall finishes with exposed underlayers
+- Refine brick relief so it stays within the wall plane
+- Expand wall-paint colors to darker, more saturated tones
+- Refactor Infinigen 1 procedural graphic designs into tiled wall art for Infinigen 2
+- Add wrinkle effects for fabric, bedding, carpets and rugs
+- Add wrinkle effects for paper
+- Expand upholstery with unified cloth distributions, layered wear and wrinkles, and broader natural-dye leather colors
+- Refine plastic surfaces with scale-aware relief and more visible grayscale grain
+
+**Rendering and export**
+
+- Adopt true displacement as the default and include displacement assets in visual previews
+- Standardize metric UV mapping for furniture and storage
+- Standardize metric UV mapping for lighting
+- Improve UV mapping for bowls and cups
+- Improve UV mapping for handles
+- Improve UV mapping for sinks, taps and bathroom hardware
+- Preserve subdivision on instanced dining chairs
+- Preserve subdivision on wall-mounted objects
+- Preserve distinct object identities in repeated bathroom arrangements
+- Preserve distinct object identities for wall bases
+- Support explicit Cycles backend selection while automatic device selection is enabled
+
+**Performance**
+
+- Reduce peak Cycles memory for a representative furnished room from 11.3 GB to 7.2 GB
+- Eliminate multi-million-face door and handle assemblies while preserving their final shapes
+- Reduce render geometry for furniture, curtains, windows, bowls, cups and flowers while preserving final shapes
+- Limit render jobs to eight Blender CPU threads by default
+- Report base and rendered triangle counts separately and identify the ten largest contributors when scenes exceed their triangle budget
+
+**API and dependencies**
+
+- Require ProcFunc 0.37 and Shapely 2.x
+- Expose common rendering modes and configuration types through the public exporter API
+- Expose render-validation queries and a combined pre-render `render_validity_check`
+- Split material shader-node validation into `normal_input_used` and `unlinked_texture_vector`
+- Return total and per-object geometry estimates for multi-object inputs
+- Standardize procedural mask presets on typed results
+- Preserve complete generator results and object collections during traced scene composition
+
+**Testing and CI**
+
+- Verify trace reproduction across object generators
+- Extend visual regression coverage to procedural displacement
+- Organize live and published visual comparisons by asset category
+
 v2.0.0a2
 
 **Breaking changes and renames**

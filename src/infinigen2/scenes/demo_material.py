@@ -24,6 +24,7 @@ from infinigen2.shaders.dev import developer_grid
 __all__ = [
     "material_banana",
     "material_cube",
+    "material_ground_plane",
     "material_monkey",
     "material_plane_horizontal_uv",
     "material_plane_orthographic",
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 def _demo_sky() -> pf.World:
-    return sky_lighting.nishita_sky(
+    return sky_lighting.sky_nishita(
         sun_rotation_deg=260, sun_elevation_deg=30
     ).environment
 
@@ -162,8 +163,9 @@ def material_plane_horizontal_uv(
     environment: pf.World | None = None,
 ) -> DevSceneResult:
     size = 1
+    surface_z = 0.12
     obj = pf.ops.primitives.mesh_plane(
-        location=t.Vector((0, 0, 0.02)),
+        location=t.Vector((0, 0, surface_z)),
         size=size,
         rotation=t.Euler((0, 0, 0)),
     )
@@ -182,15 +184,67 @@ def material_plane_horizontal_uv(
     plane = grid_plane()
     ref = scale_reference(location=t.Vector((0.65, 0.0, -0.05)))
 
+    # Rests on the undisplaced surface, so displacement reads as burying or exposing it.
+    datum = banana()
+    datum.item().location.xy = (0.0, 0.0)
+    datum_min, _ = pf.ops.attr.bbox_min_max(datum, global_coords=True)
+    datum.item().location.z += surface_z - datum_min[2]
+
     cam = camera_with_distance_framing_objects(
-        [obj], t.Vector((-0.7, -1.0, 1.2)), margin_pct=-0.425
+        [obj], t.Vector((-0.7, -1.0, 0.691)), margin_pct=-0.425
     )
 
     if environment is None:
         environment = _demo_sky()
 
     return DevSceneResult(
-        environment=environment, all_objects=[obj, plane, ref], cameras=[cam]
+        environment=environment, all_objects=[obj, plane, ref, datum], cameras=[cam]
+    )
+
+
+@pf.tracer.grammar
+def material_ground_plane(
+    rng: pf.RNG,
+    material: pf.Material | None = None,
+    environment: pf.World | None = None,
+    size: float = 3.0,
+) -> DevSceneResult:
+    """Ground patch at terrain scale, where position-driven terrain materials are tuned to read."""
+    surface_z = 0.12
+    obj = pf.ops.primitives.mesh_plane(
+        location=t.Vector((0, 0, surface_z)),
+        size=size,
+    )
+
+    uvs = pf.ops.attr.uv_coords(obj)
+    pf.ops.attr.write_uv_coords(obj, uvs * size)
+
+    pf.ops.mesh.subdivide(obj, number_cuts=200)
+    pf.ops.modifier.subdivide_surface(obj, levels=3)
+
+    if material is None:
+        logger.warning("No material provided; using a default material.")
+        material = developer_grid(vector=pf.nodes.shader.coord().uv)
+
+    pf.ops.object.set_material(obj, material=material)
+    plane = grid_plane()
+    ref = scale_reference(location=t.Vector((size * 0.5 + 0.15, 0.0, -0.05)))
+
+    # Rests on the undisplaced surface, so displacement reads as burying or exposing it.
+    datum = banana()
+    datum.item().location.xy = (0.0, 0.0)
+    datum_min, _ = pf.ops.attr.bbox_min_max(datum, global_coords=True)
+    datum.item().location.z += surface_z - datum_min[2]
+
+    cam = camera_with_distance_framing_objects(
+        [obj], t.Vector((-0.7, -1.0, 0.691)), margin_pct=-0.425
+    )
+
+    if environment is None:
+        environment = _demo_sky()
+
+    return DevSceneResult(
+        environment=environment, all_objects=[obj, plane, ref, datum], cameras=[cam]
     )
 
 
@@ -260,7 +314,7 @@ def material_plane_orthographic(
 
     cam = _orthographic_camera_top_down(size=size)
     if environment is None:
-        environment = sky_lighting.nishita_sky().environment
+        environment = sky_lighting.sky_nishita().environment
 
     return DevSceneResult(environment=environment, all_objects=[obj], cameras=[cam])
 

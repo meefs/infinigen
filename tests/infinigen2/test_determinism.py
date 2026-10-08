@@ -117,7 +117,7 @@ def _scene_geometry_signature() -> list[tuple]:
     return sorted(sigs)
 
 
-def _build(pathspec: str, kind: str) -> list[tuple]:
+def _build(pathspec: str, kind: str, room_count: int | None) -> list[tuple]:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     func = import_item(pathspec)
     if kind == "Material":
@@ -126,8 +126,10 @@ def _build(pathspec: str, kind: str) -> list[tuple]:
         )
         plane = pf.ops.primitives.mesh_plane(size=1)
         pf.ops.object.set_material(plane, material=res)
-    else:
+    elif room_count is None:
         func(rng=np.random.default_rng(SEED))
+    else:
+        func(rng=np.random.default_rng(SEED), room_count=room_count)
     return _scene_geometry_signature()
 
 
@@ -150,14 +152,15 @@ def _determinism_params():
             marks = ()
             if short in _DETERMINISM_BLOCKED:
                 marks = pytest.mark.skip(reason=_DETERMINISM_BLOCKED[short])
-            yield pytest.param(name, category, id=short, marks=marks)
+            room_count = 1 if short == "house_furnished_rand" else None
+            yield pytest.param(name, category, room_count, id=short, marks=marks)
 
 
-@pytest.mark.parametrize("pathspec, kind", _determinism_params())
-def test_generator_determinism(pathspec, kind):
-    first = _build(pathspec, kind)
+@pytest.mark.parametrize("pathspec, kind, room_count", _determinism_params())
+def test_generator_determinism(pathspec, kind, room_count):
+    first = _build(pathspec, kind, room_count)
     assert first, f"{pathspec}: produced no mesh geometry"
-    second = _build(pathspec, kind)
+    second = _build(pathspec, kind, room_count)
     assert first == second, (
         f"{pathspec}: geometry differs between two builds of seed {SEED} "
         f"(nondeterministic generation)"

@@ -54,7 +54,10 @@ from infinigen2.exporters.util.format import (
 from infinigen2.exporters.util.blender_render import DisplacementMode
 from infinigen2 import GENERATORS_MANIFEST
 from infinigen2.cameras import camera_with_distance_framing_objects
-from infinigen2.exporters.realize_mesh import realize_scene
+from infinigen2.exporters.realize_mesh import (
+    bake_shared_modifier_prefixes,
+    realize_scene,
+)
 from procfunc.util.manifest import import_item
 from procfunc.util.teardown import skip_teardown_on_exit
 from infinigen2.util.hardware_info import get_hardware_info
@@ -162,7 +165,7 @@ def get_parser():
         "--displacement_mode",
         type=str,
         choices=[m.name for m in DisplacementMode],
-        default=DisplacementMode.DISPLACEMENT_AND_BUMP.name,
+        default=DisplacementMode.DISPLACEMENT.name,
     )
     parser.add_argument(
         "--trace",
@@ -192,6 +195,12 @@ def get_parser():
         type=int,
         default=1024,
         help="Number of samples for the rendering",
+    )
+    parser.add_argument(
+        "--cpu_threads",
+        type=int,
+        default=8,
+        help="Number of CPU threads Blender may use",
     )
     parser.add_argument(
         "--focal_length_mm",
@@ -265,6 +274,7 @@ _FALLBACK_CATEGORY_SEARCH_STRINGS = [
     ("Exporter", "exporters"),
     ("Material", "materials"),
     ("Mask", "masks"),
+    ("Displacement", "displacements"),
     ("Material", "shaders.composites"),
 ]
 
@@ -285,7 +295,7 @@ def _resolve_generator(name: str) -> tuple[Callable, str]:
 
     presets = {n.rsplit(".", 1)[-1]: n for n in list_command.preset_dotted_names()}
     if name in presets:
-        return import_item(presets[name]), "Material"
+        return import_item(presets[name]), list_command.preset_categories()[name]
 
     category = next(
         (
@@ -330,7 +340,18 @@ def _cleanup_except_returnvals(return_data: dict) -> list[str]:
     valid_objects.extend(return_data.get("curves", []))
     if "obj" in return_data:
         valid_objects.append(return_data["obj"])
-    valid_objects = [o.item() for o in valid_objects]
+    visible_objects = [o.item() for o in valid_objects]
+    visible_objects = {
+        child for root in visible_objects for child in (root, *root.children_recursive)
+    }
+    colliders = return_data.get("colliders")
+    collider_objects = [] if colliders is None else [o.item() for o in colliders.objs]
+    collider_objects = {
+        child for root in collider_objects for child in (root, *root.children_recursive)
+    }
+    for asset in collider_objects - visible_objects:
+        asset.hide_render = True
+    valid_objects = visible_objects | collider_objects
 
     cleaned = []
     for asset in bpy.data.objects:
@@ -342,56 +363,7 @@ def _cleanup_except_returnvals(return_data: dict) -> list[str]:
     return cleaned
 
 
-def _tight_world_bbox(obj: pf.MeshObject) -> tuple[np.ndarray, np.ndarray]:
-    """Tight world-space bbox from evaluated vertices. bbox_min_max(global_coords=True)
-    is the local AABB transformed by matrix_world, which inflates rotated objects."""
-    item = obj.item()
-    eval_obj = item.evaluated_get(bpy.context.evaluated_depsgraph_get())
-    mesh = eval_obj.to_mesh()
-    n = len(mesh.vertices)
-    mat = np.array(item.matrix_world)
-    if n == 0:
-        eval_obj.to_mesh_clear()
-        local = np.array(item.bound_box)
-    else:
-        local = np.empty(n * 3)
-        mesh.vertices.foreach_get("co", local)
-        eval_obj.to_mesh_clear()
-        local = local.reshape(-1, 3)
-    world = (mat[:3, :3] @ local.T).T + mat[:3, 3]
-    return world.min(0), world.max(0)
-
-
-def _bounds(objects: list[pf.MeshObject]) -> tuple[np.ndarray, np.ndarray]:
-    mins, maxs = zip(*[_tight_world_bbox(o) for o in objects], strict=True)
-    return np.minimum.reduce(mins), np.maximum.reduce(maxs)
-
-
-def _centroid_camera(
-    objects: list[pf.MeshObject],
-    frac: pf.Vector,
-    footprint: pf.MeshObject | None = None,
-) -> pf.CameraObject:
-    z_min, z_max = _bounds(objects)
-    xy_min, xy_max = _bounds([footprint]) if footprint is not None else (z_min, z_max)
-    lo = np.array([xy_min[0], xy_min[1], z_min[2]])
-    hi = np.array([xy_max[0], xy_max[1], z_max[2]])
-    extent = hi - lo
-    loc = pf.Vector(lo + extent * np.array(frac))
-    # Aim at the scene centroid, biased low so the floor and furniture stay in frame
-    target = pf.Vector(lo + extent * np.array((0.5, 0.5, 0.35)))
-    rotation_euler = (target - loc).to_track_quat("-Z", "Y").to_euler()
-    camera = pf.ops.primitives.perspective_camera()
-    pf.ops.object.set_transform(camera, loc, rotation_euler)
-    camera.item().name = "Camera"
-    camera.item().data.lens = 20
-    return camera
-
-
 def _dummy_camera(data: dict) -> pf.CameraObject:
-    floor = data.get("floor")
-    if floor is not None:
-        return _centroid_camera(data["objects"], (0.2, 0.2, 0.5), footprint=floor)
     camera = camera_with_distance_framing_objects(
         data["objects"], pf.Vector((1, 1, 0.4)), margin_pct=0.05, use_bbox=True
     )
@@ -435,6 +407,17 @@ def _build_func_resolution_map(toplevel_graph) -> tuple[dict, list[str]]:
         toplevel_graph, skip_funcs=set(func_resolution.keys())
     )
     func_resolution.update(default_resolution)
+
+    specs = [toplevel_graph.outputs.spec]
+    while specs:
+        spec = specs.pop()
+        specs.extend(spec.items)
+        if spec.container is None or spec.container in func_resolution:
+            continue
+        module = spec.container.__module__
+        name = spec.container.__name__
+        import_lines.append(f"from {module} import {name}")
+        func_resolution[spec.container] = name
 
     return func_resolution, import_lines
 
@@ -502,11 +485,17 @@ def _execute_step(
 
     result = generator_func(**step_kwargs)
 
-    if pf.context.globals.current_trace_level is not None:
-        varname = generator_func.__name__.removesuffix("_rand")
-        for name, val in pf.util.pytree.PyTree(result).items():
-            if isinstance(val, pf.compute_graph.Proxy):
-                val.node.metadata["varname"] = f"{varname}_{name}" if name else varname
+    if pf.context.globals.current_trace_level is None:
+        return result
+
+    varname = generator_func.__name__.removesuffix("_rand")
+    for name, val in pf.util.pytree.PyTree(result).items():
+        if not isinstance(val, pf.compute_graph.Proxy):
+            continue
+        node_varname = f"{varname}_{name}" if name else varname
+        val.node = val.node._replace(
+            metadata={**val.node.metadata, "varname": node_varname}
+        )
 
     return result
 
@@ -534,8 +523,6 @@ def _unpack_scene(result, data: dict):
         data["curve"] = curves[0]
     if hasattr(result, "colliders"):
         data["colliders"] = result.colliders
-    if getattr(result, "floor", None) is not None:
-        data["floor"] = result.floor
     if getattr(result, "dimensions", None) is not None:
         data["dimensions"] = result.dimensions
         dims = result.dimensions
@@ -554,6 +541,12 @@ def _unpack_by_category(category: str, result, data: dict):
             data["material"] = pf.Material(
                 surface=pf.nodes.shader.diffuse_bsdf(color=result.mask)
             )
+        case "Displacement":
+            data["displacement"] = result
+            data["material"] = pf.Material(
+                surface=pf.nodes.shader.diffuse_bsdf(color=(0.35, 0.3, 0.25, 1.0)),
+                displacement=result,
+            )
         case "Object":
             data["obj"] = result.mesh
             data["objects"].append(result.mesh)
@@ -571,6 +564,15 @@ def _unpack_by_category(category: str, result, data: dict):
             data["cameras"] = result if isinstance(result, list) else [result]
         case _:
             raise ValueError(f"Unknown category: {category}")
+
+
+def _finalize_before_export(
+    pipeline_parameters: dict, objects: list[pf.MeshObject]
+) -> None:
+    bake_shared_modifier_prefixes(objects)
+    mode = pipeline_parameters.get("displacement_mode")
+    if mode == DisplacementMode.REALIZE_MESH:
+        realize_scene()
 
 
 def execute_generators(
@@ -611,15 +613,8 @@ def execute_generators(
 
         logger.info(f"Executing {generator_str} as {generator_func.__name__}")
 
-        if (
-            category == "Exporter"
-            and not realized
-            and (
-                pipeline_parameters.get("displacement_mode")
-                == DisplacementMode.REALIZE_MESH
-            )
-        ):
-            realize_scene()
+        if category == "Exporter" and not realized:
+            _finalize_before_export(pipeline_parameters, data["objects"])
             realized = True
 
         if category == "Exporter":
@@ -665,7 +660,7 @@ def execute_generators(
                 continue
             mesh = item.data
             base_tris += len(mesh.loops) - 2 * len(mesh.polygons)
-        subdiv_tris = sum(estimated_eval_tricount(obj) for obj in objects)
+        subdiv_tris, _ = estimated_eval_tricount(objects)
     except Exception as e:
         logger.warning(f"Could not count triangles for render metrics: {e}")
         base_tris, subdiv_tris = 0, 0
@@ -745,6 +740,14 @@ def _main():  # noqa: C901
     rng = np.random.default_rng(seed)
     pf.ops.object.clear_scene()
 
+    if args.cpu_threads > 0:
+        bpy.context.scene.render.threads_mode = "FIXED"
+        bpy.context.scene.render.threads = args.cpu_threads
+    logger.info(
+        "Blender render threads: %s (%s mode)",
+        bpy.context.scene.render.threads,
+        bpy.context.scene.render.threads_mode,
+    )
     bpy.context.scene.render.resolution_x = args.resolution[0]
     bpy.context.scene.render.resolution_y = args.resolution[1]
     if args.fps is not None:
@@ -809,6 +812,7 @@ def _main():  # noqa: C901
     generator_times = results.get("generator_times", {})
 
     if args.save_blend:
+        bake_shared_modifier_prefixes(results["objects"])
         for l in [
             bpy.data.objects,
             bpy.data.materials,

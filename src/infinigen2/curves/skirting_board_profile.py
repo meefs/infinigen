@@ -1,7 +1,9 @@
 # Copyright (C) 2024, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Yiming Zuo, Lingjie Mei, Alexander Raistrick
+# Authors:
+# - Yiming Zuo, Lingjie Mei, and Alexander Raistrick: original Infinigen skirting board (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/objects/wall_decorations/skirting_board.py)
+# - Alexander Raistrick: refactor for Infinigen2
 
 import procfunc as pf
 from procfunc.nodes import types as t
@@ -246,7 +248,7 @@ def skirting_profile_rand(
     if height is None:
         height = pf.random.uniform(rng, 0.07, 0.20)
     if width is None:
-        width = height * pf.random.uniform(rng, 0.3, 0.6)
+        width = height * pf.random.uniform(rng, 0.15, 0.3)
     if fillet_vertices is None:
         fillet_vertices = pf.control.choice(rng, [(1, 0.3), (4, 0.7)])
     if fillet_radius is None:

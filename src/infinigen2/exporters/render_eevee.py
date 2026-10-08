@@ -39,7 +39,6 @@ from infinigen2.util.camera_projection import adjust_camera_sensor
 
 __all__ = [
     "RenderEeveeParams",
-    "configure_eevee_params",
     "render_eevee",
     "render_eevee_ground_truth",
 ]

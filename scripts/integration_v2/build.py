@@ -49,6 +49,7 @@ HTACCESS = """Options -Indexes
 ROBOTS = """User-agent: *
 Disallow: /changes/v2.0.0a1/
 Disallow: /changes/v2.0.0a2/
+Disallow: /changes/v2.0.0a3/
 """
 
 

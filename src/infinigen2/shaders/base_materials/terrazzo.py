@@ -1,7 +1,9 @@
 # Copyright (C) 2025, Princeton University.
 # This source code is licensed under the BSD 3-clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Karhan Kayan
+# Authors:
+# - Karhan Kayan
+
 # Acknowledgment: This file draws inspiration
 # from https://www.youtube.com/watch?v=ggYnU1iOMUc
 # by Ryan King Art
@@ -13,16 +15,9 @@ import procfunc as pf
 from procfunc.nodes import types as t
 
 __all__ = [
-    "random_base_color",
-    "random_brown_color",
-    "random_grayscale_color",
     "terrazzo_black_monocolor_rand",
     "terrazzo_black_multicolor_rand",
-    "terrazzo_monocolor",
-    "terrazzo_monocolor_node",
     "terrazzo_monocolor_rand",
-    "terrazzo_multicolor",
-    "terrazzo_multicolor_node",
     "terrazzo_multicolor_rand",
     "terrazzo_rand",
 ]

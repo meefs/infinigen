@@ -2,8 +2,8 @@
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
 # Authors:
-# - Yiming Zuo: original Infinigen v1 nodegroup (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/assets/materials/wood/wood.py)
-# - Alexander Raistrick: transpile to procfunc/v2
+# - Alexander Raistrick: refactor for Infinigen2
+
 # Acknowledgement: This file draws inspiration https://www.youtube.com/watch?v=jDEijCwz6to by Lachlan Sarv
 
 from typing import NamedTuple
@@ -15,16 +15,11 @@ from procfunc.nodes import types as t
 from infinigen2.shaders.util.coord import coord_warp
 
 __all__ = [
-    "WoodGrainGeneratorResult",
-    "WoodShaderResult",
-    "wood_color_rand",
     "wood_grain_blonde_preset",
     "wood_grain_brown_preset",
     "wood_grain_deck_preset",
     "wood_grain_flaky_preset",
     "wood_grain_flaky_rand",
-    "wood_grain_generator",
-    "wood_grain_generator_rand",
     "wood_grain_rand",
     "wood_grain_rings_dark_preset",
     "wood_grain_rings_soft_preset",
@@ -32,8 +27,6 @@ __all__ = [
     "wood_grain_solid_preset",
     "wood_grain_stained_preset",
     "wood_grain_varnished_preset",
-    "wood_shader",
-    "wood_shader_rand",
 ]
 
 

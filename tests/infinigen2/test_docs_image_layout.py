@@ -1,7 +1,8 @@
+import ast
 import importlib.util
 import re
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONF = REPO_ROOT / "docs" / "source" / "conf.py"
@@ -11,7 +12,9 @@ _OUTPUT_RE = re.compile(r"--output \$OUTPUT_PATH/(\S+)")
 _SHELL_SUBS = (
     ("{}", r"[A-Za-z0-9_]+"),
     ("$sn", r"[A-Za-z0-9_]+"),
-    ("$CAM_SCENE", "livingroom_rand"),
+    ("$CAM_SCENE", "room_livingroom_rand"),
+    ("$demo_slug", r"[A-Za-z0-9_]+"),
+    ("$renderer_slug", r"[A-Za-z0-9_]+"),
     ("$disp", r"[A-Za-z0-9_]+"),
     ("$i", r"\d+"),
 )
@@ -62,6 +65,48 @@ def test_preset_images_point_at_directory_launch_sh_renders() -> None:
     assert _matches_any(directory, _launch_dir_patterns())
 
 
+def test_manifest_presets_render_under_owning_generator() -> None:
+    conf = _load_conf()
+    parent = "infinigen2.shaders.base_materials.carpet.carpet_rand"
+    lines = []
+    conf._inject_images(None, "function", parent, None, None, lines)
+    text = "\n".join(lines)
+    assert ".. rubric:: Presets" in text
+    assert "carpet_noisy_preset" in text
+
+
+def _module_exports(path: Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        is_all = isinstance(node, ast.Assign) and any(
+            isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets
+        )
+        if is_all:
+            return ast.literal_eval(node.value)
+    return []
+
+
+def test_manifest_presets_are_public_module_exports() -> None:
+    conf = _load_conf()
+    for parent, presets in conf._PRESETS_BY_PARENT.items():
+        module = parent.rsplit(".", 1)[0]
+        path = REPO_ROOT / "src" / Path(*module.split(".")).with_suffix(".py")
+        exports = _module_exports(path)
+        missing = [preset.rsplit(".", 1)[-1] for preset in presets]
+        missing = [preset for preset in missing if preset not in exports]
+        assert not missing, f"{path.relative_to(REPO_ROOT)} does not export {missing}"
+
+
+def test_manifest_presets_skip_standalone_autodoc_members() -> None:
+    conf = _load_conf()
+    for presets in conf._PRESETS_BY_PARENT.values():
+        preset = presets[0]
+        module, name = preset.rsplit(".", 1)
+        obj = SimpleNamespace(__module__=module)
+        skip = conf._skip_imported(None, "function", name, obj, False, None)
+        assert skip is True
+
+
 def test_still_and_trajectory_media_names() -> None:
     conf = _load_conf()
     for name in conf._IMAGE_COUNTS:
@@ -81,3 +126,32 @@ def test_published_urls_are_versioned_webp() -> None:
             assert url.startswith(f"{conf.IMAGE_URL_BASE}/{conf.VERSION_SLUG}/")
             assert not url.endswith(".png")
             assert url.endswith(".webp") or url.endswith(".mp4")
+
+
+def test_docs_commands_use_manifest_integration_override() -> None:
+    conf = _load_conf()
+    name = "infinigen2.shaders.displacements.masonry.masonry_displacement_rand"
+    command = conf._replicate_command("Displacement", name, 0)
+    assert command.startswith(
+        "infinigen2 masonry_displacement_rand material_plane_uv render_cycles "
+    )
+    assert conf._archive_rel(name, 0).startswith(
+        "displacement-masonry_displacement_rand-planeuv-cycles-0/"
+    )
+
+
+def test_docs_commands_use_category_default_without_override() -> None:
+    conf = _load_conf()
+    name = "infinigen2.shaders.base_materials.fabric.fabric_rand"
+    command = conf._replicate_command("Material", name, 0)
+    assert command.startswith("infinigen2 fabric_rand material_cube render_cycles ")
+    assert "--displacement_mode DISPLACEMENT " in command
+
+
+def test_docs_preset_commands_inherit_owner_integration_geometry() -> None:
+    conf = _load_conf()
+    name = "infinigen2.shaders.composites.bricks.bricks_masonry_brown_preset"
+    command = conf._replicate_command("Material", name, 0)
+    assert command.startswith(
+        "infinigen2 bricks_masonry_brown_preset material_plane_uv render_cycles "
+    )

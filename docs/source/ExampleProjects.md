@@ -42,13 +42,13 @@ sbatch examples/flying_indoor/sbatch.sh
 
 💡 Edit the hardcoded `SCRATCH_DIR` (node-local scratch) and `FINAL_DIR` (permanent storage) at the top of `sbatch.sh` to suit your cluster, size `--array` as `N_SCENES * NUM_TRAJECTORIES * 2`, and adjust `--partition`/`--account`/other SLURM configs.
 
-## panning video of clay-material scenes [[source]](https://github.com/princeton-vl/infinigen/blob/main/examples/render_clay_pan_video.py)
+## panning video of clay-material scenes [[source]](https://github.com/princeton-vl/infinigen/blob/main/examples/clay_orbit/render.py)
 
-A linear camera pan of a livingroom, rendered in several passes: clay, ambient occlusion, rgb, and ground truth.
+A linear camera pan of a livingroom, diningroom, bedroom, bathroom, kitchen or indoor space (`--scene_type`), rendered in several passes: clay, ambient occlusion, rgb, and ground truth.
 
 ```bash
-wget https://raw.githubusercontent.com/princeton-vl/infinigen/main/examples/render_clay_pan_video.py
-uv run python render_clay_pan_video.py --seed 0 --output outputs/clay_pan_video
+wget https://raw.githubusercontent.com/princeton-vl/infinigen/main/examples/clay_orbit/render.py
+uv run python render.py --scene_type livingroom --seed 0 --output outputs/clay_pan_video
 ```
 
 Each pass writes `%c/<name>-%f.png` under `--output` (`%c` = camera, `%f` = frame):

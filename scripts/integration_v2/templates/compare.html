@@ -574,6 +574,11 @@
             min-width: 0;
         }
 
+        .source-asset-name {
+            font-weight: bold;
+            padding-bottom: 4px;
+        }
+
         body[data-mode="toggle"] .header-row {
             display: block;
             padding: 8px;
@@ -655,6 +660,7 @@
                 <div class="filter-section-title">Asset Types:</div>
                 <div class="filter-group">
                     <label><input type="checkbox" class="filter-checkbox" data-filter-type="asset_type" data-filter-value="material" checked> Materials</label>
+                    <label><input type="checkbox" class="filter-checkbox" data-filter-type="asset_type" data-filter-value="displacement" checked> Displacements</label>
                     <label><input type="checkbox" class="filter-checkbox" data-filter-type="asset_type" data-filter-value="object" checked> Objects</label>
                     <label><input type="checkbox" class="filter-checkbox" data-filter-type="asset_type" data-filter-value="scene" checked> Scenes</label>
                 </div>
@@ -704,7 +710,7 @@
                     </label>
                 </div>
                 <div class="asset-filter-grid" id="asset-filter-grid">
-                    {% for row in rows %}
+                    {% for row in rows|sort(attribute="asset", case_sensitive=false) %}
                     <label class="asset-checkbox-wrapper"
                            data-asset="{{ row.asset }}"
                            data-asset-type="{{ row.asset_type }}"
@@ -735,6 +741,7 @@
             <div class="version-layers">
             {% for obj in row.objects %}
             <div class="version-layer {% if loop.index0 == 0 %}active{% endif %}" data-version="{{ obj.version }}">
+                <div class="source-asset-name">{{ obj.source_asset or "Not rendered" }}</div>
                 <div class="object-metrics">Render metrics{{ metrics_inline(obj.metrics) }}</div>
                 {{ sections(obj) }}
             </div>

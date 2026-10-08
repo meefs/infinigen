@@ -10,10 +10,13 @@ import numpy as np
 import procfunc as pf
 
 from infinigen2.scenes.placement import collision as ccol
+from infinigen2.util.instance import instances_on_line
+from infinigen2.util.scene_cleanup import delete_object
 
 __all__ = [
     "distribute_in_bbox",
     "duplicates",
+    "instances_along_line",
     "propagate_modifiers_to_instances",
 ]
 
@@ -60,6 +63,27 @@ def propagate_modifiers_to_instances(
             raise ValueError(f"alias mesh stem {stem!r} matches no template")
         for mod in template.item().modifiers:
             _copy_modifier(mod, inst.item())
+
+
+def instances_along_line(
+    instance: pf.MeshObject,
+    parent: pf.MeshObject,
+    start: pf.Vector,
+    end: pf.Vector,
+    count: int,
+    rotation: pf.Euler = (0.0, 0.0, 0.0),
+) -> list[pf.MeshObject]:
+    """``count`` aliases of ``instance`` centred in equal slots from ``start`` to
+    ``end``, given in ``parent``'s local frame. Consumes ``instance``."""
+    instances = instances_on_line(instance, start, end, count, rotation)
+    parent_info = pf.nodes.geo.object_info(parent)
+    posed = pf.nodes.geo.transform(
+        instances, translation=parent_info.location, rotation=parent_info.rotation
+    )
+    aliases = pf.nodes.to_aliases(posed)
+    propagate_modifiers_to_instances([instance], aliases)
+    delete_object(instance.item())
+    return aliases
 
 
 def _compute_grid_locations(

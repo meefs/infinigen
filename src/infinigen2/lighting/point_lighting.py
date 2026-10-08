@@ -12,8 +12,8 @@ from infinigen2.scenes.placement.distribute import distribute_in_bbox
 
 __all__ = [
     "ColoredLightsResult",
-    "floating_colored_lights_rand",
-    "point_lamp_colored_rand",
+    "lights_floating_colored_rand",
+    "lights_point_colored_rand",
 ]
 
 
@@ -23,7 +23,7 @@ class ColoredLightsResult(NamedTuple):
 
 
 @pf.tracer.grammar
-def point_lamp_colored_rand(
+def lights_point_colored_rand(
     rng: pf.RNG,
     energy: float,
     color: tuple[float, float, float] | None = None,
@@ -48,7 +48,7 @@ def _dark_environment() -> pf.World:
 
 
 @pf.tracer.grammar
-def floating_colored_lights_rand(
+def lights_floating_colored_rand(
     rng: pf.RNG,
     bbox: tuple[np.ndarray, np.ndarray] | None = None,
     n_lights: int | None = None,
@@ -70,7 +70,7 @@ def floating_colored_lights_rand(
 
     lights = []
     for i in range(n_lights):
-        light = point_lamp_colored_rand(
+        light = lights_point_colored_rand(
             light_rngs[i], energy=float(fractions[i] * total_wattage)
         )
         light.item().name = f"colored_light.{i:02d}"

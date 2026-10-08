@@ -1,7 +1,8 @@
 # Copyright (C) 2026, Princeton University.
 # This source code is licensed under the BSD 3-Clause license found in the LICENSE file in the root directory of this source tree.
 
-# Authors: Alexander Raistrick
+# Authors:
+# - Alexander Raistrick: refactor for Infinigen2
 
 import procfunc as pf
 
@@ -13,7 +14,7 @@ from infinigen2.shaders.masks.cracks import (
 )
 
 __all__ = [
-    "cracked_paint_overlay_rand",
+    "paint_cracked_overlay_rand",
     "paint_overlay_rand",
 ]
 
@@ -48,7 +49,7 @@ def _paint_weartear_flakes(
         color=pf.Color((0.029, 0.022, 0.019)),
     )
     surface = pf.nodes.shader.mix_shader(
-        factor=wear_and_tear_result,
+        factor=wear_and_tear_result.mask,
         a=surface_1,
         b=paint_result.surface,
     )
@@ -58,7 +59,7 @@ def _paint_weartear_flakes(
         midlevel=0.0,
     )
     displacement = pf.nodes.math.mix(
-        factor=wear_and_tear_result,
+        factor=wear_and_tear_result.mask,
         a=displacement_1,
         b=paint_result.displacement,
     )
@@ -68,7 +69,7 @@ def _paint_weartear_flakes(
     )
 
 
-def cracked_paint_overlay_rand(
+def paint_cracked_overlay_rand(
     rng: pf.RNG,
     vector: pf.ProcNode[pf.Vector],
     material: pf.Material,

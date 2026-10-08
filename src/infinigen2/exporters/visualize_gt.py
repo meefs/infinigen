@@ -11,10 +11,23 @@ from infinigen2.exporters.visualize_gt_boxes import visualize_object_boxes
 from infinigen2.exporters.visualize_gt_passes import (
     VISUALIZATION_FUNCS,
     visualize_any_frametype,
+    visualize_bw,
+    visualize_depth,
+    visualize_flow,
+    visualize_normals,
+    visualize_seg_mask,
+    visualize_uniq_inst,
 )
 
 __all__ = [
+    "visualize_bw",
+    "visualize_depth",
+    "visualize_flow",
     "visualize_gt",
+    "visualize_normals",
+    "visualize_object_boxes",
+    "visualize_seg_mask",
+    "visualize_uniq_inst",
 ]
 
 logger = logging.getLogger(__name__)
