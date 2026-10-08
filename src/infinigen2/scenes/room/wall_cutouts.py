@@ -65,6 +65,7 @@ def _subdivide_rounded_cutout(
     mesh: pf.ProcNode[pf.MeshObject],
     threshold_degrees: float,
     sharp_edges: t.SocketOrVal[bool] = False,
+    levels: int = ROOM_SUBSURF_LEVELS,
 ) -> pf.MeshObject:
     """Crease folds and corners only, so arch edge chains subdivide into curves."""
     creased = mesh_util.crease_sharp(mesh, threshold_degrees=threshold_degrees)
@@ -79,7 +80,7 @@ def _subdivide_rounded_cutout(
     obj = pf.nodes.to_mesh_object(creased)
     pf.ops.modifier.subdivide_surface(
         obj,
-        levels=ROOM_SUBSURF_LEVELS,
+        levels=levels,
         boundary_smooth="PRESERVE_CORNERS",
         _skip_apply=True,
     )
@@ -98,6 +99,18 @@ def _outline_corner(corner_degrees: t.SocketOrVal[float]) -> pf.ProcNode[bool]:
     turn_cos = pf.nodes.math.vector_dot_product(a=incoming, b=outgoing)
     corner_cos = pf.nodes.math.cos(pf.nodes.math.deg_to_rad(corner_degrees))
     return pf.nodes.func.less_than(a=turn_cos, b=corner_cos)
+
+
+@pf.nodes.node_function
+def _split_long_segments(
+    curve: pf.ProcNode[pf.CurveObject], max_length: t.SocketOrVal[float]
+) -> pf.ProcNode[pf.CurveObject]:
+    position = pf.nodes.geo.input_position()
+    next_index = pf.nodes.geo.offset_point_in_curve(offset=1).point_index
+    next_position = pf.nodes.geo.field_at_index(value=position, index=next_index)
+    length = pf.nodes.math.vector_distance(position, next_position)
+    cuts = pf.nodes.math.maximum(pf.nodes.math.ceil(length / max_length) - 1.0, 0.0)
+    return pf.nodes.geo.subdivide_curve(curve, cuts=cuts.astype(dtype=int))
 
 
 @pf.nodes.node_function
@@ -377,6 +390,7 @@ def cutout_trim_rand(
         width = height * pf.random.uniform(rng, 0.2, 0.5)
         profile_curve = trim_profile_rand(rng, width=width, height=height)
     curve_geo = pf.nodes.geo.object_info(trim_edges).geometry
+    curve_geo = _split_long_segments(curve_geo, max_length=0.025)
     marked = pf.nodes.geo.capture_attribute(
         geometry=curve_geo,
         ring=pf.nodes.geo.input_index().astype(dtype=float),
@@ -387,7 +401,7 @@ def cutout_trim_rand(
     trim = pf.nodes.geo.flip_faces(trim)
     corner_edges = _corner_ring_edges(ring=marked.ring, is_corner=marked.is_corner)
     obj = _subdivide_rounded_cutout(
-        trim, threshold_degrees=35.0, sharp_edges=corner_edges
+        trim, threshold_degrees=35.0, sharp_edges=corner_edges, levels=1
     )
     pf.ops.object.set_transform(
         obj, trim_edges.item().location, trim_edges.item().rotation_euler

@@ -166,13 +166,15 @@ def _add_image_key(
 
 
 def _baseline_image_index(
-    events: list[dict], aliases: dict[str, str]
+    events: list[dict], aliases: dict[str, str], variant_aliases: dict[str, str]
 ) -> dict[tuple[str, str, str, str], str]:
     index: dict[tuple[str, str, str, str], str] = {}
     event_images: dict[tuple[str, str], list[str]] = {}
     for event in events:
         name = _canonical_name(event, aliases)
-        variant = _event_variant(event)
+        variant = manifest_aliases.canonical_variant(
+            _event_variant(event), variant_aliases
+        )
         for image in _still_images(event):
             event_images.setdefault((name, variant), []).append(image)
             _add_image_key(index, (name, variant, "path", image), image)
@@ -189,10 +191,11 @@ def _matching_baseline_image(
     event: dict,
     image: str,
     aliases: dict[str, str],
+    variant_aliases: dict[str, str],
     index: dict[tuple[str, str, str, str], str],
 ) -> str | None:
     name = _canonical_name(event, aliases)
-    variant = _event_variant(event)
+    variant = manifest_aliases.canonical_variant(_event_variant(event), variant_aliases)
     local = _relative_to_asset_dir(event, image)
     if local is not None:
         match = index.get((name, variant, "asset", local))
@@ -221,13 +224,13 @@ def compare_pixel(pr_root: Path, base_root: Path) -> dict:
     base_events = list(_events(base_root))
     pr_applied = _applied_aliases(aliases, pr_events)
     base_applied = _applied_aliases(aliases, base_events)
-    baseline_images = _baseline_image_index(base_events, base_applied)
+    baseline_images = _baseline_image_index(base_events, base_applied, aliases)
     for event in pr_events:
         for rel in _still_images(event):
             baseline_rel = rel if (base_root / rel).exists() else None
             if baseline_rel is None:
                 baseline_rel = _matching_baseline_image(
-                    event, rel, pr_applied, baseline_images
+                    event, rel, pr_applied, aliases, baseline_images
                 )
             results.append(
                 _pixel_result(event, pr_root, base_root, rel, baseline_rel, pr_applied)

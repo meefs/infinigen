@@ -69,6 +69,8 @@ def _nishita_sky(
         )
     else:
         sky_texture = pf.nodes.texture.sky_texture_nishita(
+            sun_elevation=np.deg2rad(sun_elevation_deg),
+            sun_rotation=np.deg2rad(sun_rotation_deg),
             altitude=altitude,
             air_density=air_density,
             dust_density=dust_density,

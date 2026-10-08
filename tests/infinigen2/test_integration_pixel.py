@@ -108,6 +108,35 @@ def test_pixel_diff_flags_changed_renamed_generator(tmp_path: Path) -> None:
     assert report["results"][0]["asset"] == "table_circle_rand"
 
 
+def _write_camera_run(root: Path, name: str, scene: str) -> Path:
+    run = root / name
+    events = run / "render_index" / "events"
+    events.mkdir(parents=True)
+    asset_dir = f"camera-{scene}-workbench-traj0"
+    image = f"{asset_dir}/0000.png"
+    (run / asset_dir).mkdir()
+    Image.new("RGB", (4, 4), (24, 48, 72)).save(run / image)
+    event = {
+        "generator": "camera_monocular_in_bbox_rand",
+        "variant_key": f"{scene}-workbench-traj0",
+        "asset_dir": asset_dir,
+        "images": [image],
+    }
+    (events / "render.json").write_text(json.dumps(event))
+    return run
+
+
+def test_pixel_diff_pairs_renamed_generator_inside_variant(tmp_path: Path) -> None:
+    base = _write_camera_run(tmp_path, "base", "circle_table_rand")
+    pr = _write_camera_run(tmp_path, "pr", "table_circle_rand")
+    _write_alias_manifest(pr)
+
+    report = baseline_diff.compare_pixel(pr, base)
+
+    assert report["missing_count"] == 0
+    assert report["fail_count"] == 0
+
+
 def test_pixel_diff_without_alias_keeps_literal_paths(tmp_path: Path) -> None:
     base = _write_renamed_run(tmp_path, "base", "circle_table_rand", (24, 48, 72))
     pr = _write_renamed_run(tmp_path, "pr", "table_circle_rand", (24, 48, 72))
