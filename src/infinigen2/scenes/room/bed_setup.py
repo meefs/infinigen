@@ -16,7 +16,6 @@ from infinigen2.scenes.placement.snap import snap_to_plane
 from infinigen2.scenes.setup_utils import (
     BareMeshResult,
     MeshResult,
-    back_face_grounded,
     clear_of,
     retry_place,
     snap_back_front,
@@ -112,13 +111,11 @@ def _place_bed_against_wall(
     colliders: collision.CollisionSet,
     furniture: Sequence[pf.MeshObject],
 ) -> MeshResult | None:
-    margin = pf.random.uniform(rng, 0.0254, 0.127)
+    margin = pf.random.uniform(rng, 0.05, 0.2)
     clearance = pf.random.uniform(rng, 0.5, 0.9)
-    walls = collision.collision_set(cast(list[pf.Object], wall_planes))
 
     def accept(mesh: pf.MeshObject) -> bool:
-        grounded = back_face_grounded(mesh, colliders=walls, margin=margin)
-        return grounded and clear_of(mesh, furniture, clearance)
+        return clear_of(mesh, furniture, clearance)
 
     return retry_place(
         rng,
@@ -155,7 +152,6 @@ def _delete_bed_result(result: BedResult) -> None:
 def _generated_bed_rand(
     rng_bed: pf.RNG,
     rng_place: pf.RNG,
-    rng_retry: pf.RNG,
     dimensions: pf.Vector | None,
     wall_planes: list[pf.MeshObject] | None,
     colliders: collision.CollisionSet,
@@ -170,19 +166,6 @@ def _generated_bed_rand(
     if placed is not None:
         return result
     _delete_bed_result(result)
-    for retry_rng in rng_retry.spawn(7):
-        rng_asset, rng_placement = retry_rng.spawn(2)
-        result = bed_rand(rng_asset, dimensions=dimensions)
-        placed = _place_bed_against_wall(
-            rng_placement,
-            result,
-            wall_planes,
-            colliders,
-            furniture,
-        )
-        if placed is not None:
-            return result
-        _delete_bed_result(result)
     raise RejectedScene("Could not place bed against a wall")
 
 
@@ -225,14 +208,13 @@ def bed_setup_rand(
         r_dimensions,
         r_bed,
         r_bed_place,
-        r_bed_retry,
         r_table,
         r_table_placement,
         r_table_choice,
         r_lamp,
         r_lamp_choices,
         r_pillows,
-    ) = rng.spawn(10)
+    ) = rng.spawn(9)
     if furniture is None:
         furniture = []
     dimensions = bed_dimensions
@@ -246,7 +228,6 @@ def bed_setup_rand(
         bed_result = _generated_bed_rand(
             r_bed,
             r_bed_place,
-            r_bed_retry,
             dimensions,
             wall_planes,
             colliders,

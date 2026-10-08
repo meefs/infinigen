@@ -401,6 +401,19 @@ def _kitchen_and_dining_setup(
     return _combined(kitchen, dining)
 
 
+def _bed_and_desk_setup(
+    rng: pf.RNG,
+    region: shapely.Polygon,
+    wall_planes: list[pf.MeshObject],
+    height: float,
+    colliders: ccol.CollisionSet,
+) -> SetupResult:
+    rng_bed, rng_desk = rng.spawn(2)
+    bed = _bed_setup(rng_bed, region, wall_planes, height, colliders)
+    desk = _desk_setup(rng_desk, region, wall_planes, height, bed.colliders)
+    return _combined(bed, desk)
+
+
 def setup_from_space_rand(
     rng: pf.RNG,
     region: shapely.Polygon,
@@ -408,7 +421,7 @@ def setup_from_space_rand(
     height: float,
     colliders: ccol.CollisionSet,
 ) -> SetupResult:
-    rng_main_choice, rng_main, rng_desk_choice, rng_desk, rng_storage = rng.spawn(5)
+    rng_main_choice, rng_main, rng_storage = rng.spawn(3)
     main_options = [
         (_wall_sofa_setup, 1.0),
         (_wall_anchored_sofa_setup, 1.0),
@@ -417,29 +430,27 @@ def setup_from_space_rand(
         (_multi_bed_setup, 0.5),
         (_kitchen_setup, 1.0),
     ]
-    desk_options = [(_no_setup, 1.0)]
     if region.area < 10.0:
         main_options = [
             (_no_setup, 1.0),
             (_bathroom_setup, 1.0),
         ]
     if region.area >= 24.0:
-        main_options.append((_sofa_and_dining_setup, 3.0))
-        main_options.append((_kitchen_and_dining_setup, 1.0))
-        desk_options.append((_desk_setup, 1.0))
+        main_options = [
+            (_sofa_and_dining_setup, 2.0),
+            (_kitchen_and_dining_setup, 1.0),
+            (_bed_and_desk_setup, 1.0),
+        ]
     main_func = pf.control.choice(rng_main_choice, main_options)
     main = main_func(rng_main, region, wall_planes, height, colliders)
     logger.info(
         f"Placed {len(main.all_objects)} {main_func.__name__} objects "
         f"in a {region.area:.1f}m2 room"
     )
-    desk_func = pf.control.choice(rng_desk_choice, desk_options)
-    desk = desk_func(rng_desk, region, wall_planes, height, main.colliders)
-    logger.info(f"Placed {len(desk.all_objects)} {desk_func.__name__} objects")
     storage = _wall_storage_setup(
-        rng_storage, region, wall_planes, height, desk.colliders
+        rng_storage, region, wall_planes, height, main.colliders
     )
-    return _combined(_combined(main, desk), storage)
+    return _combined(main, storage)
 
 
 @pf.tracer.grammar

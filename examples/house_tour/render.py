@@ -6,7 +6,6 @@
 import argparse
 import logging
 import os
-from collections.abc import Callable
 from functools import partial
 from pathlib import Path
 
@@ -22,7 +21,11 @@ logging.basicConfig(
 import procfunc as pf
 from procfunc.util.teardown import skip_teardown_on_exit
 
-from infinigen2.cameras import camera_cube_free_space_check, camera_rrt
+from infinigen2.cameras import (
+    camera_cube_free_space_check,
+    camera_rrt_trajectory,
+    total_bbox,
+)
 from infinigen2.cameras.rrt import RRTPolicyError
 from infinigen2.exporters.realize_mesh import bake_shared_modifier_prefixes
 from infinigen2.exporters.render_cycles import render_cycles
@@ -119,46 +122,26 @@ def _point_at_camera_height(
     return bool(height_range[0] <= point[2] <= height_range[1])
 
 
-def _sample_start_location(
+def _random_point_in_room(
     rng: pf.RNG,
-    floor: pf.MeshObject,
-    floor_colliders: ccol.CollisionSet,
-    obstacles: ccol.CollisionSet,
+    room: HouseRoomResult,
+    colliders: ccol.CollisionSet,
     height_range: tuple[float, float],
     camera_clearance: float,
-    center_xy: np.ndarray | None = None,
-    radius: float = 1.25,
     attempts: int = 1000,
 ) -> np.ndarray:
-    low, high = pf.ops.attr.bbox_min_max(floor, global_coords=True)
-    if center_xy is not None:
-        low[:2] = np.maximum(low[:2], center_xy - radius)
-        high[:2] = np.minimum(high[:2], center_xy + radius)
+    low, high = pf.ops.attr.bbox_min_max(room.floor, global_coords=True)
+    floor_colliders = ccol.collision_set([room.floor])
+    transform = np.eye(4)
     for _ in range(attempts):
-        point = np.asarray(
-            (
-                rng.uniform(low[0], high[0]),
-                rng.uniform(low[1], high[1]),
-                rng.uniform(*height_range),
-            ),
-            dtype=np.float64,
-        )
+        x, y = rng.uniform(low[:2], high[:2])
+        point = np.array((x, y, rng.uniform(*height_range)))
         if not _point_over_floors(point, floor_colliders, height_range):
             continue
-        transform = np.eye(4, dtype=np.float64)
         transform[:3, 3] = point
-        if not ccol.box_intersection_test(obstacles, transform, size=camera_clearance):
+        if not ccol.box_intersection_test(colliders, transform, size=camera_clearance):
             return point
     raise RejectedScene("Could not place a camera location in the room")
-
-
-def _shared_doorway_center(
-    first: HouseRoomResult, second: HouseRoomResult
-) -> tuple[float, float]:
-    for wall_index, neighbor in first.neighbors.items():
-        if neighbor == second.room_index:
-            return first.doorway_centers[wall_index]
-    raise RejectedScene("Consecutive tour rooms do not share a door")
 
 
 def _camera_accept_pred(
@@ -175,35 +158,6 @@ def _camera_accept_pred(
         colliders,
         probe_size=camera_clearance,
     )
-
-
-def _tour_location_samplers(
-    colliders: ccol.CollisionSet,
-    rooms: tuple[HouseRoomResult, ...],
-    height_range: tuple[float, float],
-    camera_clearance: float,
-) -> list[Callable[[pf.RNG], np.ndarray]]:
-    specs = [(rooms[0].floor, None)]
-    for first, second in zip(rooms[:-1], rooms[1:], strict=True):
-        center_xy = np.asarray(_shared_doorway_center(first, second))
-        specs.extend(
-            (
-                (second.floor, center_xy),
-                (second.floor, None),
-            )
-        )
-    return [
-        partial(
-            _sample_start_location,
-            floor=floor,
-            floor_colliders=ccol.collision_set([floor]),
-            obstacles=colliders,
-            height_range=height_range,
-            camera_clearance=camera_clearance,
-            center_xy=center_xy,
-        )
-        for floor, center_xy in specs
-    ]
 
 
 def _trajectory_accepted(
@@ -223,66 +177,106 @@ def _trajectory_accepted(
     return True
 
 
-def _delete_new_cameras(existing: set[int]) -> None:
-    for obj in list(bpy.data.objects):
-        if obj.type == "CAMERA" and obj.as_pointer() not in existing:
-            delete_object(obj)
+def _doorway_point(
+    room: HouseRoomResult,
+    next_room: HouseRoomResult,
+    height_range: tuple[float, float],
+) -> np.ndarray:
+    wall = next(
+        wall
+        for wall, neighbor in room.neighbors.items()
+        if neighbor == next_room.room_index
+    )
+    x, y = room.doorway_centers[wall]
+    return np.array((x, y, np.mean(height_range)))
+
+
+def _next_tour_room(
+    rng: pf.RNG,
+    room: HouseRoomResult,
+    prev_room: HouseRoomResult | None,
+    by_index: dict[int, HouseRoomResult],
+) -> HouseRoomResult:
+    neighbors = sorted(set(room.neighbors.values()) & set(by_index))
+    forward = [i for i in neighbors if prev_room is None or i != prev_room.room_index]
+    options = forward or neighbors
+    return by_index[options[int(rng.integers(len(options)))]]
+
+
+def _tour_goals(
+    rng: pf.RNG,
+    colliders: ccol.CollisionSet,
+    rooms: tuple[HouseRoomResult, ...],
+    height_range: tuple[float, float],
+    camera_clearance: float,
+    distance: float,
+    extra_point_prob: float = 0.25,
+) -> list[np.ndarray]:
+    room_point = partial(
+        _random_point_in_room,
+        rng,
+        colliders=colliders,
+        height_range=height_range,
+        camera_clearance=camera_clearance,
+    )
+    by_index = {room.room_index: room for room in rooms}
+    prev_room = None
+    room = rooms[0]
+    goals = [room_point(room)]
+    while np.linalg.norm(np.diff(goals, axis=0), axis=1).sum() < distance:
+        next_room = _next_tour_room(rng, room, prev_room, by_index)
+        goals.append(_doorway_point(room, next_room, height_range))
+        prev_room, room = room, next_room
+        goals.append(room_point(room))
+        if rng.random() < extra_point_prob:
+            goals.append(room_point(room))
+    return goals
 
 
 def _house_tour_camera_attempt(
     rng: pf.RNG,
-    house_objects: list[pf.MeshObject],
     colliders: ccol.CollisionSet,
     rooms: tuple[HouseRoomResult, ...],
     frame_start: int,
     frame_end: int,
     height_range: tuple[float, float],
     camera_clearance: float,
+    speed_mps_range: tuple[float, float] = (0.67, 1.0),
 ) -> pf.CameraObject | None:
-    start_rng, rrt_rng = rng.spawn(2)
-    location_samplers = _tour_location_samplers(
-        colliders, rooms, height_range, camera_clearance
-    )
-    existing_cameras = {
-        obj.as_pointer() for obj in bpy.data.objects if obj.type == "CAMERA"
-    }
-    point_accept_pred = partial(_point_at_camera_height, height_range=height_range)
+    goals_rng, camera_rng = rng.spawn(2)
+    fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+    speed = goals_rng.uniform(*speed_mps_range)
+    distance = speed * (frame_end - frame_start) / fps
+    plan_clearance = camera_clearance * np.sqrt(3)
     try:
-        camera = camera_rrt(
-            rrt_rng,
+        goals = _tour_goals(
+            goals_rng, colliders, rooms, height_range, plan_clearance, distance
+        )
+        logger.info("Tour has %d goals for %.1fm of walking", len(goals), distance)
+        camera = camera_rrt_trajectory(
+            camera_rng,
             colliders,
-            house_objects,
-            start_location=location_samplers[0](start_rng),
-            goal_location_samplers=location_samplers[1:],
-            wander_after_goals=False,
-            frame_start=frame_start,
-            frame_end=frame_end,
-            focal_length_mm=8.0,
-            rot_std_deg=(0.0, 0.0, 0.0),
-            max_abs_roll_deg=0.0,
-            max_abs_pitch_offset_deg=0.0,
+            total_bbox([room.floor for room in rooms]),
+            frame_start,
+            frame_end,
+            goals=goals,
+            height_range=height_range,
+            clearance=plan_clearance,
             step_range=(0.25, 0.75),
-            stride_range=(1, 4),
-            min_node_dist_to_obstacle=camera_clearance,
-            max_rrt_iter=300,
-            max_path_retries=10,
-            speed_mps_range=(2.0, 3.0),
-            camera_clearance=camera_clearance,
-            step_predicate=point_accept_pred,
+            max_rrt_iter=1000,
+            focal_length_mm=8.0,
+            rot_std_deg=(10.0, 0.0, 0.0),
+            max_abs_roll_deg=0.0,
+            max_abs_pitch_offset_deg=15.0,
         )
     except (RejectedScene, RRTPolicyError) as error:
         logger.info("Rejected house tour plan: %s", error)
-        camera = None
-    if camera is not None and _trajectory_accepted(
-        camera,
-        colliders,
-        frame_start,
-        frame_end,
-        height_range,
-        camera_clearance,
+        return None
+    if _trajectory_accepted(
+        camera, colliders, frame_start, frame_end, height_range, camera_clearance
     ):
         return camera
-    _delete_new_cameras(existing_cameras)
+    delete_object(camera.item())
     return None
 
 
@@ -409,12 +403,11 @@ def build_scene(
         house_objects = [*house.all_objects, *furniture_objects]
         tour_colliders = ccol.collision_set(house_objects, cache=house.colliders)
 
-    height_range = (1.35, 1.75)
+    height_range = (1.1, 1.9)
     camera_clearance = 0.25
     with time_step(times, "camera"):
         place = partial(
             _house_tour_camera_attempt,
-            house_objects=house_objects,
             colliders=tour_colliders,
             rooms=allowed_rooms,
             frame_start=frame_start,

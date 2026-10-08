@@ -298,7 +298,7 @@ def _door_affordance_collider(
     direction = _plane_direction(plane)
     angle = float(np.arctan2(direction[1], direction[0]) - np.pi / 2)
     collider = pf.ops.primitives.mesh_cube(size=1.0)
-    pf.ops.mesh.transform(collider, scale=(2 * width, width, height))
+    pf.ops.mesh.transform(collider, scale=(1.6, width, height))
     pf.ops.object.set_transform(
         collider,
         location=(*center_xy, height / 2),

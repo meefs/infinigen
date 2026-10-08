@@ -1218,8 +1218,8 @@
   },
   {
     "category": "Cameras",
-    "name": "infinigen2.cameras.camera_rrt",
-    "old_names": ["rrt_camera"],
+    "name": "infinigen2.cameras.camera_rrt_trajectory",
+    "old_names": ["rrt_camera", "camera_rrt"],
     "num_seeds": 3
   },
   {

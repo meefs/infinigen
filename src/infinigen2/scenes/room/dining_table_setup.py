@@ -386,7 +386,7 @@ def table_dining_setup_rand(
     if colliders is None:
         colliders = ccol.collision_set([])
     rng_table_choice, rng_table, rng_place, rng_seat = rng.spawn(4)
-    clearance = 0.6
+    clearance = 0.45
     door_slack = 1.0
     max_x = max(bbox_max.x - bbox_min.x - 2 * clearance - door_slack, 0.7)
     max_y = max(bbox_max.y - bbox_min.y - 2 * clearance - door_slack, 0.7)

@@ -5,20 +5,21 @@
 # - Dylan Li: original Infinigen RRT planner (https://github.com/princeton-vl/infinigen/blob/05a09759fe9478595a3323ec2d6e26ce3513223f/infinigen/core/util/rrt.py)
 # - Karhan Kayan, Alexander Raistrick: refactor for Infinigen2
 
-from collections.abc import Sequence
-from typing import Callable
+from collections.abc import Callable
 
 import bpy
 import numpy as np
 import procfunc as pf
 
 import infinigen2.scenes.placement.collision as ccol
-from infinigen2.cameras.util import total_bbox
+from infinigen2.scenes.placement.retry import repeat_attempts
 from infinigen2.util.errors import RejectedScene
 
 __all__ = [
     "RRTPolicyError",
-    "camera_rrt",
+    "camera_follow_path",
+    "camera_rrt_trajectory",
+    "rrt_path",
 ]
 
 
@@ -26,356 +27,126 @@ class RRTPolicyError(ValueError):
     pass
 
 
-class _RRTPlanner:
-    def __init__(
-        self,
-        rng: pf.RNG,
-        colliders: ccol.CollisionSet,
-        bbox: tuple[np.ndarray, np.ndarray],
-        validate_node: Callable[[np.ndarray], bool],
-        step_range: tuple[float, float] = (1.0, 1.0),
-        stride_range: tuple[int, int] = (16, 32),
-        min_node_dist_to_obstacle: float = 0.2,
-        segment_probe_size: float = 0.1,
-        segment_check_spacing: float = 0.08,
-        segment_min_checks: int = 4,
-        segment_predicate: Callable[[np.ndarray], bool] | None = None,
-        max_iter: int = 2000,
-    ):
-        self.rng = rng
-        self.colliders = colliders
-        self.validate_node = validate_node
-        self.bbox_min = np.asarray(bbox[0], dtype=np.float64)
-        self.bbox_max = np.asarray(bbox[1], dtype=np.float64)
-        self.step_range = step_range
-        self.stride_range = stride_range
-        self.segment_probe_size = segment_probe_size
-        self.segment_check_spacing = segment_check_spacing
-        self.segment_min_checks = segment_min_checks
-        self.segment_predicate = segment_predicate
-        self.max_iter = max_iter
-        self.step = float(self.rng.uniform(*self.step_range))
-        self.vertices: dict[
-            tuple[float, float, float], tuple[tuple[float, float, float] | None, float]
-        ] = {}
-
-        self.collision_check_dirs: list[np.ndarray] = []
-        if min_node_dist_to_obstacle > 0:
-            thetas = [2 * np.pi * i / 8 for i in range(8)]
-            phis = [np.pi * i / 4 for i in range(5)]
-            for theta in thetas:
-                for phi in phis:
-                    self.collision_check_dirs.append(
-                        min_node_dist_to_obstacle
-                        * np.array(
-                            [
-                                np.cos(theta) * np.sin(phi),
-                                np.sin(theta) * np.sin(phi),
-                                np.cos(phi),
-                            ],
-                            dtype=np.float64,
-                        )
-                    )
-
-    def _is_in_bbox(self, coord: np.ndarray) -> bool:
-        return not (np.any(coord < self.bbox_min) or np.any(coord > self.bbox_max))
-
-    def _line_not_valid(
-        self,
-        p1: np.ndarray,
-        p2: np.ndarray,
-    ) -> bool:
-        p1 = np.asarray(p1, dtype=np.float64)
-        p2 = np.asarray(p2, dtype=np.float64)
-        delta = p2 - p1
-        length = float(np.linalg.norm(delta))
-        if length < 1e-8:
-            return not self._is_valid(p1)
-        if not self._is_valid(p1) or not self._is_valid(p2):
-            return True
-        axis = delta / length
-        reference = np.asarray((0.0, 0.0, 1.0))
-        if abs(float(np.dot(axis, reference))) > 0.9:
-            reference = np.asarray((0.0, 1.0, 0.0))
-        second = np.cross(axis, reference)
-        second /= np.linalg.norm(second)
-        third = np.cross(axis, second)
-        transform = np.eye(4, dtype=np.float64)
-        transform[:3, :3] = np.column_stack((axis, second, third))
-        transform[:3, 3] = (p1 + p2) / 2
-        size = (length, self.segment_probe_size, self.segment_probe_size)
-        if ccol.box_intersection_test(self.colliders, transform, size=size):
-            return True
-        if self.segment_predicate is None:
-            return False
-        n_checks = max(
-            self.segment_min_checks,
-            int(np.ceil(length / self.segment_check_spacing)),
-        )
-        return not _segment_valid(
-            p1,
-            p2,
-            self.segment_predicate,
-            n_checks,
-        )
-
-    def _prox_check(self, x: np.ndarray) -> bool:
-        for direction in self.collision_check_dirs:
-            if self._line_not_valid(x, x + direction):
-                return False
-        return True
-
-    def _is_valid(self, node: np.ndarray) -> bool:
-        if not self._is_in_bbox(node):
-            return False
-        if not self.validate_node(node):
-            return False
-        return True
-
-    def _rand_node(self) -> np.ndarray:
-        return self.rng.uniform(self.bbox_min, self.bbox_max)
-
-    def _rand_valid_node(self, max_iter: int = 500) -> np.ndarray:
-        for _ in range(max_iter):
-            node = self._rand_node()
-            if self._is_valid(node):
-                return node
-        raise RRTPolicyError("RRT could not find a valid random node")
-
-    def _parent(
-        self, x: tuple[float, float, float]
-    ) -> tuple[float, float, float] | None:
-        return self.vertices[x][0] if x in self.vertices else None
-
-    def _cost(self, x: tuple[float, float, float]) -> float | None:
-        return self.vertices[x][1] if x in self.vertices else None
-
-    def _get_vertices(self) -> np.ndarray:
-        return np.asarray(list(self.vertices.keys()), dtype=np.float64)
-
-    def _wireup(
-        self,
-        x: tuple[float, float, float],
-        y: tuple[float, float, float],
-    ) -> None:
-        y_cost = self._cost(y)
-        assert y_cost is not None
-        self.vertices[x] = (y, y_cost + self._dist(np.asarray(x), np.asarray(y)))
-
-    @staticmethod
-    def _dist(pos1: np.ndarray, pos2: np.ndarray) -> float:
-        return float(np.linalg.norm(np.asarray(pos1) - np.asarray(pos2)))
-
-    def _sample_free(self, target: np.ndarray, bias: float = 0.1) -> np.ndarray:
-        if self.rng.random() < bias:
-            return np.asarray(target)
-        return self._rand_node()
-
-    def _nearest(self, x: np.ndarray) -> tuple[float, float, float]:
-        vertices = self._get_vertices()
-        dists = np.linalg.norm(vertices - x[None, :], axis=1)
-        return tuple(vertices[np.argmin(dists)])
-
-    def _neighborhood(
-        self,
-        x: np.ndarray,
-        radius: float | None = None,
-        max_iter: int = 10,
-    ) -> np.ndarray:
-        vertices = self._get_vertices()
-        num_verts = len(vertices)
-        if num_verts == 0:
-            return np.empty((0, 3), dtype=np.float64)
-
-        gamma = 5.0
-        eta = self.step
-        nearpoints = np.empty((0, 3), dtype=np.float64)
-        if radius is None:
-            safe_n = max(num_verts, 2)
-            r = min(gamma * ((np.log(safe_n) / safe_n) ** (1 / 3)), eta)
-        else:
-            r = radius
-
-        i = 0
-        while len(nearpoints) == 0:
-            if i > max_iter:
-                return np.empty((0, 3), dtype=np.float64)
-            inside = np.linalg.norm(vertices - x[None, :], axis=1) < r
-            nearpoints = vertices[inside]
-            i += 1
-            r += eta
-        return nearpoints
-
-    def _steer(
-        self, x: np.ndarray, direction: np.ndarray
-    ) -> tuple[float, float, float]:
-        if np.allclose(x, direction):
-            return tuple(x)
-        dist = self._dist(x, direction)
-        step = min(dist, self.step)
-        increment = (direction - x) / dist * step
-        return tuple(x + increment)
-
-    def _choose_parent(
-        self,
-        xnew: tuple[float, float, float],
-        xnear_arr: np.ndarray,
-    ) -> tuple[tuple[float, float, float] | None, list[bool]]:
-        xmin = None
-        cmin = None
-        collisions: list[bool] = []
-        for xnear_np in xnear_arr:
-            xnear = tuple(xnear_np)
-            xnear_cost = self._cost(xnear)
-            if xnear_cost is None:
-                collisions.append(True)
-                continue
-            c1 = xnear_cost + self._dist(np.asarray(xnew), np.asarray(xnear))
-            collide = self._line_not_valid(np.asarray(xnew), np.asarray(xnear))
-            collisions.append(collide)
-            if not collide and (cmin is None or c1 < cmin):
-                xmin, cmin = xnear, c1
-        return xmin, collisions
-
-    def _rewire_neighborhood(
-        self,
-        xnew: tuple[float, float, float],
-        xnear_arr: np.ndarray,
-        collisions: list[bool],
-    ) -> None:
-        xnew_cost = self._cost(xnew)
-        if xnew_cost is None:
-            return
-        for i, xnear_np in enumerate(xnear_arr):
-            xnear = tuple(xnear_np)
-            xnear_cost = self._cost(xnear)
-            if xnear_cost is None:
-                continue
-            c2 = xnew_cost + self._dist(np.asarray(xnew), np.asarray(xnear))
-            if not collisions[i] and c2 < xnear_cost:
-                self._wireup(xnear, xnew)
-
-    def generate_path(
-        self,
-        start: np.ndarray | tuple[float, float, float] | None = None,
-        goal: np.ndarray | tuple[float, float, float] | None = None,
-    ) -> list[tuple[float, float, float]]:
-        x0 = (
-            tuple(self._rand_valid_node())
-            if start is None
-            else tuple(np.asarray(start))
-        )
-        xt = tuple(self._rand_valid_node()) if goal is None else tuple(np.asarray(goal))
-        if not self._is_valid(np.asarray(x0)):
-            raise RRTPolicyError(f"RRT started with invalid node {x0}")
-        if not self._is_valid(np.asarray(xt)):
-            raise RRTPolicyError(f"RRT goal is invalid node {xt}")
-        if not self._line_not_valid(np.asarray(x0), np.asarray(xt)):
-            return [xt]
-
-        self.vertices = {x0: (None, 0.0)}
-        n_iter = 0
-        while n_iter < self.max_iter:
-            xrand = self._sample_free(np.asarray(xt))
-            xnearest = self._nearest(xrand)
-            xnew = self._steer(np.asarray(xnearest), np.asarray(xrand))
-            xnew_np = np.asarray(xnew)
-
-            if self._prox_check(xnew_np):
-                xnear_arr = self._neighborhood(xnew_np)
-                xmin, collisions = self._choose_parent(xnew, xnear_arr)
-                if xmin is not None:
-                    self._wireup(xnew, xmin)
-                    self._rewire_neighborhood(xnew, xnear_arr, collisions)
-
-                    if self._dist(
-                        np.asarray(xnew), np.asarray(xt)
-                    ) < self.step and not (
-                        self._line_not_valid(np.asarray(xnew), np.asarray(xt))
-                    ):
-                        if xnew != xt:
-                            self._wireup(xt, xnew)
-                        break
-
-            self.step = float(self.rng.uniform(*self.step_range))
-            n_iter += 1
-
-        if xt not in self.vertices:
-            near_goal = self._neighborhood(np.asarray(xt), self.step, max_iter=1000)
-            candidates = [
-                tuple(node)
-                for node in near_goal
-                if not self._line_not_valid(np.asarray(node), np.asarray(xt))
-            ]
-            if candidates:
-                costs = [_candidate_path_cost(self, node, xt) for node in candidates]
-                self._wireup(xt, candidates[int(np.argmin(costs))])
-        if xt not in self.vertices:
-            raise RRTPolicyError(f"RRT could not find path from {x0} to {xt}")
-        x = xt
-
-        path: list[tuple[float, float, float]] = []
-        while x != x0:
-            path.append(x)
-            parent = self._parent(x)
-            if parent is None:
-                raise RRTPolicyError(
-                    "RRT path construction failed due to missing parent"
-                )
-            x = parent
-        path.reverse()
-        return path
-
-    def next_goal(
-        self,
-        start: np.ndarray | tuple[float, float, float],
-        max_iter: int = 100,
-    ) -> np.ndarray:
-        start = np.asarray(start, dtype=np.float64)
-        r_range = (
-            self.step_range[0] * self.stride_range[0],
-            self.step_range[1] * self.stride_range[1],
-        )
-        theta_range = (0.0, 2 * np.pi)
-
-        for _ in range(max_iter):
-            r = self.rng.uniform(*r_range)
-            z = self.rng.uniform(self.bbox_min[2], self.bbox_max[2])
-            theta = self.rng.uniform(*theta_range)
-
-            translation = (
-                np.array([np.cos(theta), np.sin(theta), 0.0], dtype=np.float64) * r
-            )
-            translation[2] = z - start[2]
-            nxt = start + translation
-            if self._is_valid(nxt):
-                return nxt
-        raise RRTPolicyError(
-            f"RRT could not find next goal node from start {tuple(start)}"
-        )
-
-
-def _candidate_path_cost(
-    planner: _RRTPlanner,
-    node: tuple[float, float, float],
-    goal: tuple[float, float, float],
-) -> float:
-    cost = planner._cost(node)
-    if cost is None:
-        return float("inf")
-    return cost + planner._dist(np.asarray(node), np.asarray(goal))
-
-
-def _validate_rrt_node(
+def _point_valid(
+    point: np.ndarray,
     colliders: ccol.CollisionSet,
-    node: np.ndarray,
-    probe_size: float = 0.1,
+    bbox: tuple[np.ndarray, np.ndarray],
+    clearance: float,
+    point_pred: Callable[[np.ndarray], bool] | None,
 ) -> bool:
-    transform = np.eye(4, dtype=np.float64)
-    transform[:3, 3] = node
-    return not ccol.box_intersection_test(
-        colliders, transform=transform, size=probe_size
-    )
+    if np.any(point < bbox[0]) or np.any(point > bbox[1]):
+        return False
+    transform = np.eye(4)
+    transform[:3, 3] = point
+    if ccol.box_intersection_test(colliders, transform, size=clearance):
+        return False
+    return point_pred is None or point_pred(point)
+
+
+def _edge_free(
+    p1: np.ndarray, p2: np.ndarray, colliders: ccol.CollisionSet, clearance: float
+) -> bool:
+    delta = p2 - p1
+    length = float(np.linalg.norm(delta))
+    if length < 1e-8:
+        return True
+    axis = delta / length
+    reference = (0.0, 1.0, 0.0) if abs(axis[2]) > 0.9 else (0.0, 0.0, 1.0)
+    second = np.cross(axis, reference)
+    second /= np.linalg.norm(second)
+    transform = np.eye(4)
+    transform[:3, :3] = np.column_stack((axis, second, np.cross(axis, second)))
+    transform[:3, 3] = (p1 + p2) / 2
+    size = (length, clearance, clearance)
+    return not ccol.box_intersection_test(colliders, transform, size=size)
+
+
+def _steer(nodes: list[np.ndarray], target: np.ndarray, step: float) -> np.ndarray:
+    dists = np.linalg.norm(np.asarray(nodes) - target, axis=1)
+    nearest = nodes[int(np.argmin(dists))]
+    dist = float(dists.min())
+    if dist <= step:
+        return target
+    return nearest + (target - nearest) * (step / dist)
+
+
+def _rewire(
+    parents: list[int],
+    costs: list[float],
+    neighbors: list[int],
+    dists: np.ndarray,
+) -> None:
+    new_index = len(costs) - 1
+    for i, dist in zip(neighbors, dists, strict=True):
+        if costs[new_index] + dist < costs[i]:
+            parents[i] = new_index
+            costs[i] = costs[new_index] + dist
+
+
+def _backtrack(nodes: list[np.ndarray], parents: list[int]) -> list[np.ndarray]:
+    path = []
+    i = len(nodes) - 1
+    while i != 0 and len(path) < len(nodes):
+        path.append(nodes[i])
+        i = parents[i]
+    if i != 0:
+        raise RRTPolicyError("RRT tree contains a cycle")
+    return path[::-1]
+
+
+def rrt_path(
+    rng: pf.RNG,
+    colliders: ccol.CollisionSet,
+    bbox: tuple[np.ndarray, np.ndarray],
+    start: np.ndarray,
+    goal: np.ndarray,
+    clearance: float = 0.1,
+    point_pred: Callable[[np.ndarray], bool] | None = None,
+    step_range: tuple[float, float] = (1.0, 2.0),
+    goal_bias: float = 0.1,
+    max_iter: int = 2000,
+) -> list[np.ndarray]:
+    """RRT* waypoints from `start` (excluded) to `goal` (included) through points
+    with a free `clearance` cube that satisfy `point_pred`, joined by edges a
+    `clearance`-wide box can sweep without hitting `colliders`."""
+    start = np.asarray(start, dtype=np.float64)
+    goal = np.asarray(goal, dtype=np.float64)
+    for point in (start, goal):
+        if not _point_valid(point, colliders, bbox, clearance, point_pred):
+            raise RRTPolicyError(f"RRT endpoint {tuple(point)} is invalid")
+    if _edge_free(start, goal, colliders, clearance):
+        return [goal]
+
+    nodes = [start]
+    parents = [-1]
+    costs = [0.0]
+    for _ in range(max_iter):
+        step = float(rng.uniform(*step_range))
+        sample_goal = rng.random() < goal_bias
+        target = goal if sample_goal else rng.uniform(bbox[0], bbox[1])
+        new = _steer(nodes, target, step)
+        if not _point_valid(new, colliders, bbox, clearance, point_pred):
+            continue
+        dists = np.linalg.norm(np.asarray(nodes) - new, axis=1)
+        near = np.flatnonzero(dists <= step_range[1])
+        free = [int(i) for i in near if _edge_free(nodes[i], new, colliders, clearance)]
+        if not free:
+            continue
+        free_dists = dists[free]
+        parent_slot = int(np.argmin(np.asarray(costs)[free] + free_dists))
+        nodes.append(new)
+        parents.append(free[parent_slot])
+        costs.append(costs[free[parent_slot]] + float(free_dists[parent_slot]))
+        _rewire(parents, costs, free, free_dists)
+        goal_dist = float(np.linalg.norm(goal - new))
+        if goal_dist > step_range[1] or not _edge_free(new, goal, colliders, clearance):
+            continue
+        if goal_dist > 1e-8:
+            nodes.append(goal)
+            parents.append(len(nodes) - 2)
+            costs.append(costs[-1] + goal_dist)
+        return _backtrack(nodes, parents)
+    raise RRTPolicyError(f"RRT found no path from {tuple(start)} to {tuple(goal)}")
 
 
 def _unwrap_angle_near(angle: float, reference: float) -> float:
@@ -429,7 +200,7 @@ def _sample_motion_biased_rotation(
 ) -> np.ndarray:
     target = current_rotation.copy()
     jitter = np.deg2rad(rng.normal(0.0, np.asarray(rot_std_deg)))
-    target[:2] += jitter[:2]
+    target[:2] = np.array((np.pi / 2, 0.0)) + jitter[:2]
     target[0] = np.clip(
         target[0],
         np.pi / 2 - max_abs_pitch_offset_rad,
@@ -447,7 +218,7 @@ def _sample_motion_biased_rotation(
     return target
 
 
-def _animate_rrt_rotation(
+def _animate_path_rotation(
     rng: pf.RNG,
     camera: pf.CameraObject,
     location_keyframes: list[tuple[float, np.ndarray]],
@@ -484,290 +255,208 @@ def _animate_rrt_rotation(
         frame = min(frame_end, frame + interval_seconds * fps)
 
 
-def _segment_valid(
-    start: np.ndarray,
-    end: np.ndarray,
-    predicate: Callable[[np.ndarray], bool],
-    n_checks: int,
-) -> bool:
-    for t in np.linspace(0, 1, n_checks + 2)[1:-1]:
-        if not predicate(start + t * (end - start)):
-            return False
-    return True
-
-
-def _sample_enclosed_start(
-    planner: _RRTPlanner,
-    colliders: ccol.CollisionSet,
-    max_iter: int = 1000,
-) -> np.ndarray:
-    directions = np.asarray(
-        (
-            (0.0, 0.0, 1.0),
-            (0.0, 0.0, -1.0),
-            (1.0, 0.0, 0.0),
-            (-1.0, 0.0, 0.0),
-            (0.0, 1.0, 0.0),
-            (0.0, -1.0, 0.0),
-        )
-    )
-    for _ in range(max_iter):
-        candidate = planner._rand_valid_node()
-        origins = np.broadcast_to(candidate, directions.shape)
-        locations, _index_ray, _index_tri = ccol.raycast(colliders, origins, directions)
-        if len(locations) == len(directions):
-            return candidate
-    raise RejectedScene("Could not find an indoor valid camera start")
-
-
-def _path_or_fallback(
+def camera_follow_path(
     rng: pf.RNG,
-    planner: _RRTPlanner,
-    start_loc: np.ndarray,
-    max_goal_attempts: int,
-    max_path_retries: int,
-    step_range: tuple[float, float],
-) -> list[tuple[float, float, float]]:
-    for _ in range(max_path_retries):
-        try:
-            goal = planner.next_goal(start=start_loc, max_iter=max_goal_attempts)
-            path = planner.generate_path(start=start_loc, goal=goal)
-        except RRTPolicyError:
-            continue
-        if len(path) > 0:
-            return path
-
-    for _ in range(max_goal_attempts):
-        r = float(rng.uniform(step_range[0] * 0.25, step_range[1] * 1.0))
-        theta = float(rng.uniform(0.0, 2 * np.pi))
-        zoff = float(rng.uniform(-0.1, 0.1))
-        candidate = start_loc + np.array(
-            [r * np.cos(theta), r * np.sin(theta), zoff], dtype=np.float64
-        )
-        if not planner._is_valid(candidate):
-            continue
-        if planner._line_not_valid(start_loc, candidate):
-            continue
-        return [tuple(candidate)]
-
-    return [tuple(start_loc)]
-
-
-def _path_to_goal(
-    rng: pf.RNG,
-    planner: _RRTPlanner,
-    start_loc: np.ndarray,
-    goal_location_sampler: Callable[[pf.RNG], np.ndarray],
-    max_path_retries: int,
-) -> list[tuple[float, float, float]]:
-    for goal_rng in rng.spawn(max_path_retries):
-        goal = np.asarray(goal_location_sampler(goal_rng), dtype=np.float64)
-        try:
-            path = planner.generate_path(start=start_loc, goal=goal)
-        except RRTPolicyError:
-            continue
-        if path:
-            return path
-    raise RRTPolicyError(f"RRT could not reach a required goal from {tuple(start_loc)}")
-
-
-def _stretch_required_goal_path(
-    camera: pf.CameraObject,
-    location_keyframes: list[tuple[float, np.ndarray]],
-    frame_start: float,
-    frame_end: float,
-    frame_curr: float,
-    goal_ind: int,
-    goal_count: int,
-    path_ind: int,
-    path_count: int,
-) -> list[tuple[float, np.ndarray]]:
-    if goal_ind < goal_count or path_ind < path_count:
-        raise RRTPolicyError("RRT did not reach all required goals")
-    duration = frame_curr - frame_start
-    if duration <= 0:
-        raise RRTPolicyError("RRT required-goal path has no duration")
-    scale = (frame_end - frame_start) / duration
-    action = camera.item().animation_data.action
-    for fcurve in action.fcurves:
-        if fcurve.data_path != "location":
-            continue
-        for keyframe in fcurve.keyframe_points:
-            keyframe.co.x = frame_start + (keyframe.co.x - frame_start) * scale
-    return [
-        (frame_start + (frame - frame_start) * scale, location)
-        for frame, location in location_keyframes
-    ]
-
-
-def camera_rrt(
-    rng: pf.RNG,
-    colliders: ccol.CollisionSet,
-    objects: list[pf.MeshObject],
-    start_location: np.ndarray | tuple[float, float, float] | None = None,
-    goal_location_samplers: Sequence[Callable[[pf.RNG], np.ndarray]] = (),
-    wander_after_goals: bool = True,
-    frame_start: int = 1,
-    frame_end: int = 1,
+    points: list[np.ndarray],
+    frame_start: int,
+    frame_end: int,
     focal_length_mm: float = 15,
-    margin: float = 0.05,
-    step_range: tuple[float, float] = (1, 2),
-    stride_range: tuple[int, int] = (64, 128),
-    min_node_dist_to_obstacle: float = 0.4,
-    max_rrt_iter: int = 2000,
-    max_goal_attempts: int = 200,
-    max_path_retries: int = 80,
-    speed_mps_range: tuple[float, float] = (1.0, 1.5),
     rot_std_deg: tuple[float, float, float] = (20.0, 20.0, 20.0),
     yaw_motion_std_deg: float = 80.0,
     rotation_interval_sec_range: tuple[float, float] = (1.5, 4.0),
     rotation_lookahead_m: float = 1.0,
     max_abs_roll_deg: float = 25.0,
     max_abs_pitch_offset_deg: float = 25.0,
-    camera_clearance: float = 0.1,
-    segment_check_spacing: float = 0.08,
-    step_predicate: Callable[[np.ndarray], bool] | None = None,
-    n_intermediate_checks: int = 4,
 ) -> pf.CameraObject:
     camera = pf.ops.primitives.perspective_camera(focal_length_mm=focal_length_mm)
-    bbox = total_bbox(objects)
+    points = [np.asarray(point, dtype=np.float64) for point in points]
+    segment_lengths = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    arclength = np.concatenate(([0.0], np.cumsum(segment_lengths)))
+    if arclength[-1] <= 1e-8:
+        location_keyframes = [(float(frame_start), points[0])]
+    else:
+        frames = frame_start + (frame_end - frame_start) * arclength / arclength[-1]
+        location_keyframes = list(zip(frames.tolist(), points, strict=True))
+    for frame, point in location_keyframes:
+        camera.item().location = point
+        camera.item().keyframe_insert("location", frame=frame)
 
-    bbox_min, bbox_max = np.asarray(bbox[0]).copy(), np.asarray(bbox[1]).copy()
-    bbox_min += margin
-    bbox_max -= margin
-    if np.any(bbox_min >= bbox_max):
-        raise RejectedScene("RRT camera bbox is invalid after applying margins")
-
-    planner = _RRTPlanner(
-        rng=rng,
-        colliders=colliders,
-        bbox=(bbox_min, bbox_max),
-        validate_node=lambda node: _validate_rrt_node(
-            colliders=colliders,
-            node=node,
-            probe_size=camera_clearance,
-        )
-        and (step_predicate is None or step_predicate(node)),
-        step_range=step_range,
-        stride_range=stride_range,
-        min_node_dist_to_obstacle=min_node_dist_to_obstacle,
-        segment_probe_size=camera_clearance,
-        segment_check_spacing=segment_check_spacing,
-        segment_min_checks=n_intermediate_checks,
-        segment_predicate=step_predicate,
-        max_iter=max_rrt_iter,
-    )
-
-    frame_start_f = float(frame_start)
-    frame_end_f = float(frame_end)
-    frame_curr = frame_start_f
+    init_yaw = float(rng.uniform(-np.pi, np.pi))
+    camera.item().rotation_euler = (np.pi / 2, 0.0, init_yaw)
     fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
-
-    start_loc = (
-        _sample_enclosed_start(planner=planner, colliders=colliders)
-        if start_location is None
-        else np.asarray(start_location, dtype=np.float64)
-    )
-    if not planner._is_valid(start_loc):
-        raise RRTPolicyError(f"RRT started with invalid node {tuple(start_loc)}")
-
-    init_rot = (np.pi / 2, 0.0, float(rng.uniform(-np.pi, np.pi)))
-    pf.ops.object.set_transform(camera, location=start_loc, rotation_euler=init_rot)
-
-    camera.item().keyframe_insert("location", frame=frame_start)
-    location_keyframes = [(frame_start_f, np.asarray(start_loc).copy())]
-
-    path: list[tuple[float, float, float]] = []
-    path_ind = 0
-    goal_ind = 0
-    max_abs_roll_rad = np.deg2rad(max_abs_roll_deg)
-    max_abs_pitch_offset_rad = np.deg2rad(max_abs_pitch_offset_deg)
-    while frame_curr < frame_end_f - 1e-6:
-        if path_ind >= len(path):
-            if goal_ind < len(goal_location_samplers):
-                path = _path_to_goal(
-                    rng,
-                    planner,
-                    start_loc,
-                    goal_location_samplers[goal_ind],
-                    max_path_retries,
-                )
-                goal_ind += 1
-            elif not wander_after_goals and goal_location_samplers:
-                break
-            else:
-                path = _path_or_fallback(
-                    rng=rng,
-                    planner=planner,
-                    start_loc=start_loc,
-                    max_goal_attempts=max_goal_attempts,
-                    max_path_retries=max_path_retries,
-                    step_range=step_range,
-                )
-            path_ind = 0
-
-        waypoint = np.asarray(path[path_ind], dtype=np.float64)
-        segment = waypoint - start_loc
-        segment_dist = float(np.linalg.norm(segment))
-        if segment_dist < 1e-6:
-            path_ind += 1
-            continue
-
-        speed = float(rng.uniform(*speed_mps_range))
-        duration_frames = max(1.0, segment_dist / max(speed, 1e-4) * fps)
-        frame_next = min(frame_end_f, frame_curr + duration_frames)
-        frac = (frame_next - frame_curr) / duration_frames
-
-        next_loc = start_loc + segment * frac
-        if planner._line_not_valid(start_loc, next_loc):
-            path_ind += 1
-            continue
-
-        pf.ops.object.set_transform(camera, location=next_loc)
-
-        keyframe = int(round(frame_next))
-        keyframe = max(keyframe, int(np.floor(frame_curr)) + 1)
-        camera.item().keyframe_insert("location", frame=keyframe)
-        location_keyframes.append((float(keyframe), next_loc.copy()))
-
-        start_loc = next_loc
-        frame_curr = frame_next
-        if frac >= 1.0 - 1e-6:
-            path_ind += 1
-
-    if not wander_after_goals and goal_location_samplers:
-        location_keyframes = _stretch_required_goal_path(
-            camera,
-            location_keyframes,
-            frame_start_f,
-            frame_end_f,
-            frame_curr,
-            goal_ind,
-            len(goal_location_samplers),
-            path_ind,
-            len(path),
-        )
-
-    _animate_rrt_rotation(
+    _animate_path_rotation(
         rng,
         camera,
         location_keyframes,
-        frame_start_f,
-        frame_end_f,
+        float(frame_start),
+        float(frame_end),
         fps,
         rot_std_deg,
         yaw_motion_std_deg,
         rotation_interval_sec_range,
         rotation_lookahead_m,
-        max_abs_roll_rad,
-        max_abs_pitch_offset_rad,
+        np.deg2rad(max_abs_roll_deg),
+        np.deg2rad(max_abs_pitch_offset_deg),
     )
-
-    action = camera.item().animation_data.action
-    for fcurve in action.fcurves:
-        if fcurve.data_path not in {"location", "rotation_euler"}:
-            continue
+    for fcurve in camera.item().animation_data.action.fcurves:
         for keyframe in fcurve.keyframe_points:
             keyframe.interpolation = "LINEAR"
-
     return camera
+
+
+def _random_valid_point(
+    rng: pf.RNG,
+    colliders: ccol.CollisionSet,
+    bbox: tuple[np.ndarray, np.ndarray],
+    clearance: float,
+    point_pred: Callable[[np.ndarray], bool] | None,
+    attempts: int = 1000,
+) -> np.ndarray:
+    for _ in range(attempts):
+        point = rng.uniform(bbox[0], bbox[1])
+        if _point_valid(point, colliders, bbox, clearance, point_pred):
+            return point
+    raise RejectedScene("Could not find a valid RRT camera goal")
+
+
+def _random_goal_leg(
+    rng: pf.RNG,
+    colliders: ccol.CollisionSet,
+    bbox: tuple[np.ndarray, np.ndarray],
+    start: np.ndarray,
+    clearance: float,
+    point_pred: Callable[[np.ndarray], bool] | None,
+    step_range: tuple[float, float],
+    max_rrt_iter: int,
+) -> list[np.ndarray] | None:
+    goal_rng, path_rng = rng.spawn(2)
+    goal = _random_valid_point(goal_rng, colliders, bbox, clearance, point_pred)
+    try:
+        return rrt_path(
+            path_rng,
+            colliders,
+            bbox,
+            start,
+            goal,
+            clearance=clearance,
+            point_pred=point_pred,
+            step_range=step_range,
+            max_iter=max_rrt_iter,
+        )
+    except RRTPolicyError:
+        return None
+
+
+def _random_goals_path(
+    rng: pf.RNG,
+    colliders: ccol.CollisionSet,
+    bbox: tuple[np.ndarray, np.ndarray],
+    n_goals: int,
+    clearance: float,
+    point_pred: Callable[[np.ndarray], bool] | None,
+    step_range: tuple[float, float],
+    max_rrt_iter: int,
+    attempts_per_goal: int = 20,
+) -> list[np.ndarray]:
+    start_rng, legs_rng = rng.spawn(2)
+    points = [_random_valid_point(start_rng, colliders, bbox, clearance, point_pred)]
+    for _ in range(n_goals):
+        leg = repeat_attempts(
+            _random_goal_leg,
+            legs_rng,
+            attempts_per_goal,
+            colliders=colliders,
+            bbox=bbox,
+            start=points[-1],
+            clearance=clearance,
+            point_pred=point_pred,
+            step_range=step_range,
+            max_rrt_iter=max_rrt_iter,
+        )
+        if leg is None:
+            raise RejectedScene(f"RRT could not reach any goal from {points[-1]}")
+        points += leg
+    return points
+
+
+def _goals_path(
+    rng: pf.RNG,
+    colliders: ccol.CollisionSet,
+    bbox: tuple[np.ndarray, np.ndarray],
+    goals: list[np.ndarray],
+    clearance: float,
+    point_pred: Callable[[np.ndarray], bool] | None,
+    step_range: tuple[float, float],
+    max_rrt_iter: int,
+) -> list[np.ndarray]:
+    points = [np.asarray(goals[0], dtype=np.float64)]
+    for goal in goals[1:]:
+        points += rrt_path(
+            rng,
+            colliders,
+            bbox,
+            points[-1],
+            goal,
+            clearance=clearance,
+            point_pred=point_pred,
+            step_range=step_range,
+            max_iter=max_rrt_iter,
+        )
+    return points
+
+
+def camera_rrt_trajectory(
+    rng: pf.RNG,
+    colliders: ccol.CollisionSet,
+    bbox: tuple[np.ndarray, np.ndarray],
+    frame_start: int,
+    frame_end: int,
+    goals: list[np.ndarray] | None = None,
+    n_random_goals: int = 4,
+    height_range: tuple[float, float] = (1.0, 2.0),
+    clearance: float = 0.6,
+    point_pred: Callable[[np.ndarray], bool] | None = None,
+    step_range: tuple[float, float] = (1.0, 2.0),
+    max_rrt_iter: int = 2000,
+    focal_length_mm: float = 15,
+    rot_std_deg: tuple[float, float, float] = (20.0, 20.0, 20.0),
+    max_abs_roll_deg: float = 25.0,
+    max_abs_pitch_offset_deg: float = 25.0,
+) -> pf.CameraObject:
+    path_rng, follow_rng = rng.spawn(2)
+    low = np.array(bbox[0], dtype=np.float64)
+    high = np.array(bbox[1], dtype=np.float64)
+    low[2], high[2] = height_range
+    bbox = (low, high)
+    if goals is None:
+        points = _random_goals_path(
+            path_rng,
+            colliders,
+            bbox,
+            n_random_goals,
+            clearance,
+            point_pred,
+            step_range,
+            max_rrt_iter,
+        )
+    else:
+        points = _goals_path(
+            path_rng,
+            colliders,
+            bbox,
+            goals,
+            clearance,
+            point_pred,
+            step_range,
+            max_rrt_iter,
+        )
+    return camera_follow_path(
+        follow_rng,
+        points,
+        frame_start,
+        frame_end,
+        focal_length_mm=focal_length_mm,
+        rot_std_deg=rot_std_deg,
+        max_abs_roll_deg=max_abs_roll_deg,
+        max_abs_pitch_offset_deg=max_abs_pitch_offset_deg,
+    )

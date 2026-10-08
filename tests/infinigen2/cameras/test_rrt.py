@@ -8,64 +8,57 @@ from infinigen2.cameras import rrt
 from infinigen2.scenes.placement import collision as ccol
 
 
-def test_rrt_camera_accepts_explicit_start_location() -> None:
-    bounds = pf.ops.primitives.mesh_cube(size=4.0)
+def test_rrt_trajectory_starts_at_first_goal() -> None:
+    bbox = (np.full(3, -2.0), np.full(3, 2.0))
     start = np.asarray((0.5, -0.25, 0.75))
 
-    camera = rrt.camera_rrt(
+    camera = rrt.camera_rrt_trajectory(
         np.random.default_rng(0),
         ccol.collision_set([]),
-        [bounds],
-        start_location=start,
+        bbox,
+        frame_start=1,
+        frame_end=1,
+        goals=[start],
     )
 
     np.testing.assert_allclose(camera.item().location, start)
 
 
-def test_rrt_camera_retries_goal_location_sampler() -> None:
-    bounds = pf.ops.primitives.mesh_cube(size=4.0)
-    start = np.asarray((0.0, 0.0, 0.0))
-    goal = np.asarray((1.0, 0.0, 0.0))
-    candidates = iter((np.asarray((3.0, 0.0, 0.0)), goal))
+def test_rrt_path_routes_around_wall() -> None:
+    wall = pf.nodes.to_mesh_object(pf.nodes.geo.mesh_cube(size=(0.2, 3.0, 4.0)).mesh)
+    colliders = ccol.collision_set([wall])
+    bbox = (np.array((-3.0, -3.0, -1.0)), np.array((3.0, 3.0, 1.0)))
+    start = np.array((-1.5, 0.0, 0.0))
+    goal = np.array((1.5, 0.0, 0.0))
 
-    def sample_goal(_rng: pf.RNG) -> np.ndarray:
-        return next(candidates)
-
-    camera = rrt.camera_rrt(
+    path = rrt.rrt_path(
         np.random.default_rng(0),
-        ccol.collision_set([]),
-        [bounds],
-        start_location=start,
-        goal_location_samplers=[sample_goal],
-        frame_start=1,
-        frame_end=2,
-        speed_mps_range=(24.0, 24.0),
+        colliders,
+        bbox,
+        start,
+        goal,
+        clearance=0.2,
+        step_range=(0.5, 1.0),
     )
 
-    np.testing.assert_allclose(camera.item().location, goal)
+    np.testing.assert_allclose(path[-1], goal)
+    assert len(path) > 1
+    for first, second in zip([start, *path[:-1]], path, strict=True):
+        assert rrt._edge_free(first, second, colliders, 0.2)
 
 
-def test_rrt_camera_stretches_required_goals_to_frame_end() -> None:
-    bounds = pf.ops.primitives.mesh_cube(size=4.0)
-    goal = np.asarray((1.0, 0.0, 0.0))
+def test_camera_follow_path_spans_frame_range() -> None:
+    points = [np.zeros(3), np.array((1.0, 0.0, 0.0)), np.array((1.0, 3.0, 0.0))]
 
-    camera = rrt.camera_rrt(
-        np.random.default_rng(0),
-        ccol.collision_set([]),
-        [bounds],
-        start_location=np.zeros(3),
-        goal_location_samplers=[lambda _rng: goal],
-        wander_after_goals=False,
-        frame_start=1,
-        frame_end=24,
-        speed_mps_range=(24.0, 24.0),
-    )
+    camera = rrt.camera_follow_path(np.random.default_rng(0), points, 1, 24)
 
     curves = camera.item().animation_data.action.fcurves
-    location_frames = {
-        point.co.x
-        for curve in curves
-        if curve.data_path == "location"
-        for point in curve.keyframe_points
-    }
-    assert location_frames == {1.0, 24.0}
+    location_frames = sorted(
+        {
+            point.co.x
+            for curve in curves
+            if curve.data_path == "location"
+            for point in curve.keyframe_points
+        }
+    )
+    np.testing.assert_allclose(location_frames, [1.0, 6.75, 24.0])
