@@ -689,3 +689,64 @@ def test_cube_render_optical_flow_object_moving(
     assert mean_u > 0
     assert np.isclose(mean_v, 0.0)
     assert np.abs(mean_v) < 0.2 * np.abs(mean_u)
+
+
+@pytest.mark.render_gpu
+@pytest.mark.parametrize("method", ["cycles", "eevee"])
+def test_cube_render_optical_flow_reverse(tmp_path, method):
+    objects, camera = configure_cube_scene()
+    cube = objects[0]
+
+    camera.item().animation_data_clear()
+    camera.item().location = (0, 0, 10)
+    camera.item().rotation_euler = (0, 0, 0)
+
+    cube.item().animation_data_clear()
+    for frame, location in [(1, (0, 0, 0)), (2, (1, 0, 0)), (3, (1, 1, 0))]:
+        cube.item().location = location
+        cube.item().keyframe_insert("location", frame=frame)
+
+    render_passes = [
+        RenderPass(ExportType.OPTICAL_FLOW, Path("flow.npy"), np.dtype(np.float32)),
+        RenderPass(
+            ExportType.OPTICAL_FLOW_REVERSE,
+            Path("flow_reverse.npy"),
+            np.dtype(np.float32),
+        ),
+    ]
+
+    render_func = {
+        "cycles": render_cycles.render_cycles_ground_truth,
+        "eevee": render_eevee.render_eevee_ground_truth,
+    }[method]
+    results = render_func(
+        objects=objects,
+        camera=camera,
+        output_folder=tmp_path,
+        render_passes=render_passes,
+        frame_start=2,
+        frame_end=2,
+        resolution=(256, 256),
+    )
+
+    forward = np.load(results[ExportType.OPTICAL_FLOW][0])
+    reverse = np.load(results[ExportType.OPTICAL_FLOW_REVERSE][0])
+    assert forward.shape == reverse.shape == (256, 256, 2)
+
+    mask = np.linalg.norm(reverse, axis=2) > 1e-3
+    assert mask.any()
+
+    fwd_u, fwd_v = forward[mask].mean(axis=0)
+    rev_u, rev_v = reverse[mask].mean(axis=0)
+    print(f"forward: ({fwd_u}, {fwd_v}), reverse: ({rev_u}, {rev_v})")
+
+    # frame 2 -> 3 moves the cube up in the image
+    assert fwd_v < 0
+    assert np.abs(fwd_u) < 0.05 * np.abs(fwd_v)
+
+    # frame 2 -> 1 moves the cube left in the image
+    assert rev_u < 0
+    assert np.abs(rev_v) < 0.05 * np.abs(rev_u)
+
+    # both steps are 1 world unit at the same depth
+    assert np.isclose(rev_u, fwd_v, rtol=0.05)

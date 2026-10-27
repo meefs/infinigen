@@ -88,6 +88,7 @@ RENDER_CYCLES_GT_PASS_TYPES = frozenset(
         ExportType.SURFACE_NORMAL,
         ExportType.SURFACE_NORMAL_WORLD,
         ExportType.OPTICAL_FLOW,
+        ExportType.OPTICAL_FLOW_REVERSE,
         ExportType.OBJECT_INDEX,
         ExportType.OCCLUSION_BOUNDARIES,
     }
