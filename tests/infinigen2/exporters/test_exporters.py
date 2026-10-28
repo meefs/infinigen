@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import procfunc as pf
 import pytest
+from scipy.ndimage import map_coordinates
 
 from infinigen2.exporters import render_cycles, render_eevee
 from infinigen2.exporters.util.format import ExportType, RenderPass
@@ -750,3 +751,88 @@ def test_cube_render_optical_flow_reverse(tmp_path, method):
 
     # both steps are 1 world unit at the same depth
     assert np.isclose(rev_u, fwd_v, rtol=0.05)
+
+
+@pytest.mark.render_gpu
+@pytest.mark.parametrize("method", ["cycles", "eevee"])
+def test_optical_flow_forward_reverse_consistency(tmp_path, method):
+    """Follow each pixel's forward flow into frame t+1; the reverse flow there must lead back."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+
+    floor = pf.ops.primitives.mesh_cube(scale=(40, 40, 1), location=(0, 0, -5))
+    cube = pf.ops.primitives.mesh_cube(scale=(0.5, 0.5, 0.5))
+    camera = pf.ops.primitives.perspective_camera(
+        focal_length_mm=50,
+        sensor_width_mm=30,
+        sensor_height_mm=30,
+        clip_start=0.1,
+        clip_end=1000,
+    )
+
+    camera_keys = [
+        ((0, 0, 10), (0, 0, 0)),
+        ((0.2, 0, 10), (0, 0, 3)),
+        ((0.2, 0.2, 9.7), (1, 0, 3)),
+    ]
+    cube_keys = [(0, 0, 0), (0.4, 0, 0), (0.4, -0.4, 0.3)]
+    for frame, (cam_loc, cam_rot), cube_loc in zip([1, 2, 3], camera_keys, cube_keys):
+        camera.item().location = cam_loc
+        camera.item().rotation_euler = np.deg2rad(cam_rot)
+        camera.item().keyframe_insert("location", frame=frame)
+        camera.item().keyframe_insert("rotation_euler", frame=frame)
+        cube.item().location = cube_loc
+        cube.item().keyframe_insert("location", frame=frame)
+
+    render_passes = [
+        RenderPass(ExportType.OPTICAL_FLOW, Path("flow_%f.npy"), np.dtype(np.float32)),
+        RenderPass(
+            ExportType.OPTICAL_FLOW_REVERSE,
+            Path("flow_reverse_%f.npy"),
+            np.dtype(np.float32),
+        ),
+    ]
+
+    render_func = {
+        "cycles": render_cycles.render_cycles_ground_truth,
+        "eevee": render_eevee.render_eevee_ground_truth,
+    }[method]
+    results = render_func(
+        objects=[floor, cube],
+        camera=camera,
+        output_folder=tmp_path,
+        render_passes=render_passes,
+        frame_start=1,
+        frame_end=3,
+        resolution=(256, 256),
+    )
+
+    forward = [np.load(p) for p in sorted(results[ExportType.OPTICAL_FLOW])]
+    reverse = [np.load(p) for p in sorted(results[ExportType.OPTICAL_FLOW_REVERSE])]
+    assert len(forward) == len(reverse) == 3
+
+    h, w = forward[0].shape[:2]
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
+    for t in range(2):
+        qx = xs + forward[t][..., 0]
+        qy = ys + forward[t][..., 1]
+        inside = (qx >= 0) & (qx <= w - 1) & (qy >= 0) & (qy <= h - 1)
+        reverse_at_q = np.stack(
+            [
+                map_coordinates(reverse[t + 1][..., c], [qy, qx], order=1)
+                for c in range(2)
+            ],
+            axis=-1,
+        )
+        err = np.linalg.norm(forward[t] + reverse_at_q, axis=-1)[inside]
+        motion = np.linalg.norm(forward[t], axis=-1)[inside]
+        print(
+            f"frames {t + 1}->{t + 2}: median motion {np.median(motion):.2f}px, "
+            f"median error {np.median(err):.4f}px, {(err < 0.5).mean():.1%} under 0.5px"
+        )
+
+        assert inside.mean() > 0.8
+        assert np.median(motion) > 5
+        assert np.median(err) < 0.05
+        assert (err < 0.5).mean() > 0.9
+
+    assert np.median(np.linalg.norm(forward[0] - forward[1], axis=-1)) > 5
