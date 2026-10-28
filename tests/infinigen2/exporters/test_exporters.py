@@ -17,7 +17,10 @@ from scipy.ndimage import map_coordinates
 from infinigen2.exporters import render_cycles, render_eevee
 from infinigen2.exporters.util.format import ExportType, RenderPass
 from infinigen2.exporters.visualize_gt_passes import visualize_flow
-from infinigen2.util.camera_projection import get_3x4_RT_matrix_from_blender
+from infinigen2.util.camera_projection import (
+    get_3x4_RT_matrix_from_blender,
+    project_points,
+)
 
 
 def configure_cube_scene(big=False):
@@ -702,16 +705,17 @@ def test_cube_render_optical_flow_reverse(tmp_path, method):
     camera.item().location = (0, 0, 10)
     camera.item().rotation_euler = (0, 0, 0)
 
+    locations = {1: (0, 0, 0), 2: (1, 0, 0), 3: (1, 1, 0)}
     cube.item().animation_data_clear()
-    for frame, location in [(1, (0, 0, 0)), (2, (1, 0, 0)), (3, (1, 1, 0))]:
+    for frame, location in locations.items():
         cube.item().location = location
         cube.item().keyframe_insert("location", frame=frame)
 
     render_passes = [
-        RenderPass(ExportType.OPTICAL_FLOW, Path("flow.npy"), np.dtype(np.float32)),
+        RenderPass(ExportType.OPTICAL_FLOW, Path("flow_%f.npy"), np.dtype(np.float32)),
         RenderPass(
             ExportType.OPTICAL_FLOW_REVERSE,
-            Path("flow_reverse.npy"),
+            Path("flow_reverse_%f.npy"),
             np.dtype(np.float32),
         ),
     ]
@@ -725,32 +729,38 @@ def test_cube_render_optical_flow_reverse(tmp_path, method):
         camera=camera,
         output_folder=tmp_path,
         render_passes=render_passes,
-        frame_start=2,
-        frame_end=2,
+        frame_start=1,
+        frame_end=3,
         resolution=(256, 256),
     )
 
-    forward = np.load(results[ExportType.OPTICAL_FLOW][0])
-    reverse = np.load(results[ExportType.OPTICAL_FLOW_REVERSE][0])
-    assert forward.shape == reverse.shape == (256, 256, 2)
+    forward = [np.load(p) for p in sorted(results[ExportType.OPTICAL_FLOW])]
+    reverse = [np.load(p) for p in sorted(results[ExportType.OPTICAL_FLOW_REVERSE])]
+    assert len(forward) == len(reverse) == 3
+    assert all(f.shape == (256, 256, 2) for f in forward + reverse)
 
-    mask = np.linalg.norm(reverse, axis=2) > 1e-3
-    assert mask.any()
+    # the camera looks straight down and only sees the cube's top face, which moves
+    # rigidly, so every cube pixel moves with the projection of the face center
+    bpy.context.scene.render.resolution_x = 256
+    bpy.context.scene.render.resolution_y = 256
+    top = np.array([0, 0, cube.item().dimensions.z / 2])
 
-    fwd_u, fwd_v = forward[mask].mean(axis=0)
-    rev_u, rev_v = reverse[mask].mean(axis=0)
-    print(f"forward: ({fwd_u}, {fwd_v}), reverse: ({rev_u}, {rev_v})")
+    def image_pos(frame):
+        # outside the keyed frames the cube holds still
+        location = np.array(locations[min(max(frame, 1), 3)]) + top
+        return project_points(camera, location[None])[0, :2]
 
-    # frame 2 -> 3 moves the cube up in the image
-    assert fwd_v < 0
-    assert np.abs(fwd_u) < 0.05 * np.abs(fwd_v)
-
-    # frame 2 -> 1 moves the cube left in the image
-    assert rev_u < 0
-    assert np.abs(rev_v) < 0.05 * np.abs(rev_u)
-
-    # both steps are 1 world unit at the same depth
-    assert np.isclose(rev_u, fwd_v, rtol=0.05)
+    for i, frame in enumerate(locations):
+        cube_pixels = (np.linalg.norm(forward[i], axis=2) > 1e-3) | (
+            np.linalg.norm(reverse[i], axis=2) > 1e-3
+        )
+        assert cube_pixels.mean() > 0.05
+        for flow, neighbor in [(forward[i], frame + 1), (reverse[i], frame - 1)]:
+            expected = image_pos(neighbor) - image_pos(frame)
+            actual = np.median(flow[cube_pixels], axis=0)
+            print(f"frame {frame} -> {neighbor}: expected {expected}, actual {actual}")
+            # EEVEE's vector pass is off by ~0.1%, Cycles' is exact
+            assert np.allclose(actual, expected, rtol=0.005, atol=0.05)
 
 
 @pytest.mark.render_gpu
