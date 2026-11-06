@@ -68,6 +68,7 @@ BLENDER_VIEWLAYER_PASS_CONFIG = {
     ExportType.SURFACE_NORMAL: ViewLayerPass("use_pass_normal", "normal", ".exr"),
     ExportType.SURFACE_NORMAL_WORLD: ViewLayerPass("use_pass_normal", "normal", ".exr"),
     ExportType.OPTICAL_FLOW: ViewLayerPass("use_pass_vector", "vector", ".exr"),
+    ExportType.OPTICAL_FLOW_REVERSE: ViewLayerPass("use_pass_vector", "vector", ".exr"),
     # segmentation
     ExportType.OBJECT_INDEX: ViewLayerPass("use_pass_object_index", "indexOB", ".exr"),
     ExportType.MATERIAL_INDEX: ViewLayerPass(
@@ -169,12 +170,12 @@ def _make_compositor_slot(
     render_socket = getattr(render_layers, socket_name)
 
     match render_pass.type:
-        case ExportType.OPTICAL_FLOW:
+        case ExportType.OPTICAL_FLOW | ExportType.OPTICAL_FLOW_REVERSE:
             separate_color = pf.nodes.color.separate_rgb(render_socket)
-            # Based on debug: blue channel has X data, alpha has Y data
+            forward = render_pass.type == ExportType.OPTICAL_FLOW
             combined = pf.nodes.color.combine_rgb(
-                red=separate_color.blue,  # X velocity from blue
-                green=separate_color.alpha,  # Y velocity from alpha
+                red=separate_color.blue if forward else separate_color.red,
+                green=separate_color.alpha if forward else separate_color.green,
                 blue=0.0,
             )
             processed_output = pf.nodes.compositor.set_alpha(
@@ -198,6 +199,8 @@ def _make_compositor_slot(
     if render_pass.type in {
         ExportType.SURFACE_NORMAL,
         ExportType.SURFACE_NORMAL_WORLD,
+        ExportType.OPTICAL_FLOW,
+        ExportType.OPTICAL_FLOW_REVERSE,
         ExportType.IMAGE,
         ExportType.IMAGE_DENOISED,
         ExportType.IMAGE_HDR,
@@ -404,6 +407,11 @@ def postprocess_renderpass_frame(
         case ExportType.OPTICAL_FLOW, ".exr", ".npy", (np.float16 | np.float32):
             data = load_exr(from_path)
             data[..., 0] *= -1
+            np.save(to_path, data[..., :2].astype(dt))
+
+        case ExportType.OPTICAL_FLOW_REVERSE, ".exr", ".npy", (np.float16 | np.float32):
+            data = load_exr(from_path)
+            data[..., 1] *= -1
             np.save(to_path, data[..., :2].astype(dt))
 
         case (

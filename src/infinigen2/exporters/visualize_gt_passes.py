@@ -187,6 +187,7 @@ def visualize_bw(input_path: Path, output_path: Path) -> None:
 
 VISUALIZATION_FUNCS: Dict[ExportType, Callable] = {
     ExportType.OPTICAL_FLOW: visualize_flow,
+    ExportType.OPTICAL_FLOW_REVERSE: visualize_flow,
     ExportType.SURFACE_NORMAL: visualize_normals,
     ExportType.DEPTH: visualize_depth,
     ExportType.OBJECT_INDEX: visualize_seg_mask,

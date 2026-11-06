@@ -38,6 +38,7 @@ class ExportType(enum.Enum):
     OBJECT_DATA = "object-data"
 
     OPTICAL_FLOW = "optical-flow"
+    OPTICAL_FLOW_REVERSE = "optical-flow-reverse"
     DEPTH_CHANGE = "depth-change"
     FLOW_3D = "flow-3d"
     FLOW_MASK_MATCHED = "flow-mask-matched"
@@ -191,6 +192,11 @@ GT_PASS_DEFAULTS: dict[ExportType, RenderPass] = {
     ),
     ExportType.OPTICAL_FLOW: RenderPass(
         ExportType.OPTICAL_FLOW, Path("%c/optical-flow_%f.npy"), np.dtype(np.float32)
+    ),
+    ExportType.OPTICAL_FLOW_REVERSE: RenderPass(
+        ExportType.OPTICAL_FLOW_REVERSE,
+        Path("%c/optical-flow-reverse_%f.npy"),
+        np.dtype(np.float32),
     ),
     ExportType.OBJECT_INDEX: RenderPass(
         ExportType.OBJECT_INDEX, Path("%c/object_%f.npy"), np.dtype(np.uint32)
