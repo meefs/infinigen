@@ -12,16 +12,16 @@ For instructions on using Infinigen 1.0, please see the [Infinigen 1.0 Getting S
 
 Install `uv` if you don't already have it: `curl -LsSf https://astral.sh/uv/install.sh | sh`
 
-Then create a virtual environment and install Infinigen 2.0 from PyPI via the `infinigen` package. This requires `==2.0.0a4` or `--prerelease=allow` as Infinigen is currently in alpha.
+Then create a virtual environment and install Infinigen 2.0 from PyPI via the `infinigen` package.
 ```bash
 uv venv --python 3.11
-uv pip install "infinigen==2.0.0a4"
+uv pip install infinigen
 ```
 or, inside a project:
 ```bash
-uv add "infinigen==2.0.0a4"
+uv add infinigen
 ```
-Within a project, we recommend fixing a specific version of the alpha, as some interfaces may change gradually until we reach the 2.0 full release.
+Until the 2.0 interface is final, releases are numbered `1.XX.YY` and some interfaces may change between them, so we recommend pinning the version you develop against within a project. The `2.0.0` release will mark the final interface.
 
 If you are modifying Infinigen itself, follow the [Contributing Guide](Contributing) to install from cloned source code. This is not necessary for most research projects - you can follow our [Example Projects](ExampleProjects) to create customized data using only the documented APIs.
 
